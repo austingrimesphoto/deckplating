@@ -97,7 +97,11 @@ h2 {
   width: min(100%, 760px);
   min-height: 100vh;
   margin: 0 auto;
-  padding: 18px max(14px, env(safe-area-inset-left)) calc(118px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-right));
+  padding:
+    calc(22px + env(safe-area-inset-top))
+    max(14px, env(safe-area-inset-left))
+    calc(118px + env(safe-area-inset-bottom))
+    max(14px, env(safe-area-inset-right));
 }
 
 @supports (min-height: 100dvh) {
