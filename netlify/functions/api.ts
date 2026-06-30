@@ -45,6 +45,10 @@ const pinHash = (teamMemberId: string, pin: string) => sha256(`${teamMemberId}:$
 const hmac = (value: string) =>
   crypto.createHmac('sha256', adminSessionSecret).update(value).digest('hex');
 
+const base64url = (value: string) => Buffer.from(value).toString('base64url');
+
+const fromBase64url = (value: string) => Buffer.from(value, 'base64url').toString('utf8');
+
 const normalizePath = (event: HandlerEvent) => {
   const raw = event.path.replace('/.netlify/functions/api', '').replace(/^\/api/, '');
   return raw === '' ? '/' : raw;
@@ -91,6 +95,51 @@ const createAdminToken = () => {
   const expires = String(Date.now() + 1000 * 60 * 60 * 8);
   return `${expires}.${hmac(expires)}`;
 };
+
+const createUserToken = (teamMemberId: string, deviceToken: string) => {
+  const payload = base64url(
+    JSON.stringify({
+      teamMemberId,
+      deviceHash: sha256(deviceToken),
+      expires: Date.now() + 1000 * 60 * 60 * 24 * 30,
+    }),
+  );
+  return `${payload}.${hmac(payload)}`;
+};
+
+async function requireUser(event: HandlerEvent) {
+  const header = event.headers.authorization ?? event.headers.Authorization;
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!token) return null;
+
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return null;
+  const expected = hmac(payload);
+  if (signature.length !== expected.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+
+  let parsed: { teamMemberId?: string; deviceHash?: string; expires?: number };
+  try {
+    parsed = JSON.parse(fromBase64url(payload));
+  } catch {
+    return null;
+  }
+
+  if (!parsed.teamMemberId || !parsed.deviceHash || !parsed.expires || parsed.expires < Date.now()) return null;
+  const { data, error } = await supabase
+    .from('devices')
+    .select('id, team_member_id, team_members!inner(id, name, active)')
+    .eq('team_member_id', parsed.teamMemberId)
+    .eq('device_token_hash', parsed.deviceHash)
+    .eq('active', true)
+    .single();
+  if (error || !data) return null;
+
+  const member = data.team_members as { active?: boolean } | null;
+  if (!member?.active) return null;
+  await supabase.from('devices').update({ last_seen_at: new Date().toISOString() }).eq('id', data.id);
+  return { teamMemberId: parsed.teamMemberId, deviceId: data.id };
+}
 
 async function getCoverage() {
   const [{ data: areas, error: areaError }, { data: units, error: unitError }, { data: checkins, error: checkinError }] =
@@ -224,7 +273,11 @@ async function registerDevice(body: { teamMemberId: string; pin: string; deviceT
     .select('id')
     .single();
   if (error) return json(500, { error: error.message });
-  return json(200, { deviceId: device.id, teamMember: { id: member.id, name: member.name } });
+  return json(200, {
+    deviceId: device.id,
+    sessionToken: createUserToken(body.teamMemberId, body.deviceToken),
+    teamMember: { id: member.id, name: member.name },
+  });
 }
 
 async function route(event: HandlerEvent) {
@@ -233,7 +286,18 @@ async function route(event: HandlerEvent) {
   const path = normalizePath(event);
   const method = event.httpMethod;
 
+  if (method === 'GET' && path === '/team-members') {
+    const { data: teamMembers, error } = await supabase
+      .from('team_members')
+      .select('id, name')
+      .eq('active', true)
+      .order('name');
+    if (error) return json(500, { error: error.message });
+    return json(200, { teamMembers: (teamMembers ?? []).map((member) => ({ ...member, role: null })) });
+  }
+
   if (method === 'GET' && path === '/bootstrap') {
+    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
     const [{ data: teamMembers, error }, coverage] = await Promise.all([
       supabase.from('team_members').select('id, name, role').eq('active', true).order('name'),
       getCoverage(),
@@ -254,6 +318,8 @@ async function route(event: HandlerEvent) {
 
   if (method === 'POST' && path === '/device/change-identity') {
     const body = readBody<{ currentTeamMemberId: string; pin: string; newTeamMemberId: string; newPin: string; deviceToken: string }>(event);
+    const user = await requireUser(event);
+    if (!user || user.teamMemberId !== body.currentTeamMemberId) return json(403, { error: 'Authentication required.' });
     const { data: current } = await supabase.from('team_members').select('*').eq('id', body.currentTeamMemberId).single();
     if (!current?.pin_hash || current.pin_hash !== pinHash(body.currentTeamMemberId, body.pin)) {
       return json(403, { error: 'Current PIN does not match.' });
@@ -268,6 +334,7 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'GET' && path === '/nearby-locations') {
+    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
     const lat = Number(event.queryStringParameters?.lat);
     const lon = Number(event.queryStringParameters?.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json(400, { error: 'lat and lon are required.' });
@@ -288,6 +355,8 @@ async function route(event: HandlerEvent) {
       longitude?: number;
       manual?: boolean;
     }>(event);
+    const user = await requireUser(event);
+    if (!user || user.teamMemberId !== body.teamMemberId) return json(403, { error: 'Authentication required.' });
     const device = await verifyDevice(body.teamMemberId, body.deviceToken);
     if (!device) return json(403, { error: 'Device is not registered for this team member.' });
     if (!Array.isArray(body.unitIds) || body.unitIds.length === 0) return json(400, { error: 'unitIds are required.' });
@@ -347,10 +416,12 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'GET' && path === '/dashboard') {
+    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
     return json(200, await getCoverage());
   }
 
   if (method === 'GET' && path === '/leaderboard') {
+    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
     const month = event.queryStringParameters?.month ?? new Date().toISOString().slice(0, 7);
     const start = `${month}-01T00:00:00.000Z`;
     const endDate = new Date(start);

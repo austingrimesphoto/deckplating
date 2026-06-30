@@ -23,11 +23,17 @@ async function api<T>(path: string, options: RequestInit = {}) {
     throw new Error(`API route ${path} did not return JSON. Run the app with netlify dev so /api routes are available.`);
   }
   const data = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(data.error ?? 'Request failed.');
+  if (!response.ok) {
+    const error = new Error(data.error ?? 'Request failed.');
+    (error as Error & { status?: number }).status = response.status;
+    throw error;
+  }
   return data;
 }
 
 const newToken = () => crypto.randomUUID();
+
+const authHeaders = (identity: Identity) => ({ authorization: `Bearer ${identity.sessionToken}` });
 
 const statusLabel = (unit: UnitSummary) => {
   if (unit.status === 'gray') return 'Never visited';
@@ -86,7 +92,7 @@ function IdentitySetup({
     if (!member) return;
     const deviceToken = newToken();
     try {
-      const result = await api<{ deviceId: string }>('/api/device/register', {
+      const result = await api<{ deviceId: string; sessionToken: string }>('/api/device/register', {
         method: 'POST',
         body: JSON.stringify({
           teamMemberId,
@@ -95,7 +101,7 @@ function IdentitySetup({
           deviceLabel: navigator.userAgent.slice(0, 120),
         }),
       });
-      const identity = { teamMemberId, teamMemberName: member.name, deviceToken, deviceId: result.deviceId };
+      const identity = { teamMemberId, teamMemberName: member.name, deviceToken, deviceId: result.deviceId, sessionToken: result.sessionToken };
       localStorage.setItem(identityKey, JSON.stringify(identity));
       onRegistered(identity);
     } catch (err) {
@@ -157,7 +163,9 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
         const next = { lat: position.coords.latitude, lon: position.coords.longitude };
         setCoords(next);
         try {
-          const result = await api<{ matches: LocationSummary[] }>(`/api/nearby-locations?lat=${next.lat}&lon=${next.lon}`);
+          const result = await api<{ matches: LocationSummary[] }>(`/api/nearby-locations?lat=${next.lat}&lon=${next.lon}`, {
+            headers: authHeaders(identity),
+          });
           setMatches(result.matches);
           setSelected(result.matches[0]?.units.map((unit) => unit.id) ?? []);
         } catch (err) {
@@ -175,7 +183,7 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
   }
 
   async function loadManualUnits() {
-    const result = await api<{ units: UnitSummary[] }>('/api/dashboard');
+    const result = await api<{ units: UnitSummary[] }>('/api/dashboard', { headers: authHeaders(identity) });
     setManualUnits(result.units);
   }
 
@@ -186,6 +194,7 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
     try {
       const result = await api<{ totalScore: number }>('/api/checkins', {
         method: 'POST',
+        headers: authHeaders(identity),
         body: JSON.stringify({
           teamMemberId: identity.teamMemberId,
           deviceToken: identity.deviceToken,
@@ -558,13 +567,15 @@ function MapScreen({ units, mapTileUrl }: { units: UnitSummary[]; mapTileUrl: st
   );
 }
 
-function Scoreboard() {
+function Scoreboard({ identity }: { identity: Identity }) {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
 
   useEffect(() => {
-    api<{ rows: LeaderboardRow[] }>(`/api/leaderboard?month=${month}`).then((result) => setRows(result.rows));
-  }, [month]);
+    api<{ rows: LeaderboardRow[] }>(`/api/leaderboard?month=${month}`, { headers: authHeaders(identity) }).then((result) =>
+      setRows(result.rows),
+    );
+  }, [identity, month]);
 
   return (
     <main className="screen">
@@ -908,8 +919,9 @@ function Settings({ identity, members, onIdentity }: { identity: Identity; membe
     const member = members.find((candidate) => candidate.id === newMember);
     if (!member) return;
     try {
-      const result = await api<{ deviceId: string }>('/api/device/change-identity', {
+      const result = await api<{ deviceId: string; sessionToken: string }>('/api/device/change-identity', {
         method: 'POST',
+        headers: authHeaders(identity),
         body: JSON.stringify({
           currentTeamMemberId: identity.teamMemberId,
           pin,
@@ -918,7 +930,13 @@ function Settings({ identity, members, onIdentity }: { identity: Identity; membe
           deviceToken: identity.deviceToken,
         }),
       });
-      const next = { ...identity, teamMemberId: newMember, teamMemberName: member.name, deviceId: result.deviceId };
+      const next = {
+        ...identity,
+        teamMemberId: newMember,
+        teamMemberName: member.name,
+        deviceId: result.deviceId,
+        sessionToken: result.sessionToken,
+      };
       localStorage.setItem(identityKey, JSON.stringify(next));
       onIdentity(next);
       setMessage('Identity changed.');
@@ -966,23 +984,54 @@ function Settings({ identity, members, onIdentity }: { identity: Identity; membe
 
 export default function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [identity, setIdentity] = useState<Identity | null>(() => {
     const stored = localStorage.getItem(identityKey);
-    return stored ? (JSON.parse(stored) as Identity) : null;
+    if (!stored) return null;
+    const parsed = JSON.parse(stored) as Identity;
+    return parsed.sessionToken ? parsed : null;
   });
   const [screen, setScreen] = useState<Screen>('checkin');
   const [error, setError] = useState('');
 
-  async function load() {
+  async function loadTeamMembers() {
     try {
-      setBootstrap(await api<Bootstrap>('/api/bootstrap'));
+      const result = await api<{ teamMembers: TeamMember[] }>('/api/team-members');
+      setTeamMembers(result.teamMembers);
     } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load team members.');
+    }
+  }
+
+  async function load(currentIdentity = identity) {
+    if (!currentIdentity) return;
+    try {
+      setError('');
+      setBootstrap(await api<Bootstrap>('/api/bootstrap', { headers: authHeaders(currentIdentity) }));
+    } catch (err) {
+      const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
+      if (status === 403) {
+        localStorage.removeItem(identityKey);
+        setIdentity(null);
+        setBootstrap(null);
+        await loadTeamMembers();
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Unable to load app data.');
     }
   }
 
+  function handleIdentity(nextIdentity: Identity) {
+    setIdentity(nextIdentity);
+    void load(nextIdentity);
+  }
+
   useEffect(() => {
-    load();
+    if (identity) {
+      void load(identity);
+    } else {
+      void loadTeamMembers();
+    }
   }, []);
 
   useEffect(() => {
@@ -990,8 +1039,11 @@ export default function App() {
   }, [screen]);
 
   if (error) return <main className="center-shell"><p className="error">{error}</p></main>;
+  if (!identity) {
+    if (!teamMembers.length) return <main className="center-shell"><p>Loading Deckplate Coverage...</p></main>;
+    return <IdentitySetup members={teamMembers} onRegistered={handleIdentity} />;
+  }
   if (!bootstrap) return <main className="center-shell"><p>Loading Deckplate Coverage...</p></main>;
-  if (!identity) return <IdentitySetup members={bootstrap.teamMembers} onRegistered={setIdentity} />;
 
   return (
     <>
@@ -999,8 +1051,8 @@ export default function App() {
       {screen === 'coverage' && <CoverageBoard areas={bootstrap.areas} units={bootstrap.units} />}
       {screen === 'map' && <MapScreen units={bootstrap.units} mapTileUrl={bootstrap.mapTileUrl} />}
       {screen === 'admin' && <AdminScreen refresh={load} />}
-      {screen === 'scoreboard' && <Scoreboard />}
-      {screen === 'settings' && <Settings identity={identity} members={bootstrap.teamMembers} onIdentity={setIdentity} />}
+      {screen === 'scoreboard' && <Scoreboard identity={identity} />}
+      {screen === 'settings' && <Settings identity={identity} members={bootstrap.teamMembers} onIdentity={handleIdentity} />}
       <nav className="bottom-nav">
         {[
           ['checkin', 'Check In'],

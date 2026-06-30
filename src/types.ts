@@ -58,6 +58,7 @@ export type Identity = {
   teamMemberName: string;
   deviceToken: string;
   deviceId: string;
+  sessionToken: string;
 };
 
 export type LeaderboardRow = {
