@@ -320,8 +320,12 @@ function CoverageBoard({ areas, units }: { areas: Area[]; units: UnitSummary[] }
 
   return (
     <main className="screen">
-      <p className="eyebrow">Coverage Board</p>
-      <h1>Needs attention first</h1>
+      <div className="screen-title">
+        <div>
+          <p className="eyebrow">Coverage Board</p>
+          <h1>Needs attention first</h1>
+        </div>
+      </div>
       <section className="filters">
         <select value={area} onChange={(event) => setArea(event.target.value)}>
           <option value="">All areas</option>
@@ -532,8 +536,12 @@ function MapScreen({ units, mapTileUrl }: { units: UnitSummary[]; mapTileUrl: st
 
   return (
     <main className="screen map-screen">
-      <p className="eyebrow">Map</p>
-      <h1>Mapped locations</h1>
+      <div className="screen-title">
+        <div>
+          <p className="eyebrow">Map</p>
+          <h1>Mapped locations</h1>
+        </div>
+      </div>
       <div ref={container} className="map-canvas" />
       <div className="map-list">
         {locations.map((location) => (
@@ -560,8 +568,12 @@ function Scoreboard() {
 
   return (
     <main className="screen">
-      <p className="eyebrow">Team Scoreboard</p>
-      <h1>Monthly leaderboard</h1>
+      <div className="screen-title">
+        <div>
+          <p className="eyebrow">Team Scoreboard</p>
+          <h1>Monthly leaderboard</h1>
+        </div>
+      </div>
       <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
       <section className="coverage-list">
         {rows.map((row, index) => (
@@ -740,8 +752,12 @@ function AdminScreen({ refresh }: { refresh: () => void }) {
 
   return (
     <main className="screen">
-      <p className="eyebrow">Admin Locations</p>
-      <h1>Manage mapping</h1>
+      <div className="screen-title">
+        <div>
+          <p className="eyebrow">Admin Locations</p>
+          <h1>Manage mapping</h1>
+        </div>
+      </div>
       {message && <p className="notice">{message}</p>}
       <section className="panel">
         <h2>Create location</h2>
@@ -913,8 +929,12 @@ function Settings({ identity, members, onIdentity }: { identity: Identity; membe
 
   return (
     <main className="screen">
-      <p className="eyebrow">Settings</p>
-      <h1>{identity.teamMemberName}</h1>
+      <div className="screen-title">
+        <div>
+          <p className="eyebrow">Settings</p>
+          <h1>{identity.teamMemberName}</h1>
+        </div>
+      </div>
       <section className="panel">
         <h2>Change identity</h2>
         <form onSubmit={submit} className="stack">
@@ -964,6 +984,10 @@ export default function App() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [screen]);
 
   if (error) return <main className="center-shell"><p className="error">{error}</p></main>;
   if (!bootstrap) return <main className="center-shell"><p>Loading Deckplate Coverage...</p></main>;
