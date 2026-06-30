@@ -1,5 +1,6 @@
 :root {
   --bg: #f4f6f8;
+  --page-background: url('/deckplate-coverage-page-background.png');
   --surface: #ffffff;
   --text: #17212b;
   --muted: #647181;
@@ -21,7 +22,11 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--bg) var(--page-background) center / cover no-repeat fixed;
+}
+
+#root {
+  min-height: 100vh;
 }
 
 button,
