@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deckplate Coverage Setup Wizard</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #17212b;
+        background: #f4f6f8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px;
+      }
+
+      main {
+        width: min(100%, 760px);
+        margin: 0 auto;
+      }
+
+      section {
+        display: grid;
+        gap: 14px;
+        margin: 18px 0;
+        padding: 18px;
+        border: 1px solid #d9e0e7;
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      h1,
+      h2,
+      p {
+        margin-top: 0;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        color: #647181;
+        font-weight: 700;
+      }
+
+      input,
+      textarea,
+      button {
+        width: 100%;
+        min-height: 46px;
+        border-radius: 8px;
+        font: inherit;
+      }
+
+      input,
+      textarea {
+        border: 1px solid #d9e0e7;
+        padding: 10px 12px;
+      }
+
+      textarea {
+        min-height: 220px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      button {
+        border: 0;
+        background: #17324d;
+        color: #fff;
+        font-weight: 800;
+      }
+
+      .muted {
+        color: #647181;
+      }
+
+      .notice {
+        display: none;
+        color: #287a3e;
+        font-weight: 800;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Deckplate Coverage Setup Wizard</h1>
+      <p class="muted">
+        This page runs only in your browser. It creates the environment variables Netlify needs.
+        It does not send these values anywhere.
+      </p>
+
+      <section>
+        <h2>Paste Your Values</h2>
+        <label>
+          Supabase Project URL
+          <input id="supabaseUrl" placeholder="https://your-project.supabase.co" />
+        </label>
+        <label>
+          Supabase service_role key
+          <input id="serviceRoleKey" placeholder="Paste the service_role key from Supabase" />
+        </label>
+        <label>
+          Admin passphrase
+          <input id="adminPassphrase" placeholder="The passphrase admins will type in the Admin tab" />
+        </label>
+        <label>
+          Map tile/style URL, optional
+          <input id="mapTileUrl" placeholder="Leave blank for basic map tiles" />
+        </label>
+        <label>
+          Map tile key, optional
+          <input id="mapTileKey" placeholder="Leave blank unless your map provider gives you a key" />
+        </label>
+        <button id="generate" type="button">Generate Netlify Values</button>
+      </section>
+
+      <section>
+        <h2>Copy This Into Netlify</h2>
+        <textarea id="output" readonly></textarea>
+        <button id="copy" type="button">Copy All</button>
+        <p id="notice" class="notice">Copied.</p>
+      </section>
+    </main>
+
+    <script>
+      const field = (id) => document.getElementById(id);
+
+      function randomHex(bytes) {
+        const data = new Uint8Array(bytes);
+        crypto.getRandomValues(data);
+        return Array.from(data, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      }
+
+      async function sha256(value) {
+        const encoded = new TextEncoder().encode(value);
+        const digest = await crypto.subtle.digest('SHA-256', encoded);
+        return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+      }
+
+      field('generate').addEventListener('click', async () => {
+        const supabaseUrl = field('supabaseUrl').value.trim();
+        const serviceRoleKey = field('serviceRoleKey').value.trim();
+        const adminPassphrase = field('adminPassphrase').value;
+        const mapTileUrl = field('mapTileUrl').value.trim();
+        const mapTileKey = field('mapTileKey').value.trim();
+
+        if (!supabaseUrl || !serviceRoleKey || !adminPassphrase) {
+          alert('Fill in Supabase Project URL, service_role key, and admin passphrase.');
+          return;
+        }
+
+        try {
+          const lines = [
+            `SUPABASE_URL=${supabaseUrl}`,
+            `SUPABASE_SERVICE_ROLE_KEY=${serviceRoleKey}`,
+            `ADMIN_PASSPHRASE_HASH=${await sha256(adminPassphrase)}`,
+            `ADMIN_SESSION_SECRET=${randomHex(32)}`,
+            `MAP_TILE_URL=${mapTileUrl}`,
+            `MAP_TILE_KEY=${mapTileKey}`,
+          ];
+          field('output').value = lines.join('\n');
+        } catch (error) {
+          alert('Your browser could not generate the values. Try Chrome, Edge, Safari, or Firefox.');
+        }
+      });
+
+      field('copy').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(field('output').value);
+          field('notice').textContent = 'Copied.';
+        } catch {
+          field('output').focus();
+          field('output').select();
+          field('notice').textContent = 'Copy was blocked. The text is selected. Press Ctrl+C or Command+C.';
+        }
+        field('notice').style.display = 'block';
+        setTimeout(() => {
+          field('notice').style.display = 'none';
+        }, 3000);
+      });
+    </script>
+  </body>
+</html>

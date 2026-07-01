@@ -10,7 +10,11 @@ For a plain-English, button-by-button setup walkthrough, use:
 
 [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)
 
-That guide is the one to hand to a chaplain, RP, or command teammate who just needs to get the tool running.
+That guide is the one to hand to a chaplain, RP, or command teammate who just needs to get the tool running. It is written around a no-terminal beta setup path.
+
+The beta browser helper is here:
+
+[docs/setup-wizard.html](docs/setup-wizard.html)
 
 ## Share This With Another RMT
 
@@ -20,11 +24,13 @@ Recommended message:
 
 ```text
 Deckplate Coverage setup starts here:
-https://github.com/YOUR-ORG/YOUR-REPO
+https://github.com/austingrimesphoto/deckplate-coverage
 
 Open the README and follow docs/SETUP_GUIDE.md.
 Click "Use this template" to create your own copy.
 ```
+
+Because this repository is private, they need GitHub access before the link works. If they see a 404, add their GitHub username to the approved access list.
 
 The owner of this repository should enable GitHub's template setting:
 
@@ -60,6 +66,8 @@ For now, keep updates simple: publish releases, write clear release notes, and a
 
 ## Fast Local Setup
 
+Most users should skip this and use [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md). This section is only for someone who wants to run the app on their own computer before deploying.
+
 Install dependencies:
 
 ```bash
@@ -88,9 +96,9 @@ http://localhost:8888
 
 Each installation needs accounts for:
 
-- GitHub, to hold that team's copy of the app
-- Supabase, to hold that team's database
-- Netlify, to host that team's website and API functions
+- GitHub, to hold that team's copy of the app: <https://github.com/signup>
+- Supabase, to hold that team's database: <https://supabase.com/dashboard/sign-up>
+- Netlify, to host that team's website and API functions: <https://app.netlify.com/signup>
 
 ## Required Environment Variables
 
