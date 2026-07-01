@@ -672,6 +672,102 @@ async function route(event: HandlerEvent) {
     return json(200, await getCoverage());
   }
 
+  if (method === 'GET' && path === '/coverage-detail') {
+    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
+    const unitId = event.queryStringParameters?.unitId;
+    if (!unitId) return json(400, { error: 'unitId is required.' });
+    const coverage = await getCoverage();
+    const unit = coverage.units.find((candidate: any) => candidate.id === unitId);
+    if (!unit) return json(404, { error: 'Unit not found.' });
+    const { data, error } = await supabase
+      .from('checkins')
+      .select(
+        'id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, team_members!checkins_team_member_id_fkey(name), checkin_batches!checkins_batch_id_fkey(confidential_care_provided, referral_provided)',
+      )
+      .eq('unit_id', unitId)
+      .order('checked_in_at', { ascending: false })
+      .limit(100);
+    if (error) return json(500, { error: error.message });
+    return json(200, {
+      unit,
+      checkins: (data ?? []).map((checkin: any) => ({
+        id: checkin.id,
+        checked_in_at: checkin.checked_in_at,
+        team_member_name: checkin.team_members?.name ?? 'Unknown member',
+        geofence_verified: checkin.geofence_verified,
+        score_awarded: checkin.score_awarded,
+        voided_at: checkin.voided_at,
+        void_reason: checkin.void_reason,
+        confidential_care_provided: checkin.checkin_batches?.confidential_care_provided ?? null,
+        referral_provided: checkin.checkin_batches?.referral_provided ?? null,
+      })),
+    });
+  }
+
+  if (method === 'GET' && path === '/reports/indicators') {
+    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
+    const params = event.queryStringParameters ?? {};
+    let query = supabase
+      .from('checkins')
+      .select(
+        'id, batch_id, checked_in_at, location_id, checkin_batches!checkins_batch_id_fkey(id, location_id, occurred_at, confidential_care_provided, referral_provided), units(id, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name))',
+      )
+      .not('batch_id', 'is', null)
+      .is('voided_at', null)
+      .order('checked_in_at', { ascending: false })
+      .limit(2000);
+    if (params.from) query = query.gte('checked_in_at', `${params.from}T00:00:00.000Z`);
+    if (params.to) query = query.lte('checked_in_at', `${params.to}T23:59:59.999Z`);
+
+    const { data, error } = await query;
+    if (error) return json(500, { error: error.message });
+
+    const batches = new Map<string, any[]>();
+    for (const row of data ?? []) {
+      if (!row.batch_id) continue;
+      const rows = batches.get(row.batch_id) ?? [];
+      rows.push(row);
+      batches.set(row.batch_id, rows);
+    }
+
+    const reports = new Map<string, any>();
+    for (const [batchId, rows] of batches) {
+      const first: any = rows[0];
+      const batch = first.checkin_batches;
+      const directLocation = first.locations;
+      const unitLocation = first.units?.locations;
+      const location = directLocation ?? unitLocation ?? null;
+      const area = location?.areas ?? null;
+      const key = `${area?.id ?? 'none'}:${location?.id ?? batch?.location_id ?? 'unmapped'}`;
+      const row = reports.get(key) ?? {
+        key,
+        area_id: area?.id ?? null,
+        area_name: area?.name ?? 'Unassigned',
+        location_id: location?.id ?? batch?.location_id ?? null,
+        location_name: location?.name ?? 'Unmapped',
+        visits: 0,
+        confidential_care_count: 0,
+        referral_count: 0,
+        single_unit_indicator_visits: 0,
+        multi_unit_indicator_visits: 0,
+      };
+      row.visits += 1;
+      if (batch?.confidential_care_provided === true) row.confidential_care_count += 1;
+      if (batch?.referral_provided === true) row.referral_count += 1;
+      if (batch?.confidential_care_provided === true || batch?.referral_provided === true) {
+        if (rows.length === 1) row.single_unit_indicator_visits += 1;
+        else row.multi_unit_indicator_visits += 1;
+      }
+      reports.set(key, row);
+    }
+
+    return json(200, {
+      rows: Array.from(reports.values()).sort(
+        (a, b) => b.confidential_care_count + b.referral_count - (a.confidential_care_count + a.referral_count),
+      ),
+    });
+  }
+
   if (method === 'GET' && path === '/leaderboard') {
     if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
     const month = event.queryStringParameters?.month ?? new Date().toISOString().slice(0, 7);

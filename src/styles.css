@@ -449,6 +449,19 @@ small,
   align-items: flex-start;
 }
 
+.unit-button {
+  width: 100%;
+  min-height: 0;
+  color: inherit;
+  font-weight: inherit;
+  text-align: left;
+}
+
+.unit-button:focus-visible {
+  outline: 3px solid rgba(37, 90, 130, 0.35);
+  outline-offset: 2px;
+}
+
 .unit-card dl {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -523,6 +536,47 @@ small,
   border-left: 6px solid var(--brand-2);
   border-radius: 8px;
   background: #fff;
+}
+
+.activity-list,
+.report-list {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-panel {
+  margin-top: 14px;
+}
+
+.inline-title {
+  position: static;
+  margin: 0 0 12px;
+}
+
+.report-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.report-row dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.report-row dt {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.report-row dd {
+  margin: 0;
+  font-weight: 800;
 }
 
 .activity-row.voided {

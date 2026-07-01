@@ -6,12 +6,14 @@ import type {
   Area,
   Bootstrap,
   Identity,
+  IndicatorReportRow,
   LeaderboardRow,
   LocationSummary,
   PendingVisitBatch,
   TeamMember,
   UnitSummary,
   UnitType,
+  CoverageDetail,
   VisitIndicatorState,
 } from './types';
 import {
@@ -751,13 +753,32 @@ function SyncStatusBar({
   );
 }
 
-function CoverageBoard({ areas, units, cachedAt }: { areas: Area[]; units: UnitSummary[]; cachedAt: string | null }) {
+function CoverageBoard({
+  identity,
+  areas,
+  units,
+  cachedAt,
+  cachedMode,
+}: {
+  identity: Identity;
+  areas: Area[];
+  units: UnitSummary[];
+  cachedAt: string | null;
+  cachedMode: boolean;
+}) {
   const [area, setArea] = useState('');
   const [unitType, setUnitType] = useState('');
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [neverOnly, setNeverOnly] = useState(false);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [selectedUnit, setSelectedUnit] = useState<UnitSummary | null>(null);
+  const [detail, setDetail] = useState<CoverageDetail | null>(null);
+  const [detailMessage, setDetailMessage] = useState('');
+  const [reportRows, setReportRows] = useState<IndicatorReportRow[]>([]);
+  const [reportMessage, setReportMessage] = useState('');
+  const [reportFrom, setReportFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
+  const [reportTo, setReportTo] = useState(new Date().toISOString().slice(0, 10));
 
   const filtered = useMemo(() => {
     return units
@@ -772,6 +793,46 @@ function CoverageBoard({ areas, units, cachedAt }: { areas: Area[]; units: UnitS
         return rank[b.status] - rank[a.status] || a.name.localeCompare(b.name);
       });
   }, [area, from, neverOnly, overdueOnly, to, unitType, units]);
+
+  async function openUnit(unit: UnitSummary) {
+    setSelectedUnit(unit);
+    setDetail(null);
+    setDetailMessage('');
+    if (cachedMode || !navigator.onLine) {
+      setDetailMessage('Recent check-ins need a live connection.');
+      return;
+    }
+    try {
+      const result = await api<CoverageDetail>(`/api/coverage-detail?unitId=${unit.id}`, {
+        headers: authHeaders(identity),
+        timeoutMs: 5000,
+      });
+      setDetail(result);
+    } catch (err) {
+      setDetailMessage(err instanceof Error ? err.message : 'Unable to load recent check-ins.');
+    }
+  }
+
+  async function loadReport() {
+    if (cachedMode || !navigator.onLine) {
+      setReportMessage('Indicator reporting needs a live connection.');
+      return;
+    }
+    setReportMessage('');
+    try {
+      const params = new URLSearchParams();
+      if (reportFrom) params.set('from', reportFrom);
+      if (reportTo) params.set('to', reportTo);
+      const result = await api<{ rows: IndicatorReportRow[] }>(`/api/reports/indicators?${params.toString()}`, {
+        headers: authHeaders(identity),
+        timeoutMs: 6000,
+      });
+      setReportRows(result.rows);
+      if (!result.rows.length) setReportMessage('No indicator activity found for this date range.');
+    } catch (err) {
+      setReportMessage(err instanceof Error ? err.message : 'Unable to load indicator report.');
+    }
+  }
 
   return (
     <main className="screen">
@@ -809,6 +870,46 @@ function CoverageBoard({ areas, units, cachedAt }: { areas: Area[]; units: UnitS
         <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
       </section>
       <section className="coverage-list">
+        <section className="panel">
+          <h2>Indicator reporting</h2>
+          <p className="muted">Generic location-level counts only. Multi-unit visits are not attributed to each selected command.</p>
+          <div className="filters">
+            <input type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
+            <input type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
+            <button className="secondary" onClick={loadReport}>Load report</button>
+          </div>
+          {reportMessage && <p className="notice">{reportMessage}</p>}
+          {reportRows.length > 0 && (
+            <div className="report-list">
+              {reportRows.map((row) => (
+                <article key={row.key} className="report-row">
+                  <div>
+                    <strong>{row.location_name}</strong>
+                    <small>{row.area_name}</small>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Visits</dt>
+                      <dd>{row.visits}</dd>
+                    </div>
+                    <div>
+                      <dt>Care</dt>
+                      <dd>{row.confidential_care_count}</dd>
+                    </div>
+                    <div>
+                      <dt>Referrals</dt>
+                      <dd>{row.referral_count}</dd>
+                    </div>
+                    <div>
+                      <dt>Multi-unit</dt>
+                      <dd>{row.multi_unit_indicator_visits}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
         {areas.map((candidate) => {
           const areaUnits = filtered.filter((unit) => unit.area_id === candidate.id);
           if (!areaUnits.length) return null;
@@ -816,7 +917,7 @@ function CoverageBoard({ areas, units, cachedAt }: { areas: Area[]; units: UnitS
             <div key={candidate.id} className="area-group">
               <h2>{candidate.name}</h2>
               {areaUnits.map((unit) => (
-                <article key={unit.id} className={`unit-card ${unit.status}`}>
+                <button key={unit.id} className={`unit-card unit-button ${unit.status}`} onClick={() => void openUnit(unit)}>
                   <div>
                     <strong>{unit.name}</strong>
                     <span>{unitTypeLabel[unit.unit_type]}</span>
@@ -835,7 +936,7 @@ function CoverageBoard({ areas, units, cachedAt }: { areas: Area[]; units: UnitS
                       <dd>{unit.days_since_last_visit ?? 'Never'}</dd>
                     </div>
                   </dl>
-                </article>
+                </button>
               ))}
             </div>
           );
@@ -846,14 +947,69 @@ function CoverageBoard({ areas, units, cachedAt }: { areas: Area[]; units: UnitS
             {filtered
               .filter((unit) => !unit.area_id)
               .map((unit) => (
-                <article key={unit.id} className={`unit-card ${unit.status}`}>
+                <button key={unit.id} className={`unit-card unit-button ${unit.status}`} onClick={() => void openUnit(unit)}>
                   <strong>{unit.name}</strong>
                   <span>No mapped location</span>
-                </article>
+                </button>
               ))}
           </div>
         )}
       </section>
+      {selectedUnit && (
+        <section className="panel detail-panel">
+          <div className="screen-title inline-title">
+            <div>
+              <p className="eyebrow">Command detail</p>
+              <h2>{selectedUnit.name}</h2>
+            </div>
+            <button className="secondary" onClick={() => setSelectedUnit(null)}>Close</button>
+          </div>
+          <dl className="confirmation-details">
+            <div>
+              <dt>Status</dt>
+              <dd>{statusLabel(selectedUnit)}</dd>
+            </div>
+            <div>
+              <dt>Last visit</dt>
+              <dd>{niceDate(selectedUnit.last_visit_at)}</dd>
+            </div>
+            <div>
+              <dt>Location</dt>
+              <dd>{selectedUnit.location_name ?? 'Unmapped'}</dd>
+            </div>
+            <div>
+              <dt>Visitor</dt>
+              <dd>{selectedUnit.last_visitor ?? 'None'}</dd>
+            </div>
+          </dl>
+          {detailMessage && <p className="notice">{detailMessage}</p>}
+          {detail && (
+            <div className="activity-list">
+              {detail.checkins.map((checkin) => (
+                <article key={checkin.id} className={`activity-row ${checkin.voided_at ? 'voided' : ''}`}>
+                  <div className="activity-summary">
+                    <div>
+                      <strong>{niceDateTime(checkin.checked_in_at)}</strong>
+                      <small>
+                        {checkin.team_member_name} - {checkin.geofence_verified ? 'geofence verified' : 'manual/unverified'} - {checkin.score_awarded} point{checkin.score_awarded === 1 ? '' : 's'}
+                      </small>
+                    </div>
+                    {checkin.voided_at && <span className="status-pill">Voided</span>}
+                    {(checkin.confidential_care_provided || checkin.referral_provided) && (
+                      <span className="status-pill">
+                        {checkin.confidential_care_provided ? 'Care' : ''}
+                        {checkin.confidential_care_provided && checkin.referral_provided ? ' / ' : ''}
+                        {checkin.referral_provided ? 'Referral' : ''}
+                      </span>
+                    )}
+                  </div>
+                </article>
+              ))}
+              {!detail.checkins.length && <p className="notice">No check-ins recorded for this command.</p>}
+            </div>
+          )}
+        </section>
+      )}
     </main>
   );
 }
@@ -863,11 +1019,13 @@ function MapScreen({
   mapTileUrl,
   mapDefaultLatitude,
   mapDefaultLongitude,
+  offlineMode,
 }: {
   units: UnitSummary[];
   mapTileUrl: string;
   mapDefaultLatitude: number;
   mapDefaultLongitude: number;
+  offlineMode: boolean;
 }) {
   const container = useRef<HTMLDivElement | null>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -898,7 +1056,7 @@ function MapScreen({
   }, [units]);
 
   useEffect(() => {
-    if (!container.current || map.current) return;
+    if (offlineMode || !container.current || map.current) return;
     map.current = new maplibregl.Map({
       container: container.current,
       style: mapTileUrl || {
@@ -920,7 +1078,7 @@ function MapScreen({
       map.current?.remove();
       map.current = null;
     };
-  }, [mapDefaultLatitude, mapDefaultLongitude, mapTileUrl]);
+  }, [mapDefaultLatitude, mapDefaultLongitude, mapTileUrl, offlineMode]);
 
   useEffect(() => {
     if (!map.current) return;
@@ -1009,7 +1167,14 @@ function MapScreen({
           <h1>Mapped locations</h1>
         </div>
       </div>
-      <div ref={container} className="map-canvas" />
+      {offlineMode ? (
+        <section className="panel">
+          <h2>Offline map view</h2>
+          <p className="muted">Map tiles are unavailable offline. Cached mapped locations are listed below.</p>
+        </section>
+      ) : (
+        <div ref={container} className="map-canvas" />
+      )}
       <div className="map-list">
         {locations.map((location) => (
           <article key={location.id} className={`unit-card ${location.status}`}>
@@ -1727,9 +1892,21 @@ export default function App() {
 
   async function load(currentIdentity = identity) {
     if (!currentIdentity) return;
+    const cached = await getBootstrapSnapshot();
+    if (cached) {
+      setBootstrap(cached);
+      setTeamMembers(cached.teamMembers);
+      setCachedAt(cached.cachedAt);
+      setCachedMode(true);
+      if (!navigator.onLine) {
+        setSyncState('offline');
+        setSyncMessage('Offline - cached data.');
+        return;
+      }
+    }
     try {
       setError('');
-      const nextBootstrap = await api<Bootstrap>('/api/bootstrap', { headers: authHeaders(currentIdentity) });
+      const nextBootstrap = await api<Bootstrap>('/api/bootstrap', { headers: authHeaders(currentIdentity), timeoutMs: cached ? 3500 : 10000 });
       setBootstrap(nextBootstrap);
       setCachedMode(false);
       setCachedAt(null);
@@ -1737,7 +1914,6 @@ export default function App() {
     } catch (err) {
       const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
       if (status === 403) {
-        const cached = await getBootstrapSnapshot();
         if (cached) {
           setBootstrap(cached);
           setTeamMembers(cached.teamMembers);
@@ -1759,7 +1935,6 @@ export default function App() {
         }
         return;
       }
-      const cached = await getBootstrapSnapshot();
       if (cached) {
         setBootstrap(cached);
         setTeamMembers(cached.teamMembers);
@@ -1965,13 +2140,22 @@ export default function App() {
           onPendingChanged={() => void refreshPendingCount(identity)}
         />
       )}
-      {screen === 'coverage' && <CoverageBoard areas={bootstrap.areas} units={bootstrap.units} cachedAt={cachedAt} />}
+      {screen === 'coverage' && (
+        <CoverageBoard
+          identity={identity}
+          areas={bootstrap.areas}
+          units={bootstrap.units}
+          cachedAt={cachedAt}
+          cachedMode={cachedMode}
+        />
+      )}
       {screen === 'map' && (
         <MapScreen
           units={bootstrap.units}
           mapTileUrl={bootstrap.mapTileUrl}
           mapDefaultLatitude={bootstrap.mapDefaultLatitude}
           mapDefaultLongitude={bootstrap.mapDefaultLongitude}
+          offlineMode={cachedMode || !navigator.onLine}
         />
       )}
       {screen === 'admin' && (

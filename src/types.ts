@@ -95,6 +95,36 @@ export type AdminCheckin = {
   referral_provided: true | null;
 };
 
+export type CoverageCheckin = {
+  id: string;
+  checked_in_at: string;
+  team_member_name: string;
+  geofence_verified: boolean;
+  score_awarded: number;
+  voided_at: string | null;
+  void_reason: string | null;
+  confidential_care_provided: true | null;
+  referral_provided: true | null;
+};
+
+export type CoverageDetail = {
+  unit: UnitSummary;
+  checkins: CoverageCheckin[];
+};
+
+export type IndicatorReportRow = {
+  key: string;
+  area_id: string | null;
+  area_name: string;
+  location_id: string | null;
+  location_name: string;
+  visits: number;
+  confidential_care_count: number;
+  referral_count: number;
+  single_unit_indicator_visits: number;
+  multi_unit_indicator_visits: number;
+};
+
 export type VisitIndicatorState = {
   confidentialCareProvided: true | null;
   referralProvided: true | null;
