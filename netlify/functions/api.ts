@@ -167,7 +167,7 @@ async function getCoverage() {
         .order('name'),
       supabase
         .from('checkins')
-        .select('unit_id, checked_in_at, team_members(name)')
+        .select('unit_id, checked_in_at, team_members!checkins_team_member_id_fkey(name)')
         .is('voided_at', null)
         .order('checked_in_at', { ascending: false }),
     ]);
@@ -484,7 +484,7 @@ async function route(event: HandlerEvent) {
     endDate.setUTCMonth(endDate.getUTCMonth() + 1);
     const { data, error } = await supabase
       .from('checkins')
-      .select('unit_id, score_awarded, team_members(id, name)')
+      .select('unit_id, score_awarded, team_members!checkins_team_member_id_fkey(id, name)')
       .is('voided_at', null)
       .gte('checked_in_at', start)
       .lt('checked_in_at', endDate.toISOString());
@@ -542,7 +542,7 @@ async function route(event: HandlerEvent) {
     let query = supabase
       .from('checkins')
       .select(
-        'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, updated_at, units(id, name, unit_type, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name)), team_members(id, name)',
+        'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, updated_at, units(id, name, unit_type, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name)), team_members!checkins_team_member_id_fkey(id, name)',
       )
       .order('checked_in_at', { ascending: false })
       .limit(300);
