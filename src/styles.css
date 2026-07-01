@@ -449,12 +449,21 @@ small,
   align-items: flex-start;
 }
 
+.card-with-detail {
+  display: grid;
+  gap: 8px;
+}
+
 .unit-button {
   width: 100%;
   min-height: 0;
   color: inherit;
   font-weight: inherit;
   text-align: left;
+}
+
+.unit-button[aria-expanded='true'] {
+  box-shadow: 0 0 0 3px rgba(37, 90, 130, 0.13);
 }
 
 .unit-button:focus-visible {
@@ -548,9 +557,28 @@ small,
   margin-top: 14px;
 }
 
+.inline-detail-panel {
+  margin-top: 0;
+  border-left: 6px solid var(--brand);
+  background: rgba(255, 255, 255, 0.96);
+}
+
 .inline-title {
   position: static;
   margin: 0 0 12px;
+}
+
+.report-panel h2 {
+  margin-top: 2px;
+}
+
+.map-detail-panel {
+  gap: 12px;
+}
+
+.map-detail-list {
+  display: grid;
+  gap: 8px;
 }
 
 .report-row {

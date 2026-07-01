@@ -815,7 +815,7 @@ function CoverageBoard({
 
   async function loadReport() {
     if (cachedMode || !navigator.onLine) {
-      setReportMessage('Indicator reporting needs a live connection.');
+      setReportMessage('Referral and care reporting needs a live connection.');
       return;
     }
     setReportMessage('');
@@ -832,6 +832,74 @@ function CoverageBoard({
     } catch (err) {
       setReportMessage(err instanceof Error ? err.message : 'Unable to load indicator report.');
     }
+  }
+
+  function closeUnitDetail() {
+    setSelectedUnit(null);
+    setDetail(null);
+    setDetailMessage('');
+  }
+
+  function renderUnitDetail(unit: UnitSummary) {
+    if (selectedUnit?.id !== unit.id) return null;
+    return (
+      <section className="panel detail-panel inline-detail-panel">
+        <div className="screen-title inline-title">
+          <div>
+            <p className="eyebrow">Command detail</p>
+            <h2>{selectedUnit.name}</h2>
+          </div>
+          <button className="secondary" onClick={closeUnitDetail}>
+            Close
+          </button>
+        </div>
+        <dl className="confirmation-details">
+          <div>
+            <dt>Status</dt>
+            <dd>{statusLabel(selectedUnit)}</dd>
+          </div>
+          <div>
+            <dt>Last visit</dt>
+            <dd>{niceDate(selectedUnit.last_visit_at)}</dd>
+          </div>
+          <div>
+            <dt>Location</dt>
+            <dd>{selectedUnit.location_name ?? 'Unmapped'}</dd>
+          </div>
+          <div>
+            <dt>Visitor</dt>
+            <dd>{selectedUnit.last_visitor ?? 'None'}</dd>
+          </div>
+        </dl>
+        {detailMessage && <p className="notice">{detailMessage}</p>}
+        {detail && (
+          <div className="activity-list">
+            {detail.checkins.map((checkin) => (
+              <article key={checkin.id} className={`activity-row ${checkin.voided_at ? 'voided' : ''}`}>
+                <div className="activity-summary">
+                  <div>
+                    <strong>{niceDateTime(checkin.checked_in_at)}</strong>
+                    <small>
+                      {checkin.team_member_name} - {checkin.geofence_verified ? 'geofence verified' : 'manual/unverified'} -{' '}
+                      {checkin.score_awarded} point{checkin.score_awarded === 1 ? '' : 's'}
+                    </small>
+                  </div>
+                  {checkin.voided_at && <span className="status-pill">Voided</span>}
+                  {(checkin.confidential_care_provided || checkin.referral_provided) && (
+                    <span className="status-pill">
+                      {checkin.confidential_care_provided ? 'Care' : ''}
+                      {checkin.confidential_care_provided && checkin.referral_provided ? ' / ' : ''}
+                      {checkin.referral_provided ? 'Referral' : ''}
+                    </span>
+                  )}
+                </div>
+              </article>
+            ))}
+            {!detail.checkins.length && <p className="notice">No check-ins recorded for this command.</p>}
+          </div>
+        )}
+      </section>
+    );
   }
 
   return (
@@ -870,13 +938,14 @@ function CoverageBoard({
         <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
       </section>
       <section className="coverage-list">
-        <section className="panel">
-          <h2>Indicator reporting</h2>
+        <section className="panel report-panel">
+          <p className="eyebrow">Reports</p>
+          <h2>Referrals and confidential care</h2>
           <p className="muted">Generic location-level counts only. Multi-unit visits are not attributed to each selected command.</p>
           <div className="filters">
             <input type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
             <input type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
-            <button className="secondary" onClick={loadReport}>Load report</button>
+            <button className="secondary" onClick={loadReport}>Load referral/care report</button>
           </div>
           {reportMessage && <p className="notice">{reportMessage}</p>}
           {reportRows.length > 0 && (
@@ -917,26 +986,33 @@ function CoverageBoard({
             <div key={candidate.id} className="area-group">
               <h2>{candidate.name}</h2>
               {areaUnits.map((unit) => (
-                <button key={unit.id} className={`unit-card unit-button ${unit.status}`} onClick={() => void openUnit(unit)}>
-                  <div>
-                    <strong>{unit.name}</strong>
-                    <span>{unitTypeLabel[unit.unit_type]}</span>
-                  </div>
-                  <dl>
+                <div key={unit.id} className="card-with-detail">
+                  <button
+                    className={`unit-card unit-button ${unit.status}`}
+                    onClick={() => void openUnit(unit)}
+                    aria-expanded={selectedUnit?.id === unit.id}
+                  >
                     <div>
-                      <dt>Last</dt>
-                      <dd>{niceDate(unit.last_visit_at)}</dd>
+                      <strong>{unit.name}</strong>
+                      <span>{unitTypeLabel[unit.unit_type]}</span>
                     </div>
-                    <div>
-                      <dt>Visitor</dt>
-                      <dd>{unit.last_visitor ?? 'None'}</dd>
-                    </div>
-                    <div>
-                      <dt>Days</dt>
-                      <dd>{unit.days_since_last_visit ?? 'Never'}</dd>
-                    </div>
-                  </dl>
-                </button>
+                    <dl>
+                      <div>
+                        <dt>Last</dt>
+                        <dd>{niceDate(unit.last_visit_at)}</dd>
+                      </div>
+                      <div>
+                        <dt>Visitor</dt>
+                        <dd>{unit.last_visitor ?? 'None'}</dd>
+                      </div>
+                      <div>
+                        <dt>Days</dt>
+                        <dd>{unit.days_since_last_visit ?? 'Never'}</dd>
+                      </div>
+                    </dl>
+                  </button>
+                  {renderUnitDetail(unit)}
+                </div>
               ))}
             </div>
           );
@@ -947,69 +1023,21 @@ function CoverageBoard({
             {filtered
               .filter((unit) => !unit.area_id)
               .map((unit) => (
-                <button key={unit.id} className={`unit-card unit-button ${unit.status}`} onClick={() => void openUnit(unit)}>
-                  <strong>{unit.name}</strong>
-                  <span>No mapped location</span>
-                </button>
+                <div key={unit.id} className="card-with-detail">
+                  <button
+                    className={`unit-card unit-button ${unit.status}`}
+                    onClick={() => void openUnit(unit)}
+                    aria-expanded={selectedUnit?.id === unit.id}
+                  >
+                    <strong>{unit.name}</strong>
+                    <span>No mapped location</span>
+                  </button>
+                  {renderUnitDetail(unit)}
+                </div>
               ))}
           </div>
         )}
       </section>
-      {selectedUnit && (
-        <section className="panel detail-panel">
-          <div className="screen-title inline-title">
-            <div>
-              <p className="eyebrow">Command detail</p>
-              <h2>{selectedUnit.name}</h2>
-            </div>
-            <button className="secondary" onClick={() => setSelectedUnit(null)}>Close</button>
-          </div>
-          <dl className="confirmation-details">
-            <div>
-              <dt>Status</dt>
-              <dd>{statusLabel(selectedUnit)}</dd>
-            </div>
-            <div>
-              <dt>Last visit</dt>
-              <dd>{niceDate(selectedUnit.last_visit_at)}</dd>
-            </div>
-            <div>
-              <dt>Location</dt>
-              <dd>{selectedUnit.location_name ?? 'Unmapped'}</dd>
-            </div>
-            <div>
-              <dt>Visitor</dt>
-              <dd>{selectedUnit.last_visitor ?? 'None'}</dd>
-            </div>
-          </dl>
-          {detailMessage && <p className="notice">{detailMessage}</p>}
-          {detail && (
-            <div className="activity-list">
-              {detail.checkins.map((checkin) => (
-                <article key={checkin.id} className={`activity-row ${checkin.voided_at ? 'voided' : ''}`}>
-                  <div className="activity-summary">
-                    <div>
-                      <strong>{niceDateTime(checkin.checked_in_at)}</strong>
-                      <small>
-                        {checkin.team_member_name} - {checkin.geofence_verified ? 'geofence verified' : 'manual/unverified'} - {checkin.score_awarded} point{checkin.score_awarded === 1 ? '' : 's'}
-                      </small>
-                    </div>
-                    {checkin.voided_at && <span className="status-pill">Voided</span>}
-                    {(checkin.confidential_care_provided || checkin.referral_provided) && (
-                      <span className="status-pill">
-                        {checkin.confidential_care_provided ? 'Care' : ''}
-                        {checkin.confidential_care_provided && checkin.referral_provided ? ' / ' : ''}
-                        {checkin.referral_provided ? 'Referral' : ''}
-                      </span>
-                    )}
-                  </div>
-                </article>
-              ))}
-              {!detail.checkins.length && <p className="notice">No check-ins recorded for this command.</p>}
-            </div>
-          )}
-        </section>
-      )}
     </main>
   );
 }
@@ -1029,6 +1057,7 @@ function MapScreen({
 }) {
   const container = useRef<HTMLDivElement | null>(null);
   const map = useRef<maplibregl.Map | null>(null);
+  const [expandedLocationId, setExpandedLocationId] = useState<string | null>(null);
   const locations = useMemo(() => {
     const grouped = new Map<string, LocationSummary>();
     for (const unit of units) {
@@ -1177,13 +1206,56 @@ function MapScreen({
       )}
       <div className="map-list">
         {locations.map((location) => (
-          <article key={location.id} className={`unit-card ${location.status}`}>
-            <strong>{location.name}</strong>
-            <span>
-              {location.area_name} - {location.radius_meters}m - {location.units.length} unit
-              {location.units.length === 1 ? '' : 's'}
-            </span>
-          </article>
+          <div key={location.id} className="card-with-detail">
+            <button
+              className={`unit-card unit-button ${location.status}`}
+              onClick={() => setExpandedLocationId((current) => (current === location.id ? null : location.id))}
+              aria-expanded={expandedLocationId === location.id}
+            >
+              <strong>{location.name}</strong>
+              <span>
+                {location.area_name} - {location.radius_meters}m - {location.units.length} unit
+                {location.units.length === 1 ? '' : 's'}
+              </span>
+            </button>
+            {expandedLocationId === location.id && (
+              <section className="panel detail-panel inline-detail-panel map-detail-panel">
+                <div className="screen-title inline-title">
+                  <div>
+                    <p className="eyebrow">Mapped location</p>
+                    <h2>{location.name}</h2>
+                  </div>
+                  <button className="secondary" onClick={() => setExpandedLocationId(null)}>
+                    Close
+                  </button>
+                </div>
+                <dl className="confirmation-details">
+                  <div>
+                    <dt>Area</dt>
+                    <dd>{location.area_name || 'Unassigned'}</dd>
+                  </div>
+                  <div>
+                    <dt>Radius</dt>
+                    <dd>{location.radius_meters}m</dd>
+                  </div>
+                </dl>
+                <div className="map-detail-list">
+                  {location.units.map((unit) => (
+                    <article key={unit.id} className={`activity-row ${unit.status}`}>
+                      <div className="activity-summary">
+                        <div>
+                          <strong>{unit.name}</strong>
+                          <small>
+                            {unitTypeLabel[unit.unit_type]} - {statusLabel(unit)} - Last visit {niceDate(unit.last_visit_at)}
+                          </small>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
         ))}
       </div>
     </main>
