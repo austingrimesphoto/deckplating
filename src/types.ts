@@ -51,6 +51,9 @@ export type Bootstrap = {
   teamMembers: TeamMember[];
   units: UnitSummary[];
   mapTileUrl: string;
+  mapDefaultLatitude: number;
+  mapDefaultLongitude: number;
+  installationName: string;
 };
 
 export type Identity = {

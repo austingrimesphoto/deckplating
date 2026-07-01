@@ -80,6 +80,12 @@ const worstStatus = (statuses: Status[]): Status => {
   return statuses.sort((a, b) => rank[b] - rank[a])[0] ?? 'gray';
 };
 
+const envNumber = (value: string | undefined, fallback: number) => {
+  if (value == null || value.trim() === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 const requireAdmin = (event: HandlerEvent) => {
   const header = event.headers.authorization ?? event.headers.Authorization;
   const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
@@ -308,6 +314,9 @@ async function route(event: HandlerEvent) {
       teamMembers: teamMembers ?? [],
       units: coverage.units,
       mapTileUrl: (process.env.MAP_TILE_URL ?? '').replace('{key}', process.env.MAP_TILE_KEY ?? ''),
+      mapDefaultLatitude: envNumber(process.env.MAP_DEFAULT_LATITUDE, 24.57),
+      mapDefaultLongitude: envNumber(process.env.MAP_DEFAULT_LONGITUDE, -81.78),
+      installationName: process.env.INSTALLATION_NAME ?? 'Naval Air Station Key West',
     });
   }
 

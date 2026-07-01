@@ -33,6 +33,9 @@ async function main() {
   const supabaseUrl = await ask('Supabase Project URL');
   const serviceRoleKey = await ask('Supabase service_role key');
   const adminPassphrase = await ask('Admin passphrase');
+  const installationName = await ask('Installation or unit name', 'Naval Air Station Key West');
+  const mapDefaultLatitude = await ask('Default map latitude', '24.57');
+  const mapDefaultLongitude = await ask('Default map longitude', '-81.78');
   const mapTileUrl = await ask('Map tile/style URL (optional)');
   const mapTileKey = mapTileUrl ? await ask('Map tile key (optional)') : '';
   const sessionSecret = crypto.randomBytes(32).toString('hex');
@@ -44,6 +47,9 @@ async function main() {
     `ADMIN_SESSION_SECRET=${sessionSecret}`,
     `MAP_TILE_URL=${mapTileUrl}`,
     `MAP_TILE_KEY=${mapTileKey}`,
+    `MAP_DEFAULT_LATITUDE=${mapDefaultLatitude}`,
+    `MAP_DEFAULT_LONGITUDE=${mapDefaultLongitude}`,
+    `INSTALLATION_NAME=${installationName}`,
     '',
   ].join('\n');
 

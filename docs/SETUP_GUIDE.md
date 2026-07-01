@@ -100,9 +100,12 @@ In the wizard:
 1. Paste the Supabase Project URL.
 2. Paste the Supabase `service_role` key.
 3. Type the admin passphrase you want for your Admin tab.
-4. Leave map fields blank unless you already have a map provider key.
-5. Click **Generate Netlify Values**.
-6. Click **Copy All**.
+4. Type your installation or unit name.
+5. Click **Look Up Map Center**.
+6. Confirm the latitude and longitude look reasonable.
+7. Leave map tile fields blank unless you already have a map provider key.
+8. Click **Generate Netlify Values**.
+9. Click **Copy All**.
 
 Keep this copied text ready. You will paste it into Netlify.
 
@@ -232,3 +235,4 @@ If the map does not show:
 
 - Basic OpenStreetMap tiles should still work.
 - If using a paid map provider, check `MAP_TILE_URL` and `MAP_TILE_KEY`.
+- If the map opens in the wrong area, check `MAP_DEFAULT_LATITUDE`, `MAP_DEFAULT_LONGITUDE`, and `INSTALLATION_NAME` in Netlify.

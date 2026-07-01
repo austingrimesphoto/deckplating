@@ -410,7 +410,17 @@ function CoverageBoard({ areas, units }: { areas: Area[]; units: UnitSummary[] }
   );
 }
 
-function MapScreen({ units, mapTileUrl }: { units: UnitSummary[]; mapTileUrl: string }) {
+function MapScreen({
+  units,
+  mapTileUrl,
+  mapDefaultLatitude,
+  mapDefaultLongitude,
+}: {
+  units: UnitSummary[];
+  mapTileUrl: string;
+  mapDefaultLatitude: number;
+  mapDefaultLongitude: number;
+}) {
   const container = useRef<HTMLDivElement | null>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const locations = useMemo(() => {
@@ -455,14 +465,14 @@ function MapScreen({ units, mapTileUrl }: { units: UnitSummary[]; mapTileUrl: st
         },
         layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
       },
-      center: [-81.78, 24.57],
+      center: [mapDefaultLongitude, mapDefaultLatitude],
       zoom: 11,
     });
     return () => {
       map.current?.remove();
       map.current = null;
     };
-  }, [mapTileUrl]);
+  }, [mapDefaultLatitude, mapDefaultLongitude, mapTileUrl]);
 
   useEffect(() => {
     if (!map.current) return;
@@ -662,12 +672,26 @@ function AdminMapPicker({
   return <div ref={container} className="admin-map" />;
 }
 
-function AdminScreen({ refresh }: { refresh: () => void }) {
+function AdminScreen({
+  refresh,
+  mapDefaultLatitude,
+  mapDefaultLongitude,
+}: {
+  refresh: () => void;
+  mapDefaultLatitude: number;
+  mapDefaultLongitude: number;
+}) {
   const [token, setToken] = useState(sessionStorage.getItem('deckplate.admin') ?? '');
   const [passphrase, setPassphrase] = useState('');
   const [data, setData] = useState<AdminData | null>(null);
   const [message, setMessage] = useState('');
-  const [locationForm, setLocationForm] = useState({ name: '', area_id: '', latitude: '24.57', longitude: '-81.78', radius_meters: '120' });
+  const [locationForm, setLocationForm] = useState({
+    name: '',
+    area_id: '',
+    latitude: String(mapDefaultLatitude),
+    longitude: String(mapDefaultLongitude),
+    radius_meters: '120',
+  });
   const [unitForm, setUnitForm] = useState({ name: '', unit_type: 'department' as UnitType, visit_interval_days: '30', location_id: '' });
   const [memberForm, setMemberForm] = useState({ name: '', role: '' });
   const [attachUnitIds, setAttachUnitIds] = useState<string[]>([]);
@@ -1049,8 +1073,21 @@ export default function App() {
     <>
       {screen === 'checkin' && <CheckInScreen identity={identity} refresh={load} />}
       {screen === 'coverage' && <CoverageBoard areas={bootstrap.areas} units={bootstrap.units} />}
-      {screen === 'map' && <MapScreen units={bootstrap.units} mapTileUrl={bootstrap.mapTileUrl} />}
-      {screen === 'admin' && <AdminScreen refresh={load} />}
+      {screen === 'map' && (
+        <MapScreen
+          units={bootstrap.units}
+          mapTileUrl={bootstrap.mapTileUrl}
+          mapDefaultLatitude={bootstrap.mapDefaultLatitude}
+          mapDefaultLongitude={bootstrap.mapDefaultLongitude}
+        />
+      )}
+      {screen === 'admin' && (
+        <AdminScreen
+          refresh={load}
+          mapDefaultLatitude={bootstrap.mapDefaultLatitude}
+          mapDefaultLongitude={bootstrap.mapDefaultLongitude}
+        />
+      )}
       {screen === 'scoreboard' && <Scoreboard identity={identity} />}
       {screen === 'settings' && <Settings identity={identity} members={bootstrap.teamMembers} onIdentity={handleIdentity} />}
       <nav className="bottom-nav">

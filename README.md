@@ -122,11 +122,16 @@ ADMIN_PASSPHRASE_HASH
 ADMIN_SESSION_SECRET
 MAP_TILE_URL
 MAP_TILE_KEY
+MAP_DEFAULT_LATITUDE
+MAP_DEFAULT_LONGITUDE
+INSTALLATION_NAME
 ```
 
 `npm run setup` generates `ADMIN_PASSPHRASE_HASH` and `ADMIN_SESSION_SECRET` for local use. Use the same values in Netlify.
 
 `MAP_TILE_URL` and `MAP_TILE_KEY` may be blank for basic use.
+
+`MAP_DEFAULT_LATITUDE`, `MAP_DEFAULT_LONGITUDE`, and `INSTALLATION_NAME` set the first map center for a new installation.
 
 ## Supabase Setup
 

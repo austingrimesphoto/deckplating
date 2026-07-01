@@ -260,6 +260,15 @@
         background: #fffaf0;
       }
 
+      .lookup-result {
+        display: none;
+        padding: 12px;
+        border-radius: 8px;
+        background: #eef8f0;
+        color: var(--green);
+        font-weight: 800;
+      }
+
       @media (max-width: 860px) {
         .app-shell {
           grid-template-columns: 1fr;
@@ -387,6 +396,22 @@ Who referred me:</textarea>
               Admin passphrase
               <input id="adminPassphrase" placeholder="The passphrase admins type in the Admin tab" />
             </label>
+            <label>
+              Installation or unit
+              <input id="installationName" placeholder="Naval Air Station Key West" />
+            </label>
+            <button id="lookupInstallation" class="secondary" type="button">Look Up Map Center</button>
+            <p id="lookupResult" class="lookup-result"></p>
+            <div class="grid-two">
+              <label>
+                Default map latitude
+                <input id="mapDefaultLatitude" placeholder="24.57" />
+              </label>
+              <label>
+                Default map longitude
+                <input id="mapDefaultLongitude" placeholder="-81.78" />
+              </label>
+            </div>
             <label>
               Map tile/style URL, optional
               <input id="mapTileUrl" placeholder="Leave blank for basic map tiles" />
@@ -637,11 +662,14 @@ on conflict (name) do update set
         const supabaseUrl = field('supabaseUrl').value.trim();
         const serviceRoleKey = field('serviceRoleKey').value.trim();
         const adminPassphrase = field('adminPassphrase').value;
+        const installationName = field('installationName').value.trim();
+        const mapDefaultLatitude = field('mapDefaultLatitude').value.trim();
+        const mapDefaultLongitude = field('mapDefaultLongitude').value.trim();
         const mapTileUrl = field('mapTileUrl').value.trim();
         const mapTileKey = field('mapTileKey').value.trim();
 
-        if (!supabaseUrl || !serviceRoleKey || !adminPassphrase) {
-          alert('Fill in Supabase Project URL, service_role key, and admin passphrase.');
+        if (!supabaseUrl || !serviceRoleKey || !adminPassphrase || !installationName || !mapDefaultLatitude || !mapDefaultLongitude) {
+          alert('Fill in Supabase Project URL, service_role key, admin passphrase, installation name, latitude, and longitude.');
           return;
         }
 
@@ -652,8 +680,48 @@ on conflict (name) do update set
           `ADMIN_SESSION_SECRET=${randomHex(32)}`,
           `MAP_TILE_URL=${mapTileUrl}`,
           `MAP_TILE_KEY=${mapTileKey}`,
+          `MAP_DEFAULT_LATITUDE=${mapDefaultLatitude}`,
+          `MAP_DEFAULT_LONGITUDE=${mapDefaultLongitude}`,
+          `INSTALLATION_NAME=${installationName}`,
         ];
         field('envOutput').value = lines.join('\n');
+      });
+
+      field('lookupInstallation').addEventListener('click', async () => {
+        const installationName = field('installationName').value.trim();
+        const result = field('lookupResult');
+        if (!installationName) {
+          alert('Type an installation or unit name first.');
+          return;
+        }
+
+        result.style.display = 'block';
+        result.textContent = 'Looking up map center...';
+
+        try {
+          const params = new URLSearchParams({
+            q: installationName,
+            format: 'jsonv2',
+            limit: '1',
+            countrycodes: 'us',
+          });
+          const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+            headers: { accept: 'application/json' },
+          });
+          if (!response.ok) throw new Error('Lookup failed.');
+          const matches = await response.json();
+          const match = matches[0];
+          if (!match) {
+            result.textContent = 'No match found. Enter latitude and longitude manually.';
+            return;
+          }
+
+          field('mapDefaultLatitude').value = Number(match.lat).toFixed(6);
+          field('mapDefaultLongitude').value = Number(match.lon).toFixed(6);
+          result.textContent = `Found: ${match.display_name}`;
+        } catch {
+          result.textContent = 'Lookup failed. Enter latitude and longitude manually.';
+        }
       });
     </script>
   </body>

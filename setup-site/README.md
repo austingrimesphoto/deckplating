@@ -11,6 +11,7 @@ It can be deployed as a public Netlify site while the main Deckplate Coverage ap
 - Provides a copyable private-template access request.
 - Provides copyable Supabase SQL blocks.
 - Generates Netlify environment variables in the browser.
+- Looks up an installation/unit map center and includes it in generated variables.
 - Gives a deployment and launch checklist.
 
 ## What It Does Not Do Yet
@@ -22,6 +23,16 @@ It can be deployed as a public Netlify site while the main Deckplate Coverage ap
 - It does not create Netlify sites automatically.
 
 Those steps would require a hosted app with GitHub, Supabase, and Netlify API/OAuth integrations.
+
+## What The App Owner Needs To Provide
+
+To host this as the public setup path, provide:
+
+- A public Netlify site for this folder.
+- The GitHub template repository URL.
+- The process for requesting access to the private template.
+- A support email or contact method.
+- Optional: a custom domain such as `setup.deckplatecoverage.org`.
 
 ## Deploy
 

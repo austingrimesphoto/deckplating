@@ -31,6 +31,7 @@ Check:
 - The app builds successfully.
 - `README.md` is current.
 - `docs/SETUP_GUIDE.md` is current.
+- `setup-site/` is current if setup instructions changed.
 - Any database changes are documented.
 - Any new environment variables are documented.
 
