@@ -305,12 +305,11 @@
         </div>
         <nav class="steps" aria-label="Setup steps">
           <a class="step-link" href="#accounts"><span>1</span>Accounts</a>
-          <a class="step-link" href="#access"><span>2</span>Template Access</a>
-          <a class="step-link" href="#copy"><span>3</span>App Copy</a>
-          <a class="step-link" href="#database"><span>4</span>Database</a>
-          <a class="step-link" href="#variables"><span>5</span>App Settings</a>
-          <a class="step-link" href="#deploy"><span>6</span>Deploy</a>
-          <a class="step-link" href="#launch"><span>7</span>Launch</a>
+          <a class="step-link" href="#copy"><span>2</span>App Copy</a>
+          <a class="step-link" href="#database"><span>3</span>Database</a>
+          <a class="step-link" href="#variables"><span>4</span>App Settings</a>
+          <a class="step-link" href="#deploy"><span>5</span>Deploy</a>
+          <a class="step-link" href="#launch"><span>6</span>Launch</a>
         </nav>
       </aside>
 
@@ -322,7 +321,7 @@
             This page walks you through making your own Deckplate Coverage app. Keep this tab open. Open each button in a new tab, finish that task, then come back here for the next step.
           </p>
           <div class="warning">
-            Do not skip ahead. You need accounts first, then template access, then the database, then Netlify.
+            Do not skip ahead. You need accounts first, then your app copy, then the database, then Netlify.
           </div>
         </section>
 
@@ -348,31 +347,11 @@
           </div>
         </section>
 
-        <section id="access" class="panel">
-          <p class="eyebrow">Step 2</p>
-          <h2>Get access to the private Deckplate template</h2>
-          <p>
-            The app template is private. If you were already granted access, move to Step 3. If not, copy this request and send it to the Deckplate Coverage owner.
-          </p>
-          <textarea id="accessRequest" readonly>Requesting access to the Deckplate Coverage private template.
-
-GitHub username:
-Command/RMT:
-Work email:
-Who referred me:</textarea>
-          <button type="button" data-copy="accessRequest">Copy Access Request</button>
-          <p class="notice">Copied.</p>
-          <div class="checklist">
-            <label><input type="checkbox" /> I sent my GitHub username for access</label>
-            <label><input type="checkbox" /> The owner confirmed I have access</label>
-          </div>
-        </section>
-
         <section id="copy" class="panel">
-          <p class="eyebrow">Step 3</p>
-          <h2>Make your own private copy of the app</h2>
+          <p class="eyebrow">Step 2</p>
+          <h2>Make your own copy of the app</h2>
           <p>
-            This gives your RMT its own copy of the code. Your data will go in your own Supabase database later.
+            This gives your RMT its own copy of the code. Keep your copy private unless your command intentionally wants it public.
           </p>
           <a class="button" href="https://github.com/austingrimesphoto/deckplate-coverage/generate" target="_blank" rel="noreferrer">Create My App Copy</a>
           <div class="checklist">
@@ -383,12 +362,12 @@ Who referred me:</textarea>
             <label><input type="checkbox" /> I clicked Create repository</label>
           </div>
           <div class="warning">
-            If the button shows a 404 page, you do not have access yet. Go back to Step 2.
+            If GitHub asks you to sign in, sign in and continue.
           </div>
         </section>
 
         <section id="database" class="panel">
-          <p class="eyebrow">Step 4</p>
+          <p class="eyebrow">Step 3</p>
           <h2>Create your Supabase database</h2>
           <p>
             Open Supabase, create a new project, then run the two SQL blocks below. This creates your tables and starter data.
@@ -420,7 +399,7 @@ Who referred me:</textarea>
         </section>
 
         <section id="variables" class="panel">
-          <p class="eyebrow">Step 5</p>
+          <p class="eyebrow">Step 4</p>
           <h2>Generate the secret settings for Netlify</h2>
           <p>
             Supabase gives you two values Netlify needs. Paste them here. This runs only in your browser and does not send values anywhere.
@@ -479,17 +458,17 @@ Who referred me:</textarea>
         </section>
 
         <section id="deploy" class="panel">
-          <p class="eyebrow">Step 6</p>
+          <p class="eyebrow">Step 5</p>
           <h2>Deploy your app to Netlify</h2>
           <p>
-            Netlify turns your GitHub copy into a live website. Import your GitHub repository, add the values from Step 5, then deploy.
+            Netlify turns your GitHub copy into a live website. Import your GitHub repository, add the values from Step 4, then deploy.
           </p>
           <a class="button secondary" href="https://app.netlify.com/start" target="_blank" rel="noreferrer">Open Netlify Import</a>
           <div class="checklist">
             <label><input type="checkbox" /> I chose Import an existing project</label>
             <label><input type="checkbox" /> I selected GitHub</label>
             <label><input type="checkbox" /> I selected my Deckplate Coverage repository</label>
-            <label><input type="checkbox" /> I added all environment variables from Step 5</label>
+            <label><input type="checkbox" /> I added all environment variables from Step 4</label>
             <label><input type="checkbox" /> Build command is `npm run build`</label>
             <label><input type="checkbox" /> Publish directory is `dist`</label>
             <label><input type="checkbox" /> I clicked Deploy site</label>
@@ -497,7 +476,7 @@ Who referred me:</textarea>
         </section>
 
         <section id="launch" class="panel">
-          <p class="eyebrow">Step 7</p>
+          <p class="eyebrow">Step 6</p>
           <h2>Launch and finish setup</h2>
           <p>
             When Netlify says the deploy is published, open the site URL. Then finish your real local setup inside the app.

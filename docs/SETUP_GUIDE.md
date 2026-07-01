@@ -30,11 +30,10 @@ Use this path if you do not want to touch Terminal. If the project owner has giv
 1. Go to the Deckplate Coverage template:
    <https://github.com/austingrimesphoto/deckplate-coverage/generate>
 2. If GitHub asks you to sign in, sign in.
-3. If GitHub shows **404** or says you do not have access, ask the Deckplate Coverage owner to add your GitHub username.
-4. Under **Owner**, choose your command/team account if available.
-5. Name the repository something like `deckplate-coverage`.
-6. Choose **Private**.
-7. Click **Create repository**.
+3. Under **Owner**, choose your command/team account if available.
+4. Name the repository something like `deckplate-coverage`.
+5. Choose **Private** unless your command intentionally wants the copy public.
+6. Click **Create repository**.
 
 Important: your copy will not automatically receive future updates. That keeps your local tool stable and under your control. Check the original repository's releases when you want to see whether a newer version is available.
 

@@ -9,9 +9,8 @@ It is designed to be copied by each RMT. Every team should run its own Netlify s
 Preferred beta distribution path:
 
 1. Send users to the public setup site.
-2. They request access to the private template.
-3. They create their own private app copy.
-4. They follow the hosted setup wizard.
+2. They create their own app copy from the public template.
+3. They follow the hosted setup wizard.
 
 The setup site source lives in:
 
@@ -40,8 +39,6 @@ https://github.com/austingrimesphoto/deckplate-coverage
 Open the README and follow docs/SETUP_GUIDE.md.
 Click "Use this template" to create your own copy.
 ```
-
-Because this repository is private, they need GitHub access before the link works. If they see a 404, add their GitHub username to the approved access list.
 
 The owner of this repository should enable GitHub's template setting:
 
