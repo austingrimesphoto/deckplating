@@ -304,34 +304,55 @@
           </div>
         </div>
         <nav class="steps" aria-label="Setup steps">
-          <a class="step-link" href="#access"><span>1</span>Access</a>
-          <a class="step-link" href="#accounts"><span>2</span>Accounts</a>
-          <a class="step-link" href="#database"><span>3</span>Database</a>
-          <a class="step-link" href="#variables"><span>4</span>Variables</a>
-          <a class="step-link" href="#deploy"><span>5</span>Deploy</a>
-          <a class="step-link" href="#launch"><span>6</span>Launch</a>
+          <a class="step-link" href="#accounts"><span>1</span>Accounts</a>
+          <a class="step-link" href="#access"><span>2</span>Template Access</a>
+          <a class="step-link" href="#copy"><span>3</span>App Copy</a>
+          <a class="step-link" href="#database"><span>4</span>Database</a>
+          <a class="step-link" href="#variables"><span>5</span>App Settings</a>
+          <a class="step-link" href="#deploy"><span>6</span>Deploy</a>
+          <a class="step-link" href="#launch"><span>7</span>Launch</a>
         </nav>
       </aside>
 
       <main>
         <section class="hero">
           <p class="eyebrow">Self-hosted RMT setup</p>
-          <h1>Stand up your own Deckplate Coverage app.</h1>
+          <h1>Start here. Do these steps in order.</h1>
           <p class="muted">
-            Follow the steps in order. This wizard keeps the setup work in one place and generates the values Netlify needs.
+            This page walks you through making your own Deckplate Coverage app. Keep this tab open. Open each button in a new tab, finish that task, then come back here for the next step.
           </p>
-          <div class="actions">
-            <a class="button" href="https://github.com/austingrimesphoto/deckplate-coverage/generate" target="_blank" rel="noreferrer">Use Template</a>
-            <a class="button secondary" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Supabase</a>
-            <a class="button secondary" href="https://app.netlify.com/start" target="_blank" rel="noreferrer">Open Netlify</a>
+          <div class="warning">
+            Do not skip ahead. You need accounts first, then template access, then the database, then Netlify.
+          </div>
+        </section>
+
+        <section id="accounts" class="panel">
+          <p class="eyebrow">Step 1</p>
+          <h2>Create or open your accounts</h2>
+          <p>
+            You need these three accounts before anything else will work. Use command-owned accounts if your local policy allows it.
+          </p>
+          <div class="grid-two">
+            <a class="button secondary" href="https://github.com/signup" target="_blank" rel="noreferrer">Create GitHub Account</a>
+            <a class="button secondary" href="https://supabase.com/dashboard/sign-up" target="_blank" rel="noreferrer">Create Supabase Account</a>
+            <a class="button secondary" href="https://app.netlify.com/signup" target="_blank" rel="noreferrer">Create Netlify Account</a>
+            <a class="button secondary" href="https://github.com/login" target="_blank" rel="noreferrer">Open GitHub Login</a>
+          </div>
+          <div class="checklist">
+            <label><input type="checkbox" /> I can sign in to GitHub</label>
+            <label><input type="checkbox" /> I can sign in to Supabase</label>
+            <label><input type="checkbox" /> I can sign in to Netlify</label>
+          </div>
+          <div class="warning">
+            Save these logins somewhere approved. Do not make the whole setup depend on one person’s personal account.
           </div>
         </section>
 
         <section id="access" class="panel">
-          <p class="eyebrow">Step 1</p>
-          <h2>Get access to the private template</h2>
+          <p class="eyebrow">Step 2</p>
+          <h2>Get access to the private Deckplate template</h2>
           <p>
-            If the template link opens, continue. If GitHub shows a 404, send this request to the Deckplate Coverage owner.
+            The app template is private. If you were already granted access, move to Step 3. If not, copy this request and send it to the Deckplate Coverage owner.
           </p>
           <textarea id="accessRequest" readonly>Requesting access to the Deckplate Coverage private template.
 
@@ -341,47 +362,68 @@ Work email:
 Who referred me:</textarea>
           <button type="button" data-copy="accessRequest">Copy Access Request</button>
           <p class="notice">Copied.</p>
+          <div class="checklist">
+            <label><input type="checkbox" /> I sent my GitHub username for access</label>
+            <label><input type="checkbox" /> The owner confirmed I have access</label>
+          </div>
         </section>
 
-        <section id="accounts" class="panel">
-          <p class="eyebrow">Step 2</p>
-          <h2>Create or open accounts</h2>
-          <div class="grid-two">
-            <a class="button secondary" href="https://github.com/signup" target="_blank" rel="noreferrer">Create GitHub Account</a>
-            <a class="button secondary" href="https://github.com/austingrimesphoto/deckplate-coverage/generate" target="_blank" rel="noreferrer">Create App Copy</a>
-            <a class="button secondary" href="https://supabase.com/dashboard/sign-up" target="_blank" rel="noreferrer">Create Supabase Account</a>
-            <a class="button secondary" href="https://app.netlify.com/signup" target="_blank" rel="noreferrer">Create Netlify Account</a>
+        <section id="copy" class="panel">
+          <p class="eyebrow">Step 3</p>
+          <h2>Make your own private copy of the app</h2>
+          <p>
+            This gives your RMT its own copy of the code. Your data will go in your own Supabase database later.
+          </p>
+          <a class="button" href="https://github.com/austingrimesphoto/deckplate-coverage/generate" target="_blank" rel="noreferrer">Create My App Copy</a>
+          <div class="checklist">
+            <label><input type="checkbox" /> GitHub opened the template page</label>
+            <label><input type="checkbox" /> I chose the correct owner or command account</label>
+            <label><input type="checkbox" /> I named the repository `deckplate-coverage`</label>
+            <label><input type="checkbox" /> I selected Private</label>
+            <label><input type="checkbox" /> I clicked Create repository</label>
           </div>
           <div class="warning">
-            Use command-owned accounts when possible. The app should survive PCS, PRD, and turnover.
+            If the button shows a 404 page, you do not have access yet. Go back to Step 2.
           </div>
         </section>
 
         <section id="database" class="panel">
-          <p class="eyebrow">Step 3</p>
-          <h2>Create the Supabase database</h2>
+          <p class="eyebrow">Step 4</p>
+          <h2>Create your Supabase database</h2>
           <p>
-            In Supabase, create a project, open SQL Editor, and run these two blocks in order.
+            Open Supabase, create a new project, then run the two SQL blocks below. This creates your tables and starter data.
           </p>
+          <a class="button secondary" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Supabase Projects</a>
+          <div class="checklist">
+            <label><input type="checkbox" /> I clicked New project in Supabase</label>
+            <label><input type="checkbox" /> I named the project `deckplate-coverage`</label>
+            <label><input type="checkbox" /> I saved the database password somewhere approved</label>
+            <label><input type="checkbox" /> I waited for Supabase to finish creating the project</label>
+            <label><input type="checkbox" /> I opened SQL Editor</label>
+          </div>
           <label>
-            First SQL block
+            First SQL block: create the database tables
             <textarea id="schemaSql" readonly></textarea>
           </label>
           <button type="button" data-copy="schemaSql">Copy First SQL Block</button>
           <p class="notice">Copied.</p>
           <label>
-            Second SQL block
+            Second SQL block: load starter areas and units
             <textarea id="seedSql" readonly></textarea>
           </label>
           <button type="button" data-copy="seedSql">Copy Second SQL Block</button>
           <p class="notice">Copied.</p>
+          <div class="checklist">
+            <label><input type="checkbox" /> I ran the first SQL block</label>
+            <label><input type="checkbox" /> I ran the second SQL block</label>
+          </div>
         </section>
 
         <section id="variables" class="panel">
-          <p class="eyebrow">Step 4</p>
-          <h2>Generate Netlify environment variables</h2>
+          <p class="eyebrow">Step 5</p>
+          <h2>Generate the secret settings for Netlify</h2>
           <p>
-            Paste your Supabase values here. This runs only in your browser and does not send values anywhere.
+            Supabase gives you two values Netlify needs. Paste them here. This runs only in your browser and does not send values anywhere.
           </p>
           <div class="fields">
             <label>
@@ -392,13 +434,16 @@ Who referred me:</textarea>
               Supabase service_role key
               <input id="serviceRoleKey" placeholder="Paste the service_role key from Supabase" />
             </label>
+            <div class="warning">
+              In Supabase, find these under Project Settings, then API. Use the service_role key, not the anon key.
+            </div>
             <label>
               Admin passphrase
               <input id="adminPassphrase" placeholder="The passphrase admins type in the Admin tab" />
             </label>
             <label>
               Installation or unit
-              <input id="installationName" placeholder="Naval Air Station Key West" />
+              <input id="installationName" placeholder="Example: Marine Corps Base Camp Lejeune" />
             </label>
             <button id="lookupInstallation" class="secondary" type="button">Look Up Map Center</button>
             <p id="lookupResult" class="lookup-result"></p>
@@ -427,27 +472,36 @@ Who referred me:</textarea>
             </label>
             <button type="button" data-copy="envOutput">Copy Netlify Values</button>
             <p class="notice">Copied.</p>
+            <div class="warning">
+              Keep this copied text ready. You will paste each line into Netlify in Step 6.
+            </div>
           </div>
         </section>
 
         <section id="deploy" class="panel">
-          <p class="eyebrow">Step 5</p>
-          <h2>Deploy to Netlify</h2>
+          <p class="eyebrow">Step 6</p>
+          <h2>Deploy your app to Netlify</h2>
           <p>
-            Import your GitHub copy into Netlify, add the environment variables from Step 4, then trigger a deploy.
+            Netlify turns your GitHub copy into a live website. Import your GitHub repository, add the values from Step 5, then deploy.
           </p>
+          <a class="button secondary" href="https://app.netlify.com/start" target="_blank" rel="noreferrer">Open Netlify Import</a>
           <div class="checklist">
-            <label><input type="checkbox" /> Imported my GitHub copy into Netlify</label>
-            <label><input type="checkbox" /> Added all environment variables</label>
-            <label><input type="checkbox" /> Confirmed build command is npm run build</label>
-            <label><input type="checkbox" /> Confirmed publish directory is dist</label>
-            <label><input type="checkbox" /> Triggered a deploy</label>
+            <label><input type="checkbox" /> I chose Import an existing project</label>
+            <label><input type="checkbox" /> I selected GitHub</label>
+            <label><input type="checkbox" /> I selected my Deckplate Coverage repository</label>
+            <label><input type="checkbox" /> I added all environment variables from Step 5</label>
+            <label><input type="checkbox" /> Build command is `npm run build`</label>
+            <label><input type="checkbox" /> Publish directory is `dist`</label>
+            <label><input type="checkbox" /> I clicked Deploy site</label>
           </div>
         </section>
 
         <section id="launch" class="panel">
-          <p class="eyebrow">Step 6</p>
+          <p class="eyebrow">Step 7</p>
           <h2>Launch and finish setup</h2>
+          <p>
+            When Netlify says the deploy is published, open the site URL. Then finish your real local setup inside the app.
+          </p>
           <div class="checklist">
             <label><input type="checkbox" /> Opened the Netlify site URL</label>
             <label><input type="checkbox" /> Selected my name and created a 4-digit PIN</label>
