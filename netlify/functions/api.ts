@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
 
 type Status = 'green' | 'yellow' | 'red' | 'gray';
+type FixedVoidReason = 'accidental' | 'wrong_unit' | 'duplicate' | 'incorrect_datetime' | 'incorrect_member';
 
 const supabaseUrl = process.env.SUPABASE_URL ?? '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
@@ -86,6 +87,14 @@ const envNumber = (value: string | undefined, fallback: number) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const fixedVoidReasons = new Set<FixedVoidReason>([
+  'accidental',
+  'wrong_unit',
+  'duplicate',
+  'incorrect_datetime',
+  'incorrect_member',
+]);
+
 const requireAdmin = (event: HandlerEvent) => {
   const header = event.headers.authorization ?? event.headers.Authorization;
   const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
@@ -159,6 +168,7 @@ async function getCoverage() {
       supabase
         .from('checkins')
         .select('unit_id, checked_in_at, team_members(name)')
+        .is('voided_at', null)
         .order('checked_in_at', { ascending: false }),
     ]);
 
@@ -393,6 +403,7 @@ async function route(event: HandlerEvent) {
         .from('checkins')
         .select('id')
         .eq('unit_id', unitId)
+        .is('voided_at', null)
         .gte('checked_in_at', fourteenDaysAgo)
         .limit(1);
 
@@ -424,6 +435,42 @@ async function route(event: HandlerEvent) {
     return json(200, { checkins: results, totalScore: results.reduce((sum, row) => sum + row.score_awarded, 0) });
   }
 
+  if (method === 'POST' && path === '/checkins/undo') {
+    const body = readBody<{ teamMemberId: string; checkinIds: string[] }>(event);
+    const user = await requireUser(event);
+    if (!user || user.teamMemberId !== body.teamMemberId) return json(403, { error: 'Authentication required.' });
+    if (!Array.isArray(body.checkinIds) || body.checkinIds.length === 0) {
+      return json(400, { error: 'checkinIds are required.' });
+    }
+
+    const { data: owned, error: ownedError } = await supabase
+      .from('checkins')
+      .select('id')
+      .in('id', body.checkinIds)
+      .eq('team_member_id', user.teamMemberId)
+      .is('voided_at', null);
+    if (ownedError) return json(500, { error: ownedError.message });
+    if ((owned ?? []).length !== body.checkinIds.length) {
+      return json(403, { error: 'Only your own active check-ins can be undone.' });
+    }
+
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('checkins')
+      .update({
+        voided_at: now,
+        voided_by_team_member_id: user.teamMemberId,
+        void_reason: 'immediate_undo',
+        score_awarded: 0,
+        updated_by_team_member_id: user.teamMemberId,
+      })
+      .in('id', body.checkinIds)
+      .eq('team_member_id', user.teamMemberId)
+      .is('voided_at', null);
+    if (error) return json(500, { error: error.message });
+    return json(200, { undone: body.checkinIds.length, coverage: await getCoverage() });
+  }
+
   if (method === 'GET' && path === '/dashboard') {
     if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
     return json(200, await getCoverage());
@@ -438,6 +485,7 @@ async function route(event: HandlerEvent) {
     const { data, error } = await supabase
       .from('checkins')
       .select('unit_id, score_awarded, team_members(id, name)')
+      .is('voided_at', null)
       .gte('checked_in_at', start)
       .lt('checked_in_at', endDate.toISOString());
     if (error) return json(500, { error: error.message });
@@ -487,6 +535,115 @@ async function route(event: HandlerEvent) {
     const error = areas.error ?? locations.error ?? units.error ?? members.error;
     if (error) return json(500, { error: error.message });
     return json(200, { areas: areas.data, locations: locations.data, units: units.data, teamMembers: members.data });
+  }
+
+  if (method === 'GET' && path === '/admin/checkins') {
+    const params = event.queryStringParameters ?? {};
+    let query = supabase
+      .from('checkins')
+      .select(
+        'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, updated_at, units(id, name, unit_type, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name)), team_members(id, name)',
+      )
+      .order('checked_in_at', { ascending: false })
+      .limit(300);
+
+    if (params.from) query = query.gte('checked_in_at', `${params.from}T00:00:00.000Z`);
+    if (params.to) query = query.lte('checked_in_at', `${params.to}T23:59:59.999Z`);
+    if (params.teamMemberId) query = query.eq('team_member_id', params.teamMemberId);
+    if (params.unitId) query = query.eq('unit_id', params.unitId);
+    if (params.includeVoided !== 'true') query = query.is('voided_at', null);
+
+    const { data, error } = await query;
+    if (error) return json(500, { error: error.message });
+
+    const checkins = (data ?? [])
+      .map((checkin: any) => {
+        const directLocation = checkin.locations;
+        const unitLocation = checkin.units?.locations;
+        const location = directLocation ?? unitLocation ?? null;
+        const area = location?.areas ?? null;
+        return {
+          id: checkin.id,
+          unit_id: checkin.unit_id,
+          unit_name: checkin.units?.name ?? 'Unknown unit',
+          location_id: checkin.location_id,
+          location_name: location?.name ?? 'Unmapped',
+          area_id: area?.id ?? null,
+          area_name: area?.name ?? null,
+          team_member_id: checkin.team_member_id,
+          team_member_name: checkin.team_members?.name ?? 'Unknown member',
+          checked_in_at: checkin.checked_in_at,
+          geofence_verified: checkin.geofence_verified,
+          score_awarded: checkin.score_awarded,
+          voided_at: checkin.voided_at,
+          void_reason: checkin.void_reason,
+          updated_at: checkin.updated_at,
+        };
+      })
+      .filter((checkin) => !params.areaId || checkin.area_id === params.areaId);
+
+    return json(200, { checkins });
+  }
+
+  const adminCheckinMatch = path.match(/^\/admin\/checkins\/([^/]+)$/);
+  if (method === 'PATCH' && adminCheckinMatch) {
+    const body = readBody<{
+      unit_id?: string;
+      checked_in_at?: string;
+      team_member_id?: string;
+      voided?: boolean;
+      void_reason?: FixedVoidReason;
+      adminTeamMemberId?: string;
+    }>(event);
+    if (!body.adminTeamMemberId) return json(400, { error: 'adminTeamMemberId is required.' });
+
+    const { data: existing, error: existingError } = await supabase
+      .from('checkins')
+      .select('id, unit_id, voided_at')
+      .eq('id', adminCheckinMatch[1])
+      .single();
+    if (existingError || !existing) return json(404, { error: 'Check-in not found.' });
+
+    const update: Record<string, unknown> = { updated_by_team_member_id: body.adminTeamMemberId };
+
+    if (body.unit_id && body.unit_id !== existing.unit_id) {
+      const { data: unit, error: unitError } = await supabase
+        .from('units')
+        .select('id, location_id')
+        .eq('id', body.unit_id)
+        .single();
+      if (unitError || !unit) return json(404, { error: 'Replacement unit not found.' });
+      update.unit_id = body.unit_id;
+      update.location_id = unit.location_id;
+      update.geofence_verified = false;
+      update.score_awarded = 0;
+    }
+
+    if (body.checked_in_at) update.checked_in_at = body.checked_in_at;
+    if (body.team_member_id) update.team_member_id = body.team_member_id;
+
+    if (body.voided === true) {
+      if (!body.void_reason || !fixedVoidReasons.has(body.void_reason)) {
+        return json(400, { error: 'A fixed void_reason is required.' });
+      }
+      update.voided_at = existing.voided_at ?? new Date().toISOString();
+      update.voided_by_team_member_id = body.adminTeamMemberId;
+      update.void_reason = body.void_reason;
+      update.score_awarded = 0;
+    } else if (body.voided === false) {
+      update.voided_at = null;
+      update.voided_by_team_member_id = null;
+      update.void_reason = null;
+    }
+
+    const { data, error } = await supabase
+      .from('checkins')
+      .update(update)
+      .eq('id', adminCheckinMatch[1])
+      .select('id')
+      .single();
+    if (error) return json(500, { error: error.message });
+    return json(200, { checkin: data, coverage: await getCoverage() });
   }
 
   if (method === 'POST' && path === '/admin/locations') {

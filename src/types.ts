@@ -72,3 +72,21 @@ export type LeaderboardRow = {
   recovered_units: number;
   score: number;
 };
+
+export type AdminCheckin = {
+  id: string;
+  unit_id: string;
+  unit_name: string;
+  location_id: string | null;
+  location_name: string;
+  area_id: string | null;
+  area_name: string | null;
+  team_member_id: string;
+  team_member_name: string;
+  checked_in_at: string;
+  geofence_verified: boolean;
+  score_awarded: number;
+  voided_at: string | null;
+  void_reason: string | null;
+  updated_at: string | null;
+};

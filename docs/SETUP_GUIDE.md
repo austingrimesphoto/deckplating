@@ -4,6 +4,10 @@ This is the beta setup path for a chapel team that wants its own copy of Deckpla
 
 The goal is simple: each RMT gets its own app, its own database, and its own data. Nobody has to share one giant fleet-wide database.
 
+Before using the app, read the safe-use policy:
+
+[SAFE_USE.md](SAFE_USE.md)
+
 ## What You Need
 
 Create these accounts first:
@@ -61,6 +65,14 @@ In Supabase:
 5. Click the copy button or select all the text and copy it.
 6. Paste it into Supabase SQL Editor.
 7. Click **Run**.
+
+Then run the correction migration:
+
+1. Click **New query** again.
+2. In your GitHub copy, open `supabase/migrations/002_checkin_corrections.sql`.
+3. Copy the whole file.
+4. Paste it into Supabase SQL Editor.
+5. Click **Run**.
 
 Then load starter data:
 

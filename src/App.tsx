@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
-import type { Area, Bootstrap, Identity, LeaderboardRow, LocationSummary, TeamMember, UnitSummary, UnitType } from './types';
+import type { AdminCheckin, Area, Bootstrap, Identity, LeaderboardRow, LocationSummary, TeamMember, UnitSummary, UnitType } from './types';
 
 type Screen = 'checkin' | 'coverage' | 'map' | 'admin' | 'scoreboard' | 'settings';
 
@@ -10,6 +10,30 @@ type AdminData = {
   units: Array<{ id: string; name: string; unit_type: UnitType; visit_interval_days: number; location_id: string | null; active: boolean }>;
   teamMembers: Array<{ id: string; name: string; role: string | null; active: boolean }>;
 };
+
+type CheckinConfirmation = {
+  checkinIds: string[];
+  units: string[];
+  checkedInAt: string;
+  totalScore: number;
+};
+
+const safeUseSummary =
+  'Use Deckplate Coverage only for unclassified, non-sensitive coverage tracking. Do not enter CUI, classified information, sensitive personal information, home addresses, counseling or medical details, or sensitive operational locations.';
+
+const safeUseItems = [
+  'Deckplate Coverage is not approved for CUI, classified information, or sensitive operational data.',
+  'Store only the minimum information needed to track ministry presence.',
+  'Do not enter counseling notes, medical information, incident details, family information, addresses, phone numbers, email addresses, dates of birth, or other sensitive PII.',
+  'Team display names should be limited to practical operational identity, such as rank and last name.',
+  'Map only publicly identifiable facilities, buildings, or general areas.',
+  'Do not map SCIFs, restricted spaces, operational locations in theater, residences, or other sensitive locations.',
+  'When uncertain, do not map the location. Use manual check-in.',
+  'Deckplate Coverage is a coverage-awareness tool, not a counseling record, case-management system, or official system of record.',
+];
+
+const locationMappingNotice =
+  'Map only publicly identifiable buildings or general areas. Do not pin SCIFs, sensitive operational spaces, deployed-unit locations, homes, or any location that should not be broadly shared. When uncertain, leave the location unmapped and use manual check-in.';
 
 const identityKey = 'deckplate.identity';
 
@@ -43,6 +67,16 @@ const statusLabel = (unit: UnitSummary) => {
 };
 
 const niceDate = (date: string | null) => (date ? new Date(date).toLocaleDateString() : 'Never');
+
+const niceDateTime = (date: string | null) => (date ? new Date(date).toLocaleString() : 'Never');
+
+const datetimeLocalValue = (date: string) => {
+  const parsed = new Date(date);
+  const offsetMs = parsed.getTimezoneOffset() * 60000;
+  return new Date(parsed.getTime() - offsetMs).toISOString().slice(0, 16);
+};
+
+const localDateTimeToIso = (value: string) => (value ? new Date(value).toISOString() : '');
 
 const statusColor = {
   green: '#287a3e',
@@ -120,6 +154,7 @@ function IdentitySetup({
       <section className="panel">
         <p className="eyebrow">Deckplate Coverage</p>
         <h1>Select your name</h1>
+        <p className="safe-summary">{safeUseSummary}</p>
         <form onSubmit={submit} className="stack">
           <label>
             Team member
@@ -159,10 +194,12 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
   const [manualQuery, setManualQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState('');
+  const [confirmation, setConfirmation] = useState<CheckinConfirmation | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function locate() {
     setMessage('');
+    setConfirmation(null);
     setLoading(true);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -197,8 +234,13 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
     if (!selected.length) return;
     setLoading(true);
     setMessage('');
+    setConfirmation(null);
     try {
-      const result = await api<{ totalScore: number }>('/api/checkins', {
+      const selectedUnits = [
+        ...matches.flatMap((location) => location.units),
+        ...manualUnits,
+      ].filter((unit, index, all) => selected.includes(unit.id) && all.findIndex((candidate) => candidate.id === unit.id) === index);
+      const result = await api<{ checkins: Array<{ id: string; score_awarded: number }>; totalScore: number }>('/api/checkins', {
         method: 'POST',
         headers: authHeaders(identity),
         body: JSON.stringify({
@@ -210,10 +252,37 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
           manual,
         }),
       });
-      setMessage(`Check-in saved. ${result.totalScore} point${result.totalScore === 1 ? '' : 's'} awarded.`);
+      setConfirmation({
+        checkinIds: result.checkins.map((checkin) => checkin.id),
+        units: selectedUnits.map((unit) => unit.name),
+        checkedInAt: new Date().toISOString(),
+        totalScore: result.totalScore,
+      });
       refresh();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Check-in failed.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function undoCheckin() {
+    if (!confirmation) return;
+    if (!window.confirm('Undo this check-in? The records will be voided and removed from active coverage and score calculations.')) return;
+    setLoading(true);
+    setMessage('');
+    try {
+      await api('/api/checkins/undo', {
+        method: 'POST',
+        headers: authHeaders(identity),
+        body: JSON.stringify({ teamMemberId: identity.teamMemberId, checkinIds: confirmation.checkinIds }),
+      });
+      setConfirmation(null);
+      setSelected([]);
+      setMessage('Check-in undone. Coverage and scores have been refreshed.');
+      refresh();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Undo failed.');
     } finally {
       setLoading(false);
     }
@@ -304,6 +373,35 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
             </div>
           )}
           <p className="admin-hint">Admin-only Create Location is available on the Admin tab.</p>
+        </section>
+      )}
+      {confirmation && (
+        <section className="panel confirmation-panel">
+          <p className="eyebrow">Check-in saved</p>
+          <h2>{confirmation.units.length} unit{confirmation.units.length === 1 ? '' : 's'} checked in</h2>
+          <ul className="plain-list">
+            {confirmation.units.map((unit) => (
+              <li key={unit}>{unit}</li>
+            ))}
+          </ul>
+          <dl className="confirmation-details">
+            <div>
+              <dt>Date/time</dt>
+              <dd>{niceDateTime(confirmation.checkedInAt)}</dd>
+            </div>
+            <div>
+              <dt>Points awarded</dt>
+              <dd>{confirmation.totalScore}</dd>
+            </div>
+          </dl>
+          <div className="action-row">
+            <button className="secondary danger-text" onClick={undoCheckin} disabled={loading}>
+              Undo this check-in
+            </button>
+            <button className="primary" onClick={() => setConfirmation(null)} disabled={loading}>
+              Done
+            </button>
+          </div>
         </section>
       )}
       {message && <p className="notice">{message}</p>}
@@ -679,6 +777,94 @@ function AdminMapPicker({
   return <div ref={container} className="admin-map" />;
 }
 
+function AdminCheckinRow({
+  checkin,
+  units,
+  teamMembers,
+  actingTeamMemberId,
+  onPatch,
+}: {
+  checkin: AdminCheckin;
+  units: AdminData['units'];
+  teamMembers: AdminData['teamMembers'];
+  actingTeamMemberId: string;
+  onPatch: (id: string, body: Record<string, unknown>) => Promise<void>;
+}) {
+  const [unitId, setUnitId] = useState(checkin.unit_id);
+  const [teamMemberId, setTeamMemberId] = useState(checkin.team_member_id);
+  const [checkedInAt, setCheckedInAt] = useState(datetimeLocalValue(checkin.checked_in_at));
+  const [voidReason, setVoidReason] = useState('accidental');
+  const voided = Boolean(checkin.voided_at);
+
+  async function saveCorrections() {
+    await onPatch(checkin.id, {
+      adminTeamMemberId: actingTeamMemberId,
+      unit_id: unitId,
+      team_member_id: teamMemberId,
+      checked_in_at: localDateTimeToIso(checkedInAt),
+    });
+  }
+
+  async function voidCheckin() {
+    if (!window.confirm('Void this check-in? It will stay in the log but no longer count for coverage or scores.')) return;
+    await onPatch(checkin.id, {
+      adminTeamMemberId: actingTeamMemberId,
+      voided: true,
+      void_reason: voidReason,
+    });
+  }
+
+  return (
+    <article className={`activity-row ${voided ? 'voided' : ''}`}>
+      <div className="activity-summary">
+        <div>
+          <strong>{checkin.unit_name}</strong>
+          <small>
+            {checkin.area_name ?? 'Unassigned'} - {checkin.location_name} - {checkin.team_member_name}
+          </small>
+          <small>
+            {niceDateTime(checkin.checked_in_at)} - {checkin.score_awarded} point{checkin.score_awarded === 1 ? '' : 's'} -{' '}
+            {checkin.geofence_verified ? 'geofence verified' : 'manual/unverified'}
+          </small>
+        </div>
+        {voided && <span className="status-pill">Voided: {checkin.void_reason ?? 'no reason'}</span>}
+      </div>
+      {!voided && (
+        <div className="activity-edit">
+          <select value={unitId} onChange={(event) => setUnitId(event.target.value)}>
+            {units.map((unit) => (
+              <option key={unit.id} value={unit.id}>
+                {unit.name}
+              </option>
+            ))}
+          </select>
+          <select value={teamMemberId} onChange={(event) => setTeamMemberId(event.target.value)}>
+            {teamMembers.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name}
+              </option>
+            ))}
+          </select>
+          <input type="datetime-local" value={checkedInAt} onChange={(event) => setCheckedInAt(event.target.value)} />
+          <button className="secondary" onClick={saveCorrections} disabled={!actingTeamMemberId}>
+            Save edit
+          </button>
+          <select value={voidReason} onChange={(event) => setVoidReason(event.target.value)}>
+            <option value="accidental">Accidental</option>
+            <option value="wrong_unit">Wrong unit</option>
+            <option value="duplicate">Duplicate</option>
+            <option value="incorrect_datetime">Incorrect date/time</option>
+            <option value="incorrect_member">Incorrect member</option>
+          </select>
+          <button className="secondary danger-text" onClick={voidCheckin} disabled={!actingTeamMemberId}>
+            Void
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
 function AdminScreen({
   refresh,
   mapDefaultLatitude,
@@ -702,6 +888,17 @@ function AdminScreen({
   const [unitForm, setUnitForm] = useState({ name: '', unit_type: 'department' as UnitType, visit_interval_days: '30', location_id: '' });
   const [memberForm, setMemberForm] = useState({ name: '', role: '' });
   const [attachUnitIds, setAttachUnitIds] = useState<string[]>([]);
+  const [adminSection, setAdminSection] = useState<'setup' | 'activity'>('setup');
+  const [activity, setActivity] = useState<AdminCheckin[]>([]);
+  const [activityFilters, setActivityFilters] = useState({
+    from: '',
+    to: '',
+    teamMemberId: '',
+    areaId: '',
+    unitId: '',
+    includeVoided: false,
+  });
+  const [actingTeamMemberId, setActingTeamMemberId] = useState('');
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -714,6 +911,7 @@ function AdminScreen({
     const result = await api<AdminData>('/api/admin/locations', { headers: { authorization: `Bearer ${token}` } });
     setData(result);
     setLocationForm((current) => ({ ...current, area_id: result.areas[0]?.id ?? current.area_id }));
+    setActingTeamMemberId((current) => current || result.teamMembers[0]?.id || '');
   }
 
   useEffect(() => {
@@ -775,6 +973,36 @@ function AdminScreen({
     load();
   }
 
+  async function loadActivity() {
+    const params = new URLSearchParams();
+    if (activityFilters.from) params.set('from', activityFilters.from);
+    if (activityFilters.to) params.set('to', activityFilters.to);
+    if (activityFilters.teamMemberId) params.set('teamMemberId', activityFilters.teamMemberId);
+    if (activityFilters.areaId) params.set('areaId', activityFilters.areaId);
+    if (activityFilters.unitId) params.set('unitId', activityFilters.unitId);
+    if (activityFilters.includeVoided) params.set('includeVoided', 'true');
+    const result = await api<{ checkins: AdminCheckin[] }>(`/api/admin/checkins?${params.toString()}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    setActivity(result.checkins);
+  }
+
+  async function patchCheckin(id: string, body: Record<string, unknown>) {
+    await api(`/api/admin/checkins/${id}`, {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    setMessage('Activity log updated.');
+    refresh();
+    await load();
+    await loadActivity();
+  }
+
+  useEffect(() => {
+    if (token && adminSection === 'activity') void loadActivity();
+  }, [token, adminSection]);
+
   if (!token) {
     return (
       <main className="center-shell">
@@ -796,13 +1024,93 @@ function AdminScreen({
     <main className="screen">
       <div className="screen-title">
         <div>
-          <p className="eyebrow">Admin Locations</p>
-          <h1>Manage mapping</h1>
+          <p className="eyebrow">Admin</p>
+          <h1>{adminSection === 'setup' ? 'Manage mapping' : 'Activity Log'}</h1>
         </div>
       </div>
       {message && <p className="notice">{message}</p>}
+      <div className="tab-row">
+        <button className={adminSection === 'setup' ? 'active' : ''} onClick={() => setAdminSection('setup')}>
+          Locations
+        </button>
+        <button className={adminSection === 'activity' ? 'active' : ''} onClick={() => setAdminSection('activity')}>
+          Activity Log
+        </button>
+      </div>
+      {adminSection === 'activity' && data && (
+        <>
+          <section className="panel">
+            <h2>Filter activity</h2>
+            <div className="filters">
+              <input type="date" value={activityFilters.from} onChange={(event) => setActivityFilters({ ...activityFilters, from: event.target.value })} />
+              <input type="date" value={activityFilters.to} onChange={(event) => setActivityFilters({ ...activityFilters, to: event.target.value })} />
+              <select value={activityFilters.teamMemberId} onChange={(event) => setActivityFilters({ ...activityFilters, teamMemberId: event.target.value })}>
+                <option value="">All team members</option>
+                {data.teamMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+              <select value={activityFilters.areaId} onChange={(event) => setActivityFilters({ ...activityFilters, areaId: event.target.value })}>
+                <option value="">All areas</option>
+                {data.areas.map((area) => (
+                  <option key={area.id} value={area.id}>
+                    {area.name}
+                  </option>
+                ))}
+              </select>
+              <select value={activityFilters.unitId} onChange={(event) => setActivityFilters({ ...activityFilters, unitId: event.target.value })}>
+                <option value="">All units</option>
+                {data.units.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.name}
+                  </option>
+                ))}
+              </select>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={activityFilters.includeVoided}
+                  onChange={(event) => setActivityFilters({ ...activityFilters, includeVoided: event.target.checked })}
+                />
+                Include voided
+              </label>
+            </div>
+            <label>
+              Admin acting as
+              <select value={actingTeamMemberId} onChange={(event) => setActingTeamMemberId(event.target.value)}>
+                {data.teamMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="primary" onClick={loadActivity}>
+              Apply filters
+            </button>
+          </section>
+          <section className="coverage-list">
+            {activity.map((checkin) => (
+              <AdminCheckinRow
+                key={checkin.id}
+                checkin={checkin}
+                units={data.units}
+                teamMembers={data.teamMembers}
+                actingTeamMemberId={actingTeamMemberId}
+                onPatch={patchCheckin}
+              />
+            ))}
+            {!activity.length && <p className="notice">No check-ins match the current filters.</p>}
+          </section>
+        </>
+      )}
+      {adminSection === 'setup' && (
+        <>
       <section className="panel">
         <h2>Create location</h2>
+        <p className="warning-notice">{locationMappingNotice}</p>
         <form onSubmit={createLocation} className="stack">
           <select value={locationForm.area_id} onChange={(event) => setLocationForm({ ...locationForm, area_id: event.target.value })}>
             {data?.areas.map((area) => (
@@ -936,6 +1244,8 @@ function AdminScreen({
           </article>
         ))}
       </section>
+        </>
+      )}
     </main>
   );
 }
@@ -1009,6 +1319,14 @@ function Settings({ identity, members, onIdentity }: { identity: Identity; membe
           <button className="primary">Change</button>
         </form>
         {message && <p className="notice">{message}</p>}
+      </section>
+      <section className="panel">
+        <h2>Safe Use</h2>
+        <ul className="plain-list safe-list">
+          {safeUseItems.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
       </section>
     </main>
   );

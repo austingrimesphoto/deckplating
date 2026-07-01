@@ -195,7 +195,9 @@ small,
 }
 
 .error,
-.notice {
+.notice,
+.warning-notice,
+.safe-summary {
   padding: 12px;
   border-radius: 8px;
   background: #fff;
@@ -208,6 +210,81 @@ small,
 
 .notice {
   color: var(--brand);
+}
+
+.warning-notice {
+  border-color: rgba(180, 123, 19, 0.4);
+  background: #fff8ea;
+  color: #6e4a07;
+}
+
+.safe-summary {
+  border-color: rgba(37, 90, 130, 0.25);
+  background: #eef6fb;
+  color: var(--brand);
+  font-size: 0.92rem;
+}
+
+.plain-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.safe-list {
+  color: var(--text);
+}
+
+.confirmation-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  border-color: rgba(40, 122, 62, 0.35);
+  background: #f5fbf6;
+}
+
+.confirmation-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0;
+}
+
+.confirmation-details dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.confirmation-details dd {
+  margin: 0;
+  font-weight: 800;
+}
+
+.action-row,
+.tab-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.danger-text {
+  color: var(--red);
+}
+
+.tab-row {
+  margin-bottom: 14px;
+}
+
+.tab-row button {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--brand);
+}
+
+.tab-row button.active {
+  background: var(--brand);
+  color: #fff;
 }
 
 .unit-picker,
@@ -370,6 +447,44 @@ small,
   align-items: stretch;
 }
 
+.activity-row {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--brand-2);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.activity-row.voided {
+  border-left-color: var(--gray);
+  background: #f7f8f9;
+}
+
+.activity-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.activity-summary > div,
+.activity-edit {
+  display: grid;
+  gap: 6px;
+}
+
+.status-pill {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e8ebef;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .bottom-nav {
   position: fixed;
   right: 0;
@@ -414,5 +529,10 @@ small,
 
   .admin-row {
     grid-template-columns: 1fr 220px 120px;
+  }
+
+  .activity-edit {
+    grid-template-columns: 1fr 1fr 1fr 110px 1fr 90px;
+    align-items: center;
   }
 }

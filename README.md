@@ -22,6 +22,10 @@ For a plain-English, button-by-button setup walkthrough, use:
 
 That guide is the one to hand to a chaplain, RP, or command teammate who just needs to get the tool running. It is written around a no-terminal beta setup path.
 
+Safe-use policy:
+
+[docs/SAFE_USE.md](docs/SAFE_USE.md)
+
 The beta browser helper is here:
 
 [docs/setup-wizard.html](docs/setup-wizard.html)
@@ -135,7 +139,8 @@ INSTALLATION_NAME
 Run these files in Supabase SQL Editor, in order:
 
 1. `supabase/migrations/001_initial_schema.sql`
-2. `supabase/seed.sql`
+2. `supabase/migrations/002_checkin_corrections.sql`
+3. `supabase/seed.sql`
 
 The schema enables row level security on all tables. Browser code never talks directly to Supabase. All database access goes through Netlify Functions using the server-side service-role key.
 
@@ -192,6 +197,7 @@ User-session protected:
 - `GET /api/bootstrap`
 - `GET /api/nearby-locations`
 - `POST /api/checkins`
+- `POST /api/checkins/undo`
 - `GET /api/dashboard`
 - `GET /api/leaderboard`
 
@@ -205,6 +211,8 @@ Admin-session protected:
 - `PATCH /api/admin/units/:id`
 - `POST /api/admin/team-members`
 - `PATCH /api/admin/team-members/:id`
+- `GET /api/admin/checkins`
+- `PATCH /api/admin/checkins/:id`
 
 ## Test Checklist
 
@@ -215,9 +223,14 @@ Admin-session protected:
 - Settings identity change requires the current PIN.
 - Check In asks for geolocation and finds mapped locations within radius.
 - Manual check-in works when no saved location is nearby.
+- Immediate undo removes a new check-in from coverage and leaderboard calculations.
 - Coverage Board groups by parent area and shows green, yellow, red, and gray status correctly.
 - Map shows pins and radius circles for mapped locations.
 - Admin passphrase unlocks admin screens.
+- A voided record is visible only when Admin Activity Log includes voided records.
+- Correcting a unit updates its linked location and clears geofence verification.
+- Safe-use notices appear on identity selection, Settings, and Admin location editing.
+- Existing identity, map, coverage board, admin location editing, and leaderboard still work.
 - Admin can create/edit locations, move units, deactivate units, and create team members.
 - Leaderboard uses stored `score_awarded` values and monthly filtering.
 - Service-role key is absent from built browser assets.
