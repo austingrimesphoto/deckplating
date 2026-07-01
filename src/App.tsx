@@ -68,22 +68,30 @@ const locationMappingNotice =
 
 const identityKey = 'deckplate.identity';
 
-async function api<T>(path: string, options: RequestInit = {}) {
-  const response = await fetch(path, {
-    ...options,
-    headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
-  });
-  const contentType = response.headers.get('content-type') ?? '';
-  if (!contentType.includes('application/json')) {
-    throw new Error(`API route ${path} did not return JSON. Run the app with netlify dev so /api routes are available.`);
+async function api<T>(path: string, options: RequestInit & { timeoutMs?: number } = {}) {
+  const { timeoutMs = 10000, ...requestOptions } = options;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(path, {
+      ...requestOptions,
+      headers: { 'content-type': 'application/json', ...(requestOptions.headers ?? {}) },
+      signal: requestOptions.signal ?? controller.signal,
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      throw new Error(`API route ${path} did not return JSON. Run the app with netlify dev so /api routes are available.`);
+    }
+    const data = (await response.json()) as T & { error?: string };
+    if (!response.ok) {
+      const error = new Error(data.error ?? 'Request failed.');
+      (error as Error & { status?: number }).status = response.status;
+      throw error;
+    }
+    return data;
+  } finally {
+    window.clearTimeout(timeout);
   }
-  const data = (await response.json()) as T & { error?: string };
-  if (!response.ok) {
-    const error = new Error(data.error ?? 'Request failed.');
-    (error as Error & { status?: number }).status = response.status;
-    throw error;
-  }
-  return data;
 }
 
 const newToken = () => crypto.randomUUID();
@@ -250,6 +258,7 @@ function CheckInScreen({
   const [message, setMessage] = useState('');
   const [confirmation, setConfirmation] = useState<CheckinConfirmation | null>(null);
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
   const brief = useMemo(() => briefForDate(identity.teamMemberId), [identity.teamMemberId]);
   const locationSummaries = useMemo(() => {
     const grouped = new Map<string, LocationSummary>();
@@ -281,33 +290,55 @@ function CheckInScreen({
   async function locate() {
     setMessage('');
     setConfirmation(null);
-    setLoading(true);
+    setLocating(true);
+    setManualMode(false);
+    if (!navigator.geolocation) {
+      setLocating(false);
+      setMessage('Location is not available on this device. Use manual unit lookup.');
+      setManualMode(true);
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const next = { lat: position.coords.latitude, lon: position.coords.longitude };
+        const accuracy = Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : 0;
         setCoords(next);
         try {
+          const cachedMatches = findCachedNearbyLocations(bootstrap.units, next.lat, next.lon, accuracy);
           const result = cachedMode
-            ? { matches: findCachedNearbyLocations(bootstrap.units, next.lat, next.lon) }
+            ? { matches: cachedMatches }
             : await api<{ matches: LocationSummary[] }>(`/api/nearby-locations?lat=${next.lat}&lon=${next.lon}`, {
                 headers: authHeaders(identity),
+                timeoutMs: 3500,
               });
-          setMatches(result.matches);
-          setSelected(result.matches[0]?.units.map((unit) => unit.id) ?? []);
+          const matches = result.matches.length ? result.matches : cachedMatches;
+          setMatches(matches);
+          setSelected(matches[0]?.units.map((unit) => unit.id) ?? []);
+          if (!matches.length) {
+            setManualMode(true);
+            setMessage(`No saved locations nearby. GPS accuracy: ${Math.round(accuracy)}m. Manual lookup is available.`);
+          }
         } catch (err) {
-          const cachedMatches = findCachedNearbyLocations(bootstrap.units, next.lat, next.lon);
+          const cachedMatches = findCachedNearbyLocations(bootstrap.units, next.lat, next.lon, accuracy);
           setMatches(cachedMatches);
           setSelected(cachedMatches[0]?.units.map((unit) => unit.id) ?? []);
-          setMessage(cachedMatches.length ? 'Using cached location data.' : err instanceof Error ? err.message : 'Location lookup failed.');
+          if (!cachedMatches.length) setManualMode(true);
+          setMessage(
+            cachedMatches.length
+              ? `Using cached location data. GPS accuracy: ${Math.round(accuracy)}m.`
+              : `No saved locations nearby. GPS accuracy: ${Math.round(accuracy)}m. Manual lookup is available.`,
+          );
         } finally {
-          setLoading(false);
+          setLocating(false);
         }
       },
-      () => {
-        setLoading(false);
-        setMessage('Location permission was not granted.');
+      (error) => {
+        setLocating(false);
+        setManualMode(true);
+        const reason = error.code === error.TIMEOUT ? 'Location timed out.' : 'Location permission was not granted.';
+        setMessage(`${reason} Use manual unit lookup.`);
       },
-      { enableHighAccuracy: true, timeout: 12000 },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 },
     );
   }
 
@@ -362,6 +393,31 @@ function CheckInScreen({
     const clientBatchId = crypto.randomUUID();
     const locationId = locationIds[0] ?? null;
     const locationName = selectedUnits[0]?.location_name ?? null;
+    const pendingBatch: PendingVisitBatch = {
+      clientBatchId,
+      teamMemberId: identity.teamMemberId,
+      teamMemberName: identity.teamMemberName,
+      deviceToken: identity.deviceToken,
+      unitIds: selected,
+      unitNames: selectedUnits.map((unit) => unit.name),
+      locationId,
+      locationName,
+      latitude: coords?.lat,
+      longitude: coords?.lon,
+      manual,
+      occurredAt,
+      confidentialCareProvided: null,
+      referralProvided: null,
+      syncStatus: 'pending',
+      lastSyncError: null,
+      createdAt: occurredAt,
+      updatedAt: occurredAt,
+    };
+    if (cachedMode || !navigator.onLine) {
+      await queueBatch(pendingBatch);
+      setLoading(false);
+      return;
+    }
     try {
       const result = await api<{
         batchId: string;
@@ -386,6 +442,7 @@ function CheckInScreen({
           confidentialCareProvided: null,
           referralProvided: null,
         }),
+        timeoutMs: 4500,
       });
       setConfirmation({
         clientBatchId: result.clientBatchId,
@@ -401,26 +458,7 @@ function CheckInScreen({
       refresh();
     } catch (err) {
       if (isNetworkFailure(err)) {
-        await queueBatch({
-          clientBatchId,
-          teamMemberId: identity.teamMemberId,
-          teamMemberName: identity.teamMemberName,
-          deviceToken: identity.deviceToken,
-          unitIds: selected,
-          unitNames: selectedUnits.map((unit) => unit.name),
-          locationId,
-          locationName,
-          latitude: coords?.lat,
-          longitude: coords?.lon,
-          manual,
-          occurredAt,
-          confidentialCareProvided: null,
-          referralProvided: null,
-          syncStatus: 'pending',
-          lastSyncError: null,
-          createdAt: occurredAt,
-          updatedAt: occurredAt,
-        });
+        await queueBatch(pendingBatch);
       } else {
         setMessage(err instanceof Error ? err.message : 'Check-in failed.');
       }
@@ -494,8 +532,8 @@ function CheckInScreen({
           <p className="eyebrow">Check In</p>
           <h1>{identity.teamMemberName}</h1>
         </div>
-        <button className="secondary" onClick={locate} disabled={loading}>
-          Locate Me
+        <button className="secondary" onClick={locate} disabled={locating}>
+          {locating ? 'Locating...' : 'Locate Me'}
         </button>
       </div>
 

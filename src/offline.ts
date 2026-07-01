@@ -112,9 +112,10 @@ export function getCachedLocationSummaries(units: UnitSummary[]) {
   return Array.from(grouped.values());
 }
 
-export function findCachedNearbyLocations(units: UnitSummary[], lat: number, lon: number) {
+export function findCachedNearbyLocations(units: UnitSummary[], lat: number, lon: number, accuracyMeters = 0) {
+  const toleranceMeters = Math.min(Math.max(accuracyMeters, 0), 300);
   return getCachedLocationSummaries(units)
     .map((location) => ({ ...location, distance_meters: distanceMeters(lat, lon, location.latitude, location.longitude) }))
-    .filter((location) => location.distance_meters <= location.radius_meters)
+    .filter((location) => location.distance_meters <= location.radius_meters + toleranceMeters)
     .sort((a, b) => (a.distance_meters ?? 0) - (b.distance_meters ?? 0));
 }
