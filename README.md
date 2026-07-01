@@ -12,6 +12,43 @@ For a plain-English, button-by-button setup walkthrough, use:
 
 That guide is the one to hand to a chaplain, RP, or command teammate who just needs to get the tool running.
 
+## Share This With Another RMT
+
+Send them the GitHub repository link and tell them to start with this README.
+
+Recommended message:
+
+```text
+Deckplate Coverage setup starts here:
+https://github.com/YOUR-ORG/YOUR-REPO
+
+Open the README and follow docs/SETUP_GUIDE.md.
+Click "Use this template" to create your own copy.
+```
+
+The owner of this repository should enable GitHub's template setting:
+
+1. Open this repository on GitHub.
+2. Click **Settings**.
+3. Click **General**.
+4. Check **Template repository**.
+5. Save.
+
+Each RMT should create its own copy from the template, then connect that copy to its own Netlify site and Supabase database.
+
+## Getting Updates
+
+Copies made with **Use this template** do not automatically receive updates from this repository. That is intentional: each installation owns its own app and database.
+
+Recommended update process:
+
+1. This project publishes named versions such as `v1.0.0`, `v1.1.0`, and `v1.2.0`.
+2. Each release includes short notes explaining what changed.
+3. Teams can decide when to update their own copy.
+4. Early teams may choose to create a fresh copy from the latest template if they have not entered much data yet.
+
+For now, keep updates simple: publish releases, write clear release notes, and avoid forcing changes onto other teams automatically.
+
 ## What Each Team Gets
 
 - A private app deployment on Netlify

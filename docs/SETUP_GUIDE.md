@@ -37,6 +37,8 @@ Use a command email or shared team account if your local policy allows it. Do no
 5. Choose **Private** unless your command intentionally wants the code public.
 6. Click **Create repository**.
 
+Important: your copy will not automatically receive future updates. That keeps your local tool stable and under your control. Check the original repository's releases when you want to see whether a newer version is available.
+
 ## Step 2: Create The Database
 
 1. Go to Supabase.
