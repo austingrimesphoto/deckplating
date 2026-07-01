@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 
 type Status = 'green' | 'yellow' | 'red' | 'gray';
 type FixedVoidReason = 'accidental' | 'wrong_unit' | 'duplicate' | 'incorrect_datetime' | 'incorrect_member';
+type IndicatorValue = true | null;
 
 const supabaseUrl = process.env.SUPABASE_URL ?? '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
@@ -94,6 +95,31 @@ const fixedVoidReasons = new Set<FixedVoidReason>([
   'incorrect_datetime',
   'incorrect_member',
 ]);
+
+const isUuid = (value: unknown) =>
+  typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+const normalizeIndicator = (value: unknown): IndicatorValue => {
+  if (value === true) return true;
+  if (value == null) return null;
+  throw new Error('Indicators may only be true or null.');
+};
+
+const parseOccurredAt = (value: unknown) => {
+  const now = Date.now();
+  const occurred = value == null || value === '' ? new Date(now) : new Date(String(value));
+  const time = occurred.getTime();
+  if (!Number.isFinite(time)) throw new Error('occurredAt must be a valid timestamp.');
+  if (time > now + 10 * 60000) throw new Error('occurredAt cannot be more than 10 minutes in the future.');
+  if (time < now - 90 * 86400000) throw new Error('Queued visits older than 90 days cannot be uploaded.');
+  return occurred.toISOString();
+};
+
+const statusBefore = (checkedInAt: string | null, occurredAt: string, interval: number): Status => {
+  if (!checkedInAt) return 'gray';
+  const days = Math.floor((new Date(occurredAt).getTime() - new Date(checkedInAt).getTime()) / 86400000);
+  return statusFromDays(days, interval);
+};
 
 const requireAdmin = (event: HandlerEvent) => {
   const header = event.headers.authorization ?? event.headers.Authorization;
@@ -370,26 +396,114 @@ async function route(event: HandlerEvent) {
       teamMemberId: string;
       deviceToken: string;
       unitIds: string[];
+      clientBatchId?: string;
+      occurredAt?: string;
+      locationId?: string | null;
       latitude?: number;
       longitude?: number;
       manual?: boolean;
+      confidentialCareProvided?: IndicatorValue;
+      referralProvided?: IndicatorValue;
     }>(event);
     const user = await requireUser(event);
     if (!user || user.teamMemberId !== body.teamMemberId) return json(403, { error: 'Authentication required.' });
     const device = await verifyDevice(body.teamMemberId, body.deviceToken);
     if (!device) return json(403, { error: 'Device is not registered for this team member.' });
     if (!Array.isArray(body.unitIds) || body.unitIds.length === 0) return json(400, { error: 'unitIds are required.' });
+    const clientBatchId = body.clientBatchId ?? crypto.randomUUID();
+    if (!isUuid(clientBatchId)) return json(400, { error: 'clientBatchId must be a UUID.' });
 
-    const results = [];
-    for (const unitId of body.unitIds) {
-      const { data: unit, error } = await supabase
-        .from('units')
-        .select('*, locations(*)')
-        .eq('id', unitId)
-        .eq('active', true)
+    let occurredAt: string;
+    let confidentialCareProvided: IndicatorValue;
+    let referralProvided: IndicatorValue;
+    try {
+      occurredAt = parseOccurredAt(body.occurredAt);
+      confidentialCareProvided = normalizeIndicator(body.confidentialCareProvided);
+      referralProvided = normalizeIndicator(body.referralProvided);
+    } catch (error) {
+      return json(400, { error: errorMessage(error) });
+    }
+
+    const requestedUnitIds = Array.from(new Set(body.unitIds));
+    const { data: units, error: unitError } = await supabase
+      .from('units')
+      .select('*, locations(*)')
+      .in('id', requestedUnitIds)
+      .eq('active', true);
+    if (unitError) return json(500, { error: unitError.message });
+    if ((units ?? []).length !== requestedUnitIds.length) return json(404, { error: 'One or more units were not found.' });
+
+    const unitLocationIds = Array.from(new Set((units ?? []).map((unit: any) => unit.location_id ?? null)));
+    if (unitLocationIds.length > 1) return json(400, { error: 'A visit batch can only include units from one location.' });
+    const batchLocationId = unitLocationIds[0] ?? null;
+    if (body.locationId !== undefined && (body.locationId ?? null) !== batchLocationId) {
+      return json(400, { error: 'locationId must match the selected units.' });
+    }
+    if (batchLocationId === null && requestedUnitIds.length > 1) {
+      return json(400, { error: 'Unmapped manual check-ins must be submitted one unit at a time.' });
+    }
+
+    let { data: batch, error: batchLookupError } = await supabase
+      .from('checkin_batches')
+      .select('*')
+      .eq('client_batch_id', clientBatchId)
+      .maybeSingle();
+    if (batchLookupError) return json(500, { error: batchLookupError.message });
+    if (!batch) {
+      const { data: insertedBatch, error: batchError } = await supabase
+        .from('checkin_batches')
+        .insert({
+          client_batch_id: clientBatchId,
+          location_id: batchLocationId,
+          team_member_id: body.teamMemberId,
+          device_id: device.id,
+          occurred_at: occurredAt,
+          confidential_care_provided: confidentialCareProvided,
+          referral_provided: referralProvided,
+          outcomes_recorded_at: confidentialCareProvided || referralProvided ? new Date().toISOString() : null,
+          updated_by_team_member_id: body.teamMemberId,
+        })
+        .select('*')
         .single();
-      if (error || !unit) return json(404, { error: `Unit not found: ${unitId}` });
+      if (batchError) {
+        const retry = await supabase.from('checkin_batches').select('*').eq('client_batch_id', clientBatchId).single();
+        if (retry.error || !retry.data) return json(500, { error: batchError.message });
+        batch = retry.data;
+      } else {
+        batch = insertedBatch;
+      }
+    } else {
+      if (batch.team_member_id !== body.teamMemberId || batch.device_id !== device.id) {
+        return json(403, { error: 'This client batch belongs to another user or device.' });
+      }
+      const { data: updatedBatch, error: indicatorUpdateError } = await supabase
+        .from('checkin_batches')
+        .update({
+          confidential_care_provided: confidentialCareProvided,
+          referral_provided: referralProvided,
+          outcomes_recorded_at: confidentialCareProvided || referralProvided ? new Date().toISOString() : null,
+          updated_by_team_member_id: body.teamMemberId,
+        })
+        .eq('id', batch.id)
+        .select('*')
+        .single();
+      if (indicatorUpdateError) return json(500, { error: indicatorUpdateError.message });
+      batch = updatedBatch;
+    }
+    if (batch.team_member_id !== body.teamMemberId || batch.device_id !== device.id) {
+      return json(403, { error: 'This client batch belongs to another user or device.' });
+    }
 
+    const { data: existingRows, error: existingError } = await supabase
+      .from('checkins')
+      .select('id, unit_id, score_awarded')
+      .eq('batch_id', batch.id);
+    if (existingError) return json(500, { error: existingError.message });
+
+    const existingUnitIds = new Set((existingRows ?? []).map((row) => row.unit_id));
+    const rowsToInsert = [];
+    for (const unit of units ?? []) {
+      if (existingUnitIds.has(unit.id)) continue;
       const location = unit.locations;
       let distance: number | null = null;
       let geofenceVerified = false;
@@ -398,41 +512,69 @@ async function route(event: HandlerEvent) {
         geofenceVerified = distance <= location.radius_meters;
       }
 
-      const fourteenDaysAgo = new Date(Date.now() - 14 * 86400000).toISOString();
+      const cooldownStart = new Date(new Date(occurredAt).getTime() - 14 * 86400000).toISOString();
       const { data: recent } = await supabase
         .from('checkins')
         .select('id')
-        .eq('unit_id', unitId)
+        .eq('unit_id', unit.id)
         .is('voided_at', null)
-        .gte('checked_in_at', fourteenDaysAgo)
+        .lt('checked_in_at', occurredAt)
+        .gte('checked_in_at', cooldownStart)
         .limit(1);
 
+      const { data: prior } = await supabase
+        .from('checkins')
+        .select('checked_in_at')
+        .eq('unit_id', unit.id)
+        .is('voided_at', null)
+        .lt('checked_in_at', occurredAt)
+        .order('checked_in_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
       let score = 0;
-      const coverage = await getCoverage();
-      const summary = coverage.units.find((candidate: any) => candidate.id === unitId);
       if (!recent?.length) {
+        const status = statusBefore(prior?.checked_in_at ?? null, occurredAt, unit.visit_interval_days);
         score = 1;
-        if (summary?.status === 'yellow') score += 1;
-        if (summary?.status === 'red' || summary?.status === 'gray') score += 2;
+        if (status === 'yellow') score += 1;
+        if (status === 'red' || status === 'gray') score += 2;
       }
 
+      rowsToInsert.push({
+        batch_id: batch.id,
+        unit_id: unit.id,
+        location_id: unit.location_id,
+        team_member_id: body.teamMemberId,
+        device_id: device.id,
+        checked_in_at: occurredAt,
+        geofence_verified: geofenceVerified,
+        distance_meters: distance,
+        score_awarded: score,
+      });
+    }
+
+    let insertedRows: Array<{ id: string; unit_id: string; score_awarded: number }> = [];
+    if (rowsToInsert.length) {
       const { data: inserted, error: insertError } = await supabase
         .from('checkins')
-        .insert({
-          unit_id: unitId,
-          location_id: unit.location_id,
-          team_member_id: body.teamMemberId,
-          device_id: device.id,
-          geofence_verified: geofenceVerified,
-          distance_meters: distance,
-          score_awarded: score,
-        })
-        .select('id, score_awarded')
-        .single();
+        .insert(rowsToInsert)
+        .select('id, unit_id, score_awarded');
       if (insertError) return json(500, { error: insertError.message });
-      results.push(inserted);
+      insertedRows = inserted ?? [];
     }
-    return json(200, { checkins: results, totalScore: results.reduce((sum, row) => sum + row.score_awarded, 0) });
+
+    const allRows = [...(existingRows ?? []), ...insertedRows].filter((row) => requestedUnitIds.includes(row.unit_id));
+    return json(200, {
+      batchId: batch.id,
+      clientBatchId,
+      locationId: batchLocationId,
+      checkins: allRows.map((row) => ({ id: row.id, score_awarded: row.score_awarded })),
+      totalScore: allRows.reduce((sum, row) => sum + row.score_awarded, 0),
+      indicators: {
+        confidentialCareProvided: batch.confidential_care_provided,
+        referralProvided: batch.referral_provided,
+      },
+    });
   }
 
   if (method === 'POST' && path === '/checkins/undo') {
@@ -445,13 +587,17 @@ async function route(event: HandlerEvent) {
 
     const { data: owned, error: ownedError } = await supabase
       .from('checkins')
-      .select('id')
+      .select('id, created_at')
       .in('id', body.checkinIds)
       .eq('team_member_id', user.teamMemberId)
       .is('voided_at', null);
     if (ownedError) return json(500, { error: ownedError.message });
     if ((owned ?? []).length !== body.checkinIds.length) {
       return json(403, { error: 'Only your own active check-ins can be undone.' });
+    }
+    const undoCutoff = Date.now() - 15 * 60000;
+    if ((owned ?? []).some((checkin) => new Date(checkin.created_at).getTime() < undoCutoff)) {
+      return json(400, { error: 'Immediate undo is available only for check-ins created within the last 15 minutes.' });
     }
 
     const now = new Date().toISOString();
@@ -469,6 +615,56 @@ async function route(event: HandlerEvent) {
       .is('voided_at', null);
     if (error) return json(500, { error: error.message });
     return json(200, { undone: body.checkinIds.length, coverage: await getCoverage() });
+  }
+
+  const indicatorMatch = path.match(/^\/checkin-batches\/([^/]+)\/indicators$/);
+  if (method === 'PATCH' && indicatorMatch) {
+    const body = readBody<Record<string, unknown>>(event);
+    const allowed = new Set(['confidentialCareProvided', 'referralProvided']);
+    const extra = Object.keys(body).filter((key) => !allowed.has(key));
+    if (extra.length) return json(400, { error: 'Only the two indicator fields are accepted.' });
+    const user = await requireUser(event);
+    if (!user) return json(403, { error: 'Authentication required.' });
+
+    let confidentialCareProvided: IndicatorValue;
+    let referralProvided: IndicatorValue;
+    try {
+      confidentialCareProvided = normalizeIndicator(body.confidentialCareProvided);
+      referralProvided = normalizeIndicator(body.referralProvided);
+    } catch (error) {
+      return json(400, { error: errorMessage(error) });
+    }
+
+    const { data: batch, error: batchError } = await supabase
+      .from('checkin_batches')
+      .select('id, team_member_id, device_id')
+      .eq('client_batch_id', indicatorMatch[1])
+      .single();
+    if (batchError || !batch) return json(404, { error: 'Check-in batch not found.' });
+    if (batch.team_member_id !== user.teamMemberId || batch.device_id !== user.deviceId) {
+      return json(403, { error: 'This check-in batch belongs to another user or device.' });
+    }
+
+    const { data, error } = await supabase
+      .from('checkin_batches')
+      .update({
+        confidential_care_provided: confidentialCareProvided,
+        referral_provided: referralProvided,
+        outcomes_recorded_at: confidentialCareProvided || referralProvided ? new Date().toISOString() : null,
+        updated_by_team_member_id: user.teamMemberId,
+      })
+      .eq('id', batch.id)
+      .select('client_batch_id, confidential_care_provided, referral_provided, outcomes_recorded_at')
+      .single();
+    if (error) return json(500, { error: error.message });
+    return json(200, {
+      clientBatchId: data.client_batch_id,
+      indicators: {
+        confidentialCareProvided: data.confidential_care_provided,
+        referralProvided: data.referral_provided,
+      },
+      outcomesRecordedAt: data.outcomes_recorded_at,
+    });
   }
 
   if (method === 'GET' && path === '/dashboard') {
@@ -542,7 +738,7 @@ async function route(event: HandlerEvent) {
     let query = supabase
       .from('checkins')
       .select(
-        'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, updated_at, units(id, name, unit_type, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name)), team_members!checkins_team_member_id_fkey(id, name)',
+        'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, updated_at, batch_id, checkin_batches!checkins_batch_id_fkey(client_batch_id, confidential_care_provided, referral_provided), units(id, name, unit_type, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name)), team_members!checkins_team_member_id_fkey(id, name)',
       )
       .order('checked_in_at', { ascending: false })
       .limit(300);
@@ -578,6 +774,10 @@ async function route(event: HandlerEvent) {
           voided_at: checkin.voided_at,
           void_reason: checkin.void_reason,
           updated_at: checkin.updated_at,
+          batch_id: checkin.batch_id,
+          client_batch_id: checkin.checkin_batches?.client_batch_id ?? null,
+          confidential_care_provided: checkin.checkin_batches?.confidential_care_provided ?? null,
+          referral_provided: checkin.checkin_batches?.referral_provided ?? null,
         };
       })
       .filter((checkin) => !params.areaId || checkin.area_id === params.areaId);
@@ -619,8 +819,14 @@ async function route(event: HandlerEvent) {
       update.score_awarded = 0;
     }
 
-    if (body.checked_in_at) update.checked_in_at = body.checked_in_at;
-    if (body.team_member_id) update.team_member_id = body.team_member_id;
+    if (body.checked_in_at) {
+      update.checked_in_at = body.checked_in_at;
+      update.score_awarded = 0;
+    }
+    if (body.team_member_id) {
+      update.team_member_id = body.team_member_id;
+      update.score_awarded = 0;
+    }
 
     if (body.voided === true) {
       if (!body.void_reason || !fixedVoidReasons.has(body.void_reason)) {

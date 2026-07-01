@@ -1,6 +1,30 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
-import type { AdminCheckin, Area, Bootstrap, Identity, LeaderboardRow, LocationSummary, TeamMember, UnitSummary, UnitType } from './types';
+import { registerSW } from 'virtual:pwa-register';
+import type {
+  AdminCheckin,
+  Area,
+  Bootstrap,
+  Identity,
+  LeaderboardRow,
+  LocationSummary,
+  PendingVisitBatch,
+  TeamMember,
+  UnitSummary,
+  UnitType,
+  VisitIndicatorState,
+} from './types';
+import {
+  countBlockingPendingBatches,
+  findCachedNearbyLocations,
+  getBootstrapSnapshot,
+  getPendingBatches,
+  removePendingBatch,
+  saveBootstrapSnapshot,
+  savePendingBatch,
+  updatePendingBatchIndicators,
+} from './offline';
+import { briefForDate } from './content/deckplateBriefs';
 
 type Screen = 'checkin' | 'coverage' | 'map' | 'admin' | 'scoreboard' | 'settings';
 
@@ -12,11 +36,18 @@ type AdminData = {
 };
 
 type CheckinConfirmation = {
+  clientBatchId: string;
   checkinIds: string[];
   units: string[];
+  locationId: string | null;
+  locationName: string | null;
   checkedInAt: string;
   totalScore: number;
+  syncStatus: 'synced' | 'queued';
+  indicators: VisitIndicatorState;
 };
+
+type SyncState = 'synced' | 'offline' | 'pending' | 'auth' | 'failed';
 
 const safeUseSummary =
   'Use Deckplate Coverage only for unclassified, non-sensitive coverage tracking. Do not enter CUI, classified information, sensitive personal information, home addresses, counseling or medical details, or sensitive operational locations.';
@@ -58,6 +89,16 @@ async function api<T>(path: string, options: RequestInit = {}) {
 const newToken = () => crypto.randomUUID();
 
 const authHeaders = (identity: Identity) => ({ authorization: `Bearer ${identity.sessionToken}` });
+
+const isNetworkFailure = (error: unknown) => {
+  const status = error instanceof Error ? (error as Error & { status?: number }).status : undefined;
+  return status == null;
+};
+
+const indicatorPayload = (indicators: VisitIndicatorState) => ({
+  confidentialCareProvided: indicators.confidentialCareProvided,
+  referralProvided: indicators.referralProvided,
+});
 
 const statusLabel = (unit: UnitSummary) => {
   if (unit.status === 'gray') return 'Never visited';
@@ -187,15 +228,55 @@ function IdentitySetup({
   );
 }
 
-function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () => void }) {
+function CheckInScreen({
+  identity,
+  bootstrap,
+  cachedMode,
+  refresh,
+  onPendingChanged,
+}: {
+  identity: Identity;
+  bootstrap: Bootstrap;
+  cachedMode: boolean;
+  refresh: () => void;
+  onPendingChanged: () => void;
+}) {
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [matches, setMatches] = useState<LocationSummary[]>([]);
-  const [manualUnits, setManualUnits] = useState<UnitSummary[]>([]);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualLocationId, setManualLocationId] = useState('');
   const [manualQuery, setManualQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [confirmation, setConfirmation] = useState<CheckinConfirmation | null>(null);
   const [loading, setLoading] = useState(false);
+  const brief = useMemo(() => briefForDate(identity.teamMemberId), [identity.teamMemberId]);
+  const locationSummaries = useMemo(() => {
+    const grouped = new Map<string, LocationSummary>();
+    const rank = { gray: 4, red: 3, yellow: 2, green: 1 };
+    for (const unit of bootstrap.units) {
+      if (!unit.location_id || unit.latitude == null || unit.longitude == null || unit.radius_meters == null) continue;
+      const existing = grouped.get(unit.location_id);
+      if (existing) {
+        existing.units.push(unit);
+        existing.status = rank[unit.status] > rank[existing.status] ? unit.status : existing.status;
+      } else {
+        grouped.set(unit.location_id, {
+          id: unit.location_id,
+          area_id: unit.area_id ?? '',
+          area_name: unit.area_name ?? '',
+          name: unit.location_name ?? '',
+          latitude: unit.latitude,
+          longitude: unit.longitude,
+          radius_meters: unit.radius_meters,
+          status: unit.status,
+          units: [unit],
+        });
+      }
+    }
+    return Array.from(grouped.values());
+  }, [bootstrap.units]);
+  const unmappedUnits = bootstrap.units.filter((unit) => !unit.location_id);
 
   async function locate() {
     setMessage('');
@@ -206,13 +287,18 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
         const next = { lat: position.coords.latitude, lon: position.coords.longitude };
         setCoords(next);
         try {
-          const result = await api<{ matches: LocationSummary[] }>(`/api/nearby-locations?lat=${next.lat}&lon=${next.lon}`, {
-            headers: authHeaders(identity),
-          });
+          const result = cachedMode
+            ? { matches: findCachedNearbyLocations(bootstrap.units, next.lat, next.lon) }
+            : await api<{ matches: LocationSummary[] }>(`/api/nearby-locations?lat=${next.lat}&lon=${next.lon}`, {
+                headers: authHeaders(identity),
+              });
           setMatches(result.matches);
           setSelected(result.matches[0]?.units.map((unit) => unit.id) ?? []);
         } catch (err) {
-          setMessage(err instanceof Error ? err.message : 'Location lookup failed.');
+          const cachedMatches = findCachedNearbyLocations(bootstrap.units, next.lat, next.lon);
+          setMatches(cachedMatches);
+          setSelected(cachedMatches[0]?.units.map((unit) => unit.id) ?? []);
+          setMessage(cachedMatches.length ? 'Using cached location data.' : err instanceof Error ? err.message : 'Location lookup failed.');
         } finally {
           setLoading(false);
         }
@@ -225,9 +311,34 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
     );
   }
 
-  async function loadManualUnits() {
-    const result = await api<{ units: UnitSummary[] }>('/api/dashboard', { headers: authHeaders(identity) });
-    setManualUnits(result.units);
+  function startManualLookup() {
+    setManualMode(true);
+    setSelected([]);
+    setMessage('');
+  }
+
+  function selectedUnitsForSubmit() {
+    return bootstrap.units.filter((unit) => selected.includes(unit.id));
+  }
+
+  async function queueBatch(batch: PendingVisitBatch) {
+    await savePendingBatch(batch);
+    onPendingChanged();
+    setConfirmation({
+      clientBatchId: batch.clientBatchId,
+      checkinIds: [],
+      units: batch.unitNames,
+      locationId: batch.locationId,
+      locationName: batch.locationName,
+      checkedInAt: batch.occurredAt,
+      totalScore: 0,
+      syncStatus: 'queued',
+      indicators: {
+        confidentialCareProvided: batch.confidentialCareProvided,
+        referralProvided: batch.referralProvided,
+      },
+    });
+    setMessage('Saved on this device. Waiting to upload.');
   }
 
   async function submit(manual = false) {
@@ -235,32 +346,84 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
     setLoading(true);
     setMessage('');
     setConfirmation(null);
+    const selectedUnits = selectedUnitsForSubmit();
+    const locationIds = Array.from(new Set(selectedUnits.map((unit) => unit.location_id ?? null)));
+    if (locationIds.length > 1) {
+      setLoading(false);
+      setMessage('Choose units from one location per visit.');
+      return;
+    }
+    if (locationIds[0] === null && selectedUnits.length > 1) {
+      setLoading(false);
+      setMessage('Unmapped units must be checked in one at a time.');
+      return;
+    }
+    const occurredAt = new Date().toISOString();
+    const clientBatchId = crypto.randomUUID();
+    const locationId = locationIds[0] ?? null;
+    const locationName = selectedUnits[0]?.location_name ?? null;
     try {
-      const selectedUnits = [
-        ...matches.flatMap((location) => location.units),
-        ...manualUnits,
-      ].filter((unit, index, all) => selected.includes(unit.id) && all.findIndex((candidate) => candidate.id === unit.id) === index);
-      const result = await api<{ checkins: Array<{ id: string; score_awarded: number }>; totalScore: number }>('/api/checkins', {
+      const result = await api<{
+        batchId: string;
+        clientBatchId: string;
+        locationId: string | null;
+        checkins: Array<{ id: string; score_awarded: number }>;
+        totalScore: number;
+        indicators: VisitIndicatorState;
+      }>('/api/checkins', {
         method: 'POST',
         headers: authHeaders(identity),
         body: JSON.stringify({
           teamMemberId: identity.teamMemberId,
           deviceToken: identity.deviceToken,
+          clientBatchId,
+          occurredAt,
+          locationId,
           unitIds: selected,
           latitude: coords?.lat,
           longitude: coords?.lon,
           manual,
+          confidentialCareProvided: null,
+          referralProvided: null,
         }),
       });
       setConfirmation({
+        clientBatchId: result.clientBatchId,
         checkinIds: result.checkins.map((checkin) => checkin.id),
         units: selectedUnits.map((unit) => unit.name),
-        checkedInAt: new Date().toISOString(),
+        locationId: result.locationId,
+        locationName,
+        checkedInAt: occurredAt,
         totalScore: result.totalScore,
+        syncStatus: 'synced',
+        indicators: result.indicators,
       });
       refresh();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Check-in failed.');
+      if (isNetworkFailure(err)) {
+        await queueBatch({
+          clientBatchId,
+          teamMemberId: identity.teamMemberId,
+          teamMemberName: identity.teamMemberName,
+          deviceToken: identity.deviceToken,
+          unitIds: selected,
+          unitNames: selectedUnits.map((unit) => unit.name),
+          locationId,
+          locationName,
+          latitude: coords?.lat,
+          longitude: coords?.lon,
+          manual,
+          occurredAt,
+          confidentialCareProvided: null,
+          referralProvided: null,
+          syncStatus: 'pending',
+          lastSyncError: null,
+          createdAt: occurredAt,
+          updatedAt: occurredAt,
+        });
+      } else {
+        setMessage(err instanceof Error ? err.message : 'Check-in failed.');
+      }
     } finally {
       setLoading(false);
     }
@@ -268,6 +431,18 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
 
   async function undoCheckin() {
     if (!confirmation) return;
+    if (confirmation.syncStatus === 'queued') {
+      await removePendingBatch(confirmation.clientBatchId);
+      setConfirmation(null);
+      setSelected([]);
+      setMessage('Queued visit removed from this device.');
+      onPendingChanged();
+      return;
+    }
+    if (!navigator.onLine) {
+      setMessage('Reconnect to undo an uploaded check-in.');
+      return;
+    }
     if (!window.confirm('Undo this check-in? The records will be voided and removed from active coverage and score calculations.')) return;
     setLoading(true);
     setMessage('');
@@ -285,6 +460,24 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
       setMessage(err instanceof Error ? err.message : 'Undo failed.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function updateIndicators(next: VisitIndicatorState) {
+    if (!confirmation) return;
+    setConfirmation({ ...confirmation, indicators: next });
+    if (confirmation.syncStatus === 'queued') {
+      await updatePendingBatchIndicators(confirmation.clientBatchId, next);
+      return;
+    }
+    try {
+      await api(`/api/checkin-batches/${confirmation.clientBatchId}/indicators`, {
+        method: 'PATCH',
+        headers: authHeaders(identity),
+        body: JSON.stringify(indicatorPayload(next)),
+      });
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Indicator update will need to be retried when online.');
     }
   }
 
@@ -340,33 +533,65 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
         <section className="panel">
           <h2>No saved location nearby</h2>
           <p className="muted">Use manual lookup when the unit is not mapped or GPS is unavailable.</p>
-          <button className="secondary" onClick={loadManualUnits}>
+          <button className="secondary" onClick={startManualLookup}>
             Manual unit lookup
           </button>
-          {manualUnits.length > 0 && (
+          {manualMode && (
             <div className="unit-picker">
               <input
-                placeholder="Search units"
+                placeholder="Search locations or units"
                 value={manualQuery}
                 onChange={(event) => setManualQuery(event.target.value)}
               />
-              {manualUnits.filter((unit) => unit.name.toLowerCase().includes(manualQuery.toLowerCase())).map((unit) => (
-                <label key={unit.id} className={`check-row ${unit.status}`}>
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(unit.id)}
-                    onChange={(event) =>
-                      setSelected((current) =>
-                        event.target.checked ? [...current, unit.id] : current.filter((id) => id !== unit.id),
-                      )
-                    }
-                  />
-                  <span>
-                    <strong>{unit.name}</strong>
-                    <small>{unit.area_name ?? 'Unassigned'} - manual</small>
-                  </span>
-                </label>
-              ))}
+              <select value={manualLocationId} onChange={(event) => {
+                setManualLocationId(event.target.value);
+                setSelected([]);
+              }}>
+                <option value="">Choose mapped location</option>
+                {locationSummaries
+                  .filter((location) => `${location.name} ${location.area_name}`.toLowerCase().includes(manualQuery.toLowerCase()))
+                  .map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.name} - {location.area_name}
+                    </option>
+                  ))}
+                <option value="unmapped">Unmapped unit</option>
+              </select>
+              {manualLocationId && manualLocationId !== 'unmapped' &&
+                locationSummaries.find((location) => location.id === manualLocationId)?.units.map((unit) => (
+                  <label key={unit.id} className={`check-row ${unit.status}`}>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(unit.id)}
+                      onChange={(event) =>
+                        setSelected((current) =>
+                          event.target.checked ? [...current, unit.id] : current.filter((id) => id !== unit.id),
+                        )
+                      }
+                    />
+                    <span>
+                      <strong>{unit.name}</strong>
+                      <small>{unit.location_name} - manual</small>
+                    </span>
+                  </label>
+                ))}
+              {manualLocationId === 'unmapped' &&
+                unmappedUnits
+                  .filter((unit) => unit.name.toLowerCase().includes(manualQuery.toLowerCase()))
+                  .map((unit) => (
+                    <label key={unit.id} className={`check-row ${unit.status}`}>
+                      <input
+                        type="radio"
+                        name="unmapped-unit"
+                        checked={selected.includes(unit.id)}
+                        onChange={() => setSelected([unit.id])}
+                      />
+                      <span>
+                        <strong>{unit.name}</strong>
+                        <small>Unmapped - manual</small>
+                      </span>
+                    </label>
+                  ))}
               <button className="primary big" onClick={() => submit(true)} disabled={!selected.length || loading}>
                 Submit Manual Check-In
               </button>
@@ -377,7 +602,7 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
       )}
       {confirmation && (
         <section className="panel confirmation-panel">
-          <p className="eyebrow">Check-in saved</p>
+          <p className="eyebrow">{confirmation.syncStatus === 'queued' ? 'Saved on this device' : 'Check-in saved'}</p>
           <h2>{confirmation.units.length} unit{confirmation.units.length === 1 ? '' : 's'} checked in</h2>
           <ul className="plain-list">
             {confirmation.units.map((unit) => (
@@ -391,9 +616,40 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
             </div>
             <div>
               <dt>Points awarded</dt>
-              <dd>{confirmation.totalScore}</dd>
+              <dd>{confirmation.syncStatus === 'queued' ? 'Waiting to upload' : confirmation.totalScore}</dd>
             </div>
           </dl>
+          <section className="optional-indicators">
+            <h3>Optional visit indicators</h3>
+            <p className="muted">Optional counts only. Do not add names, circumstances, counseling details, medical information, or other sensitive information.</p>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={confirmation.indicators.confidentialCareProvided === true}
+                onChange={(event) =>
+                  updateIndicators({ ...confirmation.indicators, confidentialCareProvided: event.target.checked ? true : null })
+                }
+              />
+              Confidential care provided
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={confirmation.indicators.referralProvided === true}
+                onChange={(event) =>
+                  updateIndicators({ ...confirmation.indicators, referralProvided: event.target.checked ? true : null })
+                }
+              />
+              Referral provided
+            </label>
+          </section>
+          <section className="brief-card">
+            <p className="eyebrow">Deckplate Brief</p>
+            <p>{brief.text}</p>
+            <small>
+              {brief.attribution} - {brief.sourceTitle}
+            </small>
+          </section>
           <div className="action-row">
             <button className="secondary danger-text" onClick={undoCheckin} disabled={loading}>
               Undo this check-in
@@ -409,7 +665,55 @@ function CheckInScreen({ identity, refresh }: { identity: Identity; refresh: () 
   );
 }
 
-function CoverageBoard({ areas, units }: { areas: Area[]; units: UnitSummary[] }) {
+function SyncStatusBar({
+  state,
+  pendingCount,
+  cachedAt,
+  message,
+  updateReady,
+  canReload,
+  onSyncNow,
+  onReload,
+}: {
+  state: SyncState;
+  pendingCount: number;
+  cachedAt: string | null;
+  message: string;
+  updateReady: boolean;
+  canReload: boolean;
+  onSyncNow: () => void;
+  onReload: () => void;
+}) {
+  const label =
+    pendingCount > 0
+      ? `${pendingCount} visit${pendingCount === 1 ? '' : 's'} waiting to upload`
+      : state === 'auth'
+        ? 'Sync needs PIN refresh'
+        : state === 'failed'
+          ? 'Sync failed - retry available'
+          : state === 'offline'
+            ? 'Offline - cached data'
+            : 'Online and synced';
+  return (
+    <div className={`sync-bar ${state}`}>
+      <span>
+        {label}
+        {cachedAt ? ` - Last synced ${niceDateTime(cachedAt)}` : ''}
+        {message && pendingCount === 0 ? ` - ${message}` : ''}
+      </span>
+      <button className="secondary" onClick={onSyncNow}>
+        Sync Now
+      </button>
+      {updateReady && (
+        <button className="secondary" onClick={onReload} disabled={!canReload}>
+          Update available
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CoverageBoard({ areas, units, cachedAt }: { areas: Area[]; units: UnitSummary[]; cachedAt: string | null }) {
   const [area, setArea] = useState('');
   const [unitType, setUnitType] = useState('');
   const [overdueOnly, setOverdueOnly] = useState(false);
@@ -437,6 +741,7 @@ function CoverageBoard({ areas, units }: { areas: Area[]; units: UnitSummary[] }
         <div>
           <p className="eyebrow">Coverage Board</p>
           <h1>Needs attention first</h1>
+          {cachedAt && <small>Last synced {niceDateTime(cachedAt)}</small>}
         </div>
       </div>
       <section className="filters">
@@ -828,6 +1133,13 @@ function AdminCheckinRow({
           </small>
         </div>
         {voided && <span className="status-pill">Voided: {checkin.void_reason ?? 'no reason'}</span>}
+        {(checkin.confidential_care_provided || checkin.referral_provided) && (
+          <span className="status-pill">
+            {checkin.confidential_care_provided ? 'Care' : ''}
+            {checkin.confidential_care_provided && checkin.referral_provided ? ' / ' : ''}
+            {checkin.referral_provided ? 'Referral' : ''}
+          </span>
+        )}
       </div>
       {!voided && (
         <div className="activity-edit">
@@ -1250,7 +1562,17 @@ function AdminScreen({
   );
 }
 
-function Settings({ identity, members, onIdentity }: { identity: Identity; members: TeamMember[]; onIdentity: (identity: Identity) => void }) {
+function Settings({
+  identity,
+  members,
+  pendingCount,
+  onIdentity,
+}: {
+  identity: Identity;
+  members: TeamMember[];
+  pendingCount: number;
+  onIdentity: (identity: Identity) => void;
+}) {
   const [pin, setPin] = useState('');
   const [newMember, setNewMember] = useState(members[0]?.id ?? '');
   const [newPin, setNewPin] = useState('');
@@ -1258,6 +1580,10 @@ function Settings({ identity, members, onIdentity }: { identity: Identity; membe
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (pendingCount > 0) {
+      setMessage('Sync or intentionally discard pending visits before changing identity.');
+      return;
+    }
     const member = members.find((candidate) => candidate.id === newMember);
     if (!member) return;
     try {
@@ -1334,6 +1660,8 @@ function Settings({ identity, members, onIdentity }: { identity: Identity; membe
 
 export default function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
+  const [cachedMode, setCachedMode] = useState(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [identity, setIdentity] = useState<Identity | null>(() => {
     const stored = localStorage.getItem(identityKey);
@@ -1343,6 +1671,12 @@ export default function App() {
   });
   const [screen, setScreen] = useState<Screen>('checkin');
   const [error, setError] = useState('');
+  const [pendingCount, setPendingCount] = useState(0);
+  const [syncState, setSyncState] = useState<SyncState>('synced');
+  const [syncMessage, setSyncMessage] = useState('');
+  const [refreshPin, setRefreshPin] = useState('');
+  const [updateReady, setUpdateReady] = useState(false);
+  const [applyUpdate, setApplyUpdate] = useState<(() => Promise<void>) | null>(null);
 
   async function loadTeamMembers() {
     try {
@@ -1357,17 +1691,152 @@ export default function App() {
     if (!currentIdentity) return;
     try {
       setError('');
-      setBootstrap(await api<Bootstrap>('/api/bootstrap', { headers: authHeaders(currentIdentity) }));
+      const nextBootstrap = await api<Bootstrap>('/api/bootstrap', { headers: authHeaders(currentIdentity) });
+      setBootstrap(nextBootstrap);
+      setCachedMode(false);
+      setCachedAt(null);
+      await saveBootstrapSnapshot(nextBootstrap);
     } catch (err) {
       const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
       if (status === 403) {
-        localStorage.removeItem(identityKey);
-        setIdentity(null);
-        setBootstrap(null);
-        await loadTeamMembers();
+        const cached = await getBootstrapSnapshot();
+        if (cached) {
+          setBootstrap(cached);
+          setTeamMembers(cached.teamMembers);
+          setCachedAt(cached.cachedAt);
+          setCachedMode(true);
+          setSyncState('auth');
+          setSyncMessage('Sync needs PIN refresh.');
+          return;
+        }
+        const pending = await countBlockingPendingBatches(currentIdentity.teamMemberId);
+        if (pending > 0) {
+          setSyncState('auth');
+          setSyncMessage('Sync needs PIN refresh.');
+        } else {
+          localStorage.removeItem(identityKey);
+          setIdentity(null);
+          setBootstrap(null);
+          await loadTeamMembers();
+        }
         return;
       }
-      setError(err instanceof Error ? err.message : 'Unable to load app data.');
+      const cached = await getBootstrapSnapshot();
+      if (cached) {
+        setBootstrap(cached);
+        setTeamMembers(cached.teamMembers);
+        setCachedAt(cached.cachedAt);
+        setCachedMode(true);
+        setSyncState('offline');
+        setSyncMessage('Offline - cached data.');
+      } else {
+        setError('Deckplate Coverage needs one online launch before offline use.');
+      }
+    }
+  }
+
+  async function refreshPendingCount(currentIdentity = identity) {
+    if (!currentIdentity) return;
+    const count = await countBlockingPendingBatches(currentIdentity.teamMemberId);
+    setPendingCount(count);
+    if (count > 0 && syncState === 'synced') setSyncState('pending');
+  }
+
+  async function syncPending(currentIdentity = identity) {
+    if (!currentIdentity) return;
+    const batches = (await getPendingBatches(currentIdentity.teamMemberId)).filter((batch) => batch.syncStatus !== 'synced');
+    setPendingCount(batches.length);
+    if (!batches.length) {
+      setSyncState(cachedMode ? 'offline' : 'synced');
+      setSyncMessage('');
+      return;
+    }
+    setSyncState('pending');
+    for (const batch of batches) {
+      try {
+        await savePendingBatch({ ...batch, syncStatus: 'syncing', lastSyncError: null });
+        const result = await api<{
+          batchId: string;
+          checkins: Array<{ id: string; score_awarded: number }>;
+          totalScore: number;
+        }>('/api/checkins', {
+          method: 'POST',
+          headers: authHeaders(currentIdentity),
+          body: JSON.stringify({
+            teamMemberId: currentIdentity.teamMemberId,
+            deviceToken: batch.deviceToken,
+            clientBatchId: batch.clientBatchId,
+            occurredAt: batch.occurredAt,
+            locationId: batch.locationId,
+            unitIds: batch.unitIds,
+            latitude: batch.latitude,
+            longitude: batch.longitude,
+            manual: batch.manual,
+            ...indicatorPayload({
+              confidentialCareProvided: batch.confidentialCareProvided,
+              referralProvided: batch.referralProvided,
+            }),
+          }),
+        });
+        await savePendingBatch({
+          ...batch,
+          syncStatus: 'synced',
+          serverBatchId: result.batchId,
+          checkinIds: result.checkins.map((checkin) => checkin.id),
+          totalScore: result.totalScore,
+          lastSyncError: null,
+        });
+        await removePendingBatch(batch.clientBatchId);
+      } catch (err) {
+        const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
+        if (status === 403) {
+          await savePendingBatch({ ...batch, syncStatus: 'auth', lastSyncError: 'PIN refresh required.' });
+          setSyncState('auth');
+          setSyncMessage('Sync needs PIN refresh.');
+          await refreshPendingCount(currentIdentity);
+          return;
+        }
+        if (isNetworkFailure(err)) {
+          await savePendingBatch({ ...batch, syncStatus: 'pending', lastSyncError: 'Waiting for connectivity.' });
+          setSyncState('offline');
+          setSyncMessage('Offline - cached data.');
+          await refreshPendingCount(currentIdentity);
+          return;
+        }
+        await savePendingBatch({ ...batch, syncStatus: 'failed', lastSyncError: err instanceof Error ? err.message : 'Sync failed.' });
+        setSyncState('failed');
+        setSyncMessage('Sync failed - retry available.');
+        await refreshPendingCount(currentIdentity);
+        return;
+      }
+    }
+    setSyncState('synced');
+    setSyncMessage('Online and synced.');
+    await refreshPendingCount(currentIdentity);
+    await load(currentIdentity);
+  }
+
+  async function refreshSession(event: FormEvent) {
+    event.preventDefault();
+    if (!identity || !/^\d{4}$/.test(refreshPin)) return;
+    try {
+      const result = await api<{ deviceId: string; sessionToken: string }>('/api/device/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          teamMemberId: identity.teamMemberId,
+          pin: refreshPin,
+          deviceToken: identity.deviceToken,
+          deviceLabel: navigator.userAgent.slice(0, 120),
+        }),
+      });
+      const next = { ...identity, deviceId: result.deviceId, sessionToken: result.sessionToken };
+      localStorage.setItem(identityKey, JSON.stringify(next));
+      setIdentity(next);
+      setRefreshPin('');
+      setSyncState('pending');
+      await syncPending(next);
+    } catch (err) {
+      setSyncMessage(err instanceof Error ? err.message : 'PIN refresh failed.');
     }
   }
 
@@ -1379,10 +1848,35 @@ export default function App() {
   useEffect(() => {
     if (identity) {
       void load(identity);
+      void refreshPendingCount(identity);
     } else {
       void loadTeamMembers();
     }
   }, []);
+
+  useEffect(() => {
+    const updateSW = registerSW({
+      onNeedRefresh() {
+        setUpdateReady(true);
+        setApplyUpdate(() => () => updateSW(true));
+      },
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!identity) return;
+    const sync = () => void syncPending(identity);
+    window.addEventListener('online', sync);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') sync();
+    });
+    window.addEventListener('focus', sync);
+    void syncPending(identity);
+    return () => {
+      window.removeEventListener('online', sync);
+      window.removeEventListener('focus', sync);
+    };
+  }, [identity?.teamMemberId, identity?.sessionToken]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -1397,8 +1891,43 @@ export default function App() {
 
   return (
     <>
-      {screen === 'checkin' && <CheckInScreen identity={identity} refresh={load} />}
-      {screen === 'coverage' && <CoverageBoard areas={bootstrap.areas} units={bootstrap.units} />}
+      <SyncStatusBar
+        state={syncState}
+        pendingCount={pendingCount}
+        cachedAt={cachedAt}
+        message={syncMessage}
+        updateReady={updateReady}
+        canReload={pendingCount === 0}
+        onSyncNow={() => void syncPending(identity)}
+        onReload={() => {
+          if (pendingCount === 0) void applyUpdate?.();
+        }}
+      />
+      {syncState === 'auth' && (
+        <form className="pin-refresh" onSubmit={refreshSession}>
+          <label>
+            Enter your current PIN to refresh sync
+            <input
+              value={refreshPin}
+              inputMode="numeric"
+              pattern="\d{4}"
+              maxLength={4}
+              onChange={(event) => setRefreshPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+            />
+          </label>
+          <button className="primary">Refresh</button>
+        </form>
+      )}
+      {screen === 'checkin' && (
+        <CheckInScreen
+          identity={identity}
+          bootstrap={bootstrap}
+          cachedMode={cachedMode}
+          refresh={() => void load(identity)}
+          onPendingChanged={() => void refreshPendingCount(identity)}
+        />
+      )}
+      {screen === 'coverage' && <CoverageBoard areas={bootstrap.areas} units={bootstrap.units} cachedAt={cachedAt} />}
       {screen === 'map' && (
         <MapScreen
           units={bootstrap.units}
@@ -1414,8 +1943,8 @@ export default function App() {
           mapDefaultLongitude={bootstrap.mapDefaultLongitude}
         />
       )}
-      {screen === 'scoreboard' && <Scoreboard identity={identity} />}
-      {screen === 'settings' && <Settings identity={identity} members={bootstrap.teamMembers} onIdentity={handleIdentity} />}
+      {screen === 'scoreboard' && (cachedMode ? <main className="screen"><p className="notice">Scoreboard needs a live connection.</p></main> : <Scoreboard identity={identity} />)}
+      {screen === 'settings' && <Settings identity={identity} members={bootstrap.teamMembers} pendingCount={pendingCount} onIdentity={handleIdentity} />}
       <nav className="bottom-nav">
         {[
           ['checkin', 'Check In'],

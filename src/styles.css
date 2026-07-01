@@ -98,7 +98,7 @@ h2 {
   min-height: 100vh;
   margin: 0 auto;
   padding:
-    calc(22px + env(safe-area-inset-top))
+    calc(66px + env(safe-area-inset-top))
     max(14px, env(safe-area-inset-left))
     calc(118px + env(safe-area-inset-bottom))
     max(14px, env(safe-area-inset-right));
@@ -132,6 +132,55 @@ h2 {
   box-shadow: 0 8px 24px rgba(20, 30, 40, 0.12);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+}
+
+.sync-bar {
+  position: fixed;
+  top: env(safe-area-inset-top);
+  right: 0;
+  left: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+  align-items: center;
+  padding: 6px max(10px, env(safe-area-inset-right)) 6px max(10px, env(safe-area-inset-left));
+  border-bottom: 1px solid rgba(217, 224, 231, 0.9);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--muted);
+  font-size: 0.75rem;
+  box-shadow: 0 4px 12px rgba(20, 30, 40, 0.08);
+}
+
+.sync-bar button {
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+}
+
+.sync-bar.pending,
+.sync-bar.offline,
+.sync-bar.failed,
+.sync-bar.auth {
+  color: var(--brand);
+}
+
+.pin-refresh {
+  position: fixed;
+  top: calc(42px + env(safe-area-inset-top));
+  right: 10px;
+  left: 10px;
+  z-index: 31;
+  display: grid;
+  grid-template-columns: 1fr 110px;
+  gap: 8px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(20, 30, 40, 0.16);
 }
 
 .screen-title .eyebrow {
@@ -242,6 +291,25 @@ small,
   margin-top: 12px;
   border-color: rgba(40, 122, 62, 0.35);
   background: #f5fbf6;
+}
+
+.optional-indicators,
+.brief-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.optional-indicators h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.brief-card p {
+  margin-bottom: 2px;
 }
 
 .confirmation-details {

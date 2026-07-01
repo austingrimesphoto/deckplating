@@ -22,6 +22,10 @@ For a plain-English, button-by-button setup walkthrough, use:
 
 That guide is the one to hand to a chaplain, RP, or command teammate who just needs to get the tool running. It is written around a no-terminal beta setup path.
 
+Offline release validation checklist:
+
+[docs/OFFLINE_TEST_CHECKLIST.md](docs/OFFLINE_TEST_CHECKLIST.md)
+
 Safe-use policy:
 
 [docs/SAFE_USE.md](docs/SAFE_USE.md)
@@ -140,7 +144,8 @@ Run these files in Supabase SQL Editor, in order:
 
 1. `supabase/migrations/001_initial_schema.sql`
 2. `supabase/migrations/002_checkin_corrections.sql`
-3. `supabase/seed.sql`
+3. `supabase/migrations/003_offline_batches_outcomes_and_hardening.sql`
+4. `supabase/seed.sql`
 
 The schema enables row level security on all tables. Browser code never talks directly to Supabase. All database access goes through Netlify Functions using the server-side service-role key.
 
@@ -157,6 +162,22 @@ Functions directory: netlify/functions
 ```
 
 After deployment, open the site on a phone and use **Add to Home Screen**.
+
+## Offline Mode
+
+Deckplate Coverage needs one successful online launch before offline use. That first launch installs the app shell and caches recent coverage data on the device.
+
+The app queues visits offline and syncs automatically when it is open and can reach Deckplate Coverage again. Background upload while the app is closed is not guaranteed on every phone.
+
+The sync bar shows:
+
+- **Online and synced**: no queued visits remain.
+- **Offline - cached data**: cached coverage is being used.
+- **X visits waiting to upload**: local visit batches are pending.
+- **Sync needs PIN refresh**: enter the existing 4-digit PIN to refresh the session without losing queued visits.
+- **Sync failed - retry available**: use **Sync Now** after checking connectivity.
+
+Queued visits stay on the device until they sync or are undone locally before upload.
 
 ## Security Model
 
@@ -198,6 +219,7 @@ User-session protected:
 - `GET /api/nearby-locations`
 - `POST /api/checkins`
 - `POST /api/checkins/undo`
+- `PATCH /api/checkin-batches/:clientBatchId/indicators`
 - `GET /api/dashboard`
 - `GET /api/leaderboard`
 
@@ -217,19 +239,36 @@ Admin-session protected:
 ## Test Checklist
 
 - First launch shows active team member roster.
+- First online launch installs the PWA/service worker and caches the app shell.
 - Selecting a name with a 4-digit PIN registers a device and stores identity locally.
 - Returning to the app skips name selection when the saved session is valid.
 - Protected API routes return `403` without a signed user session.
 - Settings identity change requires the current PIN.
+- After one successful online launch, disable network and reload the app.
+- Cached coverage board loads with clear last-synced status.
 - Check In asks for geolocation and finds mapped locations within radius.
+- Nearby check-in works from cached location data.
 - Manual check-in works when no saved location is nearby.
+- Manual check-in works offline and keeps one location per visit batch.
+- Offline visit survives app close/reopen.
+- Reconnecting and syncing creates exactly one visit batch and correct unit check-ins.
+- Repeated sync attempts do not duplicate check-ins or points.
+- Offline indicator selections upload with the matching visit batch.
+- A user can ignore optional indicators and immediately leave the confirmation screen.
+- Checked indicators save automatically without a second submit button.
+- Indicator values remain generic location-level data and are not duplicated across selected units.
+- A queued offline visit can be undone locally before upload.
 - Immediate undo removes a new check-in from coverage and leaderboard calculations.
+- Uploaded undo rejects check-ins older than 15 minutes.
 - Coverage Board groups by parent area and shows green, yellow, red, and gray status correctly.
 - Map shows pins and radius circles for mapped locations.
 - Admin passphrase unlocks admin screens.
 - A voided record is visible only when Admin Activity Log includes voided records.
 - Correcting a unit updates its linked location and clears geofence verification.
+- Admin date/time and team-member edits zero score.
 - Safe-use notices appear on identity selection, Settings, and Admin location editing.
+- No PIN is stored outside the user’s typed-entry flow.
+- No authenticated API responses are stored in service-worker Cache Storage.
 - Existing identity, map, coverage board, admin location editing, and leaderboard still work.
 - Admin can create/edit locations, move units, deactivate units, and create team members.
 - Leaderboard uses stored `score_awarded` values and monthly filtering.

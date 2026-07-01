@@ -9,3 +9,4 @@ Deckplate Coverage is not approved for CUI, classified information, or sensitive
 - Do not map SCIFs, restricted spaces, operational locations in theater, residences, or other sensitive locations.
 - When uncertain, do not map the location. Use manual check-in.
 - Deckplate Coverage is a coverage-awareness tool, not a counseling record, case-management system, or official system of record.
+- Optional visit indicators are generic location-visit counts only. They are not associated with specific individuals, departments, counseling cases, referral details, or sensitive circumstances.

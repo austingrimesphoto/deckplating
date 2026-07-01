@@ -89,4 +89,35 @@ export type AdminCheckin = {
   voided_at: string | null;
   void_reason: string | null;
   updated_at: string | null;
+  batch_id: string | null;
+  client_batch_id: string | null;
+  confidential_care_provided: true | null;
+  referral_provided: true | null;
+};
+
+export type VisitIndicatorState = {
+  confidentialCareProvided: true | null;
+  referralProvided: true | null;
+};
+
+export type PendingVisitBatch = VisitIndicatorState & {
+  clientBatchId: string;
+  teamMemberId: string;
+  teamMemberName: string;
+  deviceToken: string;
+  unitIds: string[];
+  unitNames: string[];
+  locationId: string | null;
+  locationName: string | null;
+  latitude?: number;
+  longitude?: number;
+  manual: boolean;
+  occurredAt: string;
+  syncStatus: 'pending' | 'syncing' | 'synced' | 'failed' | 'auth';
+  serverBatchId?: string;
+  checkinIds?: string[];
+  totalScore?: number;
+  lastSyncError?: string | null;
+  createdAt: string;
+  updatedAt: string;
 };

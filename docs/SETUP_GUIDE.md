@@ -74,6 +74,14 @@ Then run the correction migration:
 4. Paste it into Supabase SQL Editor.
 5. Click **Run**.
 
+Then run the offline visit batch migration:
+
+1. Click **New query** again.
+2. In your GitHub copy, open `supabase/migrations/003_offline_batches_outcomes_and_hardening.sql`.
+3. Copy the whole file.
+4. Paste it into Supabase SQL Editor.
+5. Click **Run**.
+
 Then load starter data:
 
 1. Click **New query** again.
@@ -173,6 +181,22 @@ On Android:
 2. Tap the menu.
 3. Tap **Add to Home screen** or **Install app**.
 4. Confirm.
+
+## Offline Use
+
+Open the app once while online before relying on offline mode. That first successful launch caches the app shell and recent coverage data.
+
+The app queues visits offline and syncs automatically when it is open and can reach Deckplate Coverage again. Background upload while the app is closed is not guaranteed on every phone.
+
+Look at the sync bar:
+
+- **Online and synced** means nothing is waiting.
+- **Offline - cached data** means the app is using the last saved snapshot.
+- **X visits waiting to upload** means check-ins are saved on that device.
+- **Sync needs PIN refresh** means the user should enter the same 4-digit PIN to refresh the session.
+- **Sync failed - retry available** means tap **Sync Now** after connectivity returns.
+
+Optional visit indicators are generic location-visit counts only. They are not tied to specific people, departments, counseling cases, or referral details. Do not enter sensitive information.
 
 ## Optional: Local Testing With Terminal
 
