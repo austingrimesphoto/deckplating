@@ -1,104 +1,63 @@
 # Deckplate Coverage
 
-Minimum viable mobile web app for chapel team coverage tracking across NASKW parent areas, departments, and tenant commands.
+Deckplate Coverage is a mobile web app for installation Religious Ministry Teams to track command coverage, map unit locations, log visits, and see which departments or tenant commands need attention.
 
-## Stack
+It is designed to be copied by each RMT. Every team should run its own Netlify site and its own Supabase database, so no one has to manage one giant fleet-wide database.
 
-- React, TypeScript, Vite
-- Netlify hosting and Netlify Functions
-- Supabase Postgres
-- MapLibre GL JS
-- Browser calls only `/api/*`; Supabase service-role access stays inside Netlify Functions
+## Start Here
 
-## File Structure
+For a plain-English, button-by-button setup walkthrough, use:
 
-```text
-src/                         React mobile web app
-netlify/functions/api.ts     Single API router for all required /api/* routes
-supabase/migrations/         Database schema
-supabase/seed.sql            Initial areas, units, and starter team roster
-public/manifest.webmanifest  Basic PWA manifest
-netlify.toml                 Vite build and /api rewrite config
-.env.example                 Required environment variables
-```
+[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)
 
-## Local Setup
+That guide is the one to hand to a chaplain, RP, or command teammate who just needs to get the tool running.
 
-1. Install dependencies:
+## What Each Team Gets
+
+- A private app deployment on Netlify
+- A separate Supabase database
+- A phone-friendly installable web app
+- A local admin passphrase
+- Name + PIN sign-in for team members
+- Protected app data behind signed user sessions
+
+## Fast Local Setup
+
+Install dependencies:
 
 ```bash
 npm install
 ```
 
-2. Copy environment variables:
+Create a local `.env` file:
 
 ```bash
-cp .env.example .env
+npm run setup
 ```
 
-3. Fill in `.env`:
-
-```text
-SUPABASE_URL=your-project-url
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-ADMIN_PASSPHRASE_HASH=sha256-hash-of-shared-passphrase
-ADMIN_SESSION_SECRET=random-long-server-side-secret
-MAP_TILE_URL=https://your-map-style-url
-MAP_TILE_KEY=optional-provider-key
-```
-
-`MAP_TILE_URL` may be a full MapLibre style URL. If it is blank, the app uses OpenStreetMap raster tiles for local MVP use.
-
-4. Run locally:
-
-```bash
-npm run dev
-```
-
-For Netlify Functions locally, use Netlify CLI:
+Run the app with Netlify Functions:
 
 ```bash
 netlify dev
 ```
 
-## Supabase Setup
+Open the local URL Netlify prints, usually:
 
-1. Create a Supabase project.
-2. Open SQL Editor and run:
-
-```sql
--- paste supabase/migrations/001_initial_schema.sql
+```text
+http://localhost:8888
 ```
 
-3. Run the seed data:
+## Required Services
 
-```sql
--- paste supabase/seed.sql
-```
+Each installation needs accounts for:
 
-4. Do not use Supabase Auth for this app.
-5. Do not expose the service-role key in browser code. It belongs only in Netlify environment variables.
+- GitHub, to hold that team's copy of the app
+- Supabase, to hold that team's database
+- Netlify, to host that team's website and API functions
 
-The schema enables row level security on all tables. The MVP API uses the server-side service-role key through Netlify Functions.
+## Required Environment Variables
 
-## Admin Passphrase Hash
-
-Create the SHA-256 hash of the shared admin passphrase:
-
-```bash
-node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" "your passphrase"
-```
-
-Set the output as `ADMIN_PASSPHRASE_HASH`.
-
-## Netlify Deployment
-
-1. Push the repository to GitHub or another Netlify-supported Git provider.
-2. Create a Netlify site from the repo.
-3. Build command: `npm run build`
-4. Publish directory: `dist`
-5. Functions directory: `netlify/functions`
-6. Add these environment variables in Netlify:
+These are needed locally in `.env` and in Netlify environment variables:
 
 ```text
 SUPABASE_URL
@@ -109,17 +68,76 @@ MAP_TILE_URL
 MAP_TILE_KEY
 ```
 
-`netlify.toml` rewrites `/api/*` to the single Netlify Function router while preserving the required route surface.
+`npm run setup` generates `ADMIN_PASSPHRASE_HASH` and `ADMIN_SESSION_SECRET` for local use. Use the same values in Netlify.
+
+`MAP_TILE_URL` and `MAP_TILE_KEY` may be blank for basic use.
+
+## Supabase Setup
+
+Run these files in Supabase SQL Editor, in order:
+
+1. `supabase/migrations/001_initial_schema.sql`
+2. `supabase/seed.sql`
+
+The schema enables row level security on all tables. Browser code never talks directly to Supabase. All database access goes through Netlify Functions using the server-side service-role key.
+
+## Netlify Deployment
+
+Netlify reads `netlify.toml`.
+
+Expected settings:
+
+```text
+Build command: npm run build
+Publish directory: dist
+Functions directory: netlify/functions
+```
+
+After deployment, open the site on a phone and use **Add to Home Screen**.
+
+## Security Model
+
+- Public users can only load the minimal team-member name list needed for sign-in.
+- Full app data requires a signed user session.
+- Users get a session by selecting their name and entering their PIN.
+- Check-ins require both a valid session and a registered device token.
+- Admin create/edit routes require the admin passphrase session.
+- Supabase service-role access stays inside Netlify Functions.
+
+This is not a DoD enterprise identity system. It is a practical self-hosted app gate for local RMT use.
+
+## File Structure
+
+```text
+src/                         React mobile web app
+netlify/functions/api.ts     API router for /api/* routes
+supabase/migrations/         Database schema
+supabase/seed.sql            Starter areas, units, and team roster
+public/                      PWA icons, manifest, background assets
+scripts/setup.mjs            Local setup helper
+docs/SETUP_GUIDE.md          Non-technical deployment guide
+netlify.toml                 Build and API rewrite config
+.env.example                 Environment variable names
+```
 
 ## API Routes
 
+Public:
+
+- `GET /api/team-members`
 - `POST /api/device/register`
+
+User-session protected:
+
 - `POST /api/device/change-identity`
 - `GET /api/bootstrap`
 - `GET /api/nearby-locations`
 - `POST /api/checkins`
 - `GET /api/dashboard`
 - `GET /api/leaderboard`
+
+Admin-session protected:
+
 - `POST /api/admin/login`
 - `GET /api/admin/locations`
 - `POST /api/admin/locations`
@@ -133,15 +151,13 @@ MAP_TILE_KEY
 
 - First launch shows active team member roster.
 - Selecting a name with a 4-digit PIN registers a device and stores identity locally.
-- Returning to the app skips name selection.
+- Returning to the app skips name selection when the saved session is valid.
+- Protected API routes return `403` without a signed user session.
 - Settings identity change requires the current PIN.
 - Check In asks for geolocation and finds mapped locations within radius.
-- A location with multiple units shows multi-select checkboxes.
-- Manual check-in works when no saved location is nearby and stores `geofence_verified=false`.
+- Manual check-in works when no saved location is nearby.
 - Coverage Board groups by parent area and shows green, yellow, red, and gray status correctly.
-- Coverage filters work for area, unit type, overdue only, never visited, and date range.
-- Map shows pins and translucent radius circles for mapped locations.
-- Pin popup shows location, area, radius, units, and last-visit data.
+- Map shows pins and radius circles for mapped locations.
 - Admin passphrase unlocks admin screens.
 - Admin can create/edit locations, move units, deactivate units, and create team members.
 - Leaderboard uses stored `score_awarded` values and monthly filtering.
