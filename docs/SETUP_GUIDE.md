@@ -71,7 +71,7 @@ Then load starter data:
 4. Paste it into Supabase SQL Editor.
 5. Click **Run**.
 
-You can edit the starter areas, units, and team members later in the app's Admin tab.
+This only adds one example area, one example unit, and one example team member. Replace those examples later in the app's Admin tab.
 
 ## Step 4: Copy Supabase Values
 

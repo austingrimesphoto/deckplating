@@ -51,6 +51,12 @@ const statusColor = {
   gray: '#68717a',
 };
 
+const unitTypeLabel: Record<UnitType, string> = {
+  department: 'Department',
+  division: 'Division',
+  tenant: 'Tenant command',
+};
+
 function circlePolygon(longitude: number, latitude: number, radiusMeters: number) {
   const points = 64;
   const earthRadius = 6371000;
@@ -347,6 +353,7 @@ function CoverageBoard({ areas, units }: { areas: Area[]; units: UnitSummary[] }
         <select value={unitType} onChange={(event) => setUnitType(event.target.value)}>
           <option value="">All types</option>
           <option value="department">Departments</option>
+          <option value="division">Divisions</option>
           <option value="tenant">Tenant commands</option>
         </select>
         <label className="toggle">
@@ -371,7 +378,7 @@ function CoverageBoard({ areas, units }: { areas: Area[]; units: UnitSummary[] }
                 <article key={unit.id} className={`unit-card ${unit.status}`}>
                   <div>
                     <strong>{unit.name}</strong>
-                    <span>{unit.unit_type === 'department' ? 'Department' : 'Tenant command'}</span>
+                    <span>{unitTypeLabel[unit.unit_type]}</span>
                   </div>
                   <dl>
                     <div>
@@ -850,6 +857,7 @@ function AdminScreen({
           <input placeholder="Unit name" value={unitForm.name} onChange={(event) => setUnitForm({ ...unitForm, name: event.target.value })} />
           <select value={unitForm.unit_type} onChange={(event) => setUnitForm({ ...unitForm, unit_type: event.target.value as UnitType })}>
             <option value="department">Department</option>
+            <option value="division">Division</option>
             <option value="tenant">Tenant command</option>
           </select>
           <select value={unitForm.location_id} onChange={(event) => setUnitForm({ ...unitForm, location_id: event.target.value })}>

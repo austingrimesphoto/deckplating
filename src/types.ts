@@ -10,7 +10,7 @@ export type TeamMember = {
   role: string | null;
 };
 
-export type UnitType = 'department' | 'tenant';
+export type UnitType = 'department' | 'division' | 'tenant';
 
 export type CoverageStatus = 'green' | 'yellow' | 'red' | 'gray';
 

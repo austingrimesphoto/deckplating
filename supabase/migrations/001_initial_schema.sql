@@ -41,7 +41,7 @@ create table if not exists units (
   id uuid primary key default gen_random_uuid(),
   location_id uuid references locations(id),
   name text not null unique,
-  unit_type text not null check (unit_type in ('department', 'tenant')),
+  unit_type text not null check (unit_type in ('department', 'division', 'tenant')),
   visit_interval_days integer not null default 30,
   active boolean not null default true,
   created_at timestamptz not null default now(),

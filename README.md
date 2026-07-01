@@ -1,6 +1,6 @@
 # Deckplate Coverage
 
-Deckplate Coverage is a mobile web app for installation Religious Ministry Teams to track command coverage, map unit locations, log visits, and see which departments or tenant commands need attention.
+Deckplate Coverage is a mobile web app for installation Religious Ministry Teams to track command coverage, map unit locations, log visits, and see which departments, divisions, or tenant commands need attention.
 
 It is designed to be copied by each RMT. Every team should run its own Netlify site and its own Supabase database, so no one has to manage one giant fleet-wide database.
 
