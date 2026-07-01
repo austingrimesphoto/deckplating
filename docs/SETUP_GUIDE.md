@@ -16,7 +16,7 @@ Use a command email or shared team account if your local policy allows it. Do no
 
 ## Best Beta Path
 
-Use this path if you do not want to touch Terminal.
+Use this path if you do not want to touch Terminal. If the project owner has given you a public setup-site URL, start there and use this guide as the backup reference.
 
 1. Make your own GitHub copy.
 2. Create a Supabase database.

@@ -6,6 +6,17 @@ It is designed to be copied by each RMT. Every team should run its own Netlify s
 
 ## Start Here
 
+Preferred beta distribution path:
+
+1. Send users to the public setup site.
+2. They request access to the private template.
+3. They create their own private app copy.
+4. They follow the hosted setup wizard.
+
+The setup site source lives in:
+
+[setup-site/](setup-site/)
+
 For a plain-English, button-by-button setup walkthrough, use:
 
 [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)
@@ -161,6 +172,7 @@ supabase/seed.sql            Starter areas, units, and team roster
 public/                      PWA icons, manifest, background assets
 scripts/setup.mjs            Local setup helper
 docs/SETUP_GUIDE.md          Non-technical deployment guide
+setup-site/                  Public static onboarding wizard
 netlify.toml                 Build and API rewrite config
 .env.example                 Environment variable names
 ```
