@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Mission Board v0.4.
+  - Renamed the score surface around meaningful coverage.
+  - Added recovered-unit, distinct-unit, active-day, and computed badge display.
+  - Added curated tone-controlled in-app nudges.
+  - Added admin-selectable Mission Board tone.
 - Offline-First Visit Batches, Optional Visit Indicators, and Deckplate Brief.
   - Added offline cached coverage, queued visit batches, and explicit sync status.
   - Added location-based check-in batches with idempotent retry behavior.

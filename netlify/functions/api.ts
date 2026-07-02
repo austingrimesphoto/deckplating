@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 type Status = 'green' | 'yellow' | 'red' | 'gray';
 type FixedVoidReason = 'accidental' | 'wrong_unit' | 'duplicate' | 'incorrect_datetime' | 'incorrect_member';
 type IndicatorValue = true | null;
+type GamificationTone = 'professional' | 'friendly' | 'banter';
 
 const supabaseUrl = process.env.SUPABASE_URL ?? '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
@@ -96,6 +97,8 @@ const fixedVoidReasons = new Set<FixedVoidReason>([
   'incorrect_member',
 ]);
 
+const gamificationTones = new Set<GamificationTone>(['professional', 'friendly', 'banter']);
+
 const isUuid = (value: unknown) =>
   typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
@@ -120,6 +123,16 @@ const statusBefore = (checkedInAt: string | null, occurredAt: string, interval: 
   const days = Math.floor((new Date(occurredAt).getTime() - new Date(checkedInAt).getTime()) / 86400000);
   return statusFromDays(days, interval);
 };
+
+async function getGamificationTone(): Promise<GamificationTone> {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'gamification_tone')
+    .maybeSingle();
+  if (error || !gamificationTones.has(data?.value as GamificationTone)) return 'professional';
+  return data!.value as GamificationTone;
+}
 
 const requireAdmin = (event: HandlerEvent) => {
   const header = event.headers.authorization ?? event.headers.Authorization;
@@ -340,9 +353,10 @@ async function route(event: HandlerEvent) {
 
   if (method === 'GET' && path === '/bootstrap') {
     if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
-    const [{ data: teamMembers, error }, coverage] = await Promise.all([
+    const [{ data: teamMembers, error }, coverage, gamificationTone] = await Promise.all([
       supabase.from('team_members').select('id, name, role').eq('active', true).order('name'),
       getCoverage(),
+      getGamificationTone(),
     ]);
     if (error) return json(500, { error: error.message });
     return json(200, {
@@ -353,6 +367,7 @@ async function route(event: HandlerEvent) {
       mapDefaultLatitude: envNumber(process.env.MAP_DEFAULT_LATITUDE, 24.57),
       mapDefaultLongitude: envNumber(process.env.MAP_DEFAULT_LONGITUDE, -81.78),
       installationName: process.env.INSTALLATION_NAME ?? 'Naval Air Station Key West',
+      gamificationTone,
     });
   }
 
@@ -776,7 +791,7 @@ async function route(event: HandlerEvent) {
     endDate.setUTCMonth(endDate.getUTCMonth() + 1);
     const { data, error } = await supabase
       .from('checkins')
-      .select('unit_id, score_awarded, team_members!checkins_team_member_id_fkey(id, name)')
+      .select('unit_id, checked_in_at, score_awarded, team_members!checkins_team_member_id_fkey(id, name)')
       .is('voided_at', null)
       .gte('checked_in_at', start)
       .lt('checked_in_at', endDate.toISOString());
@@ -791,18 +806,34 @@ async function route(event: HandlerEvent) {
         qualifying_checkins: 0,
         distinct_units: new Set<string>(),
         recovered_units: 0,
+        active_days: new Set<string>(),
         score: 0,
       };
       if (checkin.score_awarded > 0) row.qualifying_checkins += 1;
       if (checkin.score_awarded >= 3) row.recovered_units += 1;
       row.distinct_units.add(checkin.unit_id);
+      row.active_days.add(String(checkin.checked_in_at).slice(0, 10));
       row.score += checkin.score_awarded;
       rows.set(member.id, row);
     }
     return json(200, {
       month,
       rows: Array.from(rows.values())
-        .map((row) => ({ ...row, distinct_units: row.distinct_units.size }))
+        .map((row) => {
+          const distinctUnits = row.distinct_units.size;
+          const activeDays = row.active_days.size;
+          const badges = [];
+          if (row.qualifying_checkins > 0) badges.push('first_rounds');
+          if (row.recovered_units > 0) badges.push('recovery_team');
+          if (distinctUnits >= 5) badges.push('wide_coverage');
+          if (activeDays >= 4) badges.push('sustained_presence');
+          return {
+            ...row,
+            distinct_units: distinctUnits,
+            active_days: activeDays,
+            badges,
+          };
+        })
         .sort((a, b) => b.score - a.score),
     });
   }
@@ -816,6 +847,22 @@ async function route(event: HandlerEvent) {
   }
 
   if (path.startsWith('/admin/') && !requireAdmin(event)) return json(403, { error: 'Admin authorization required.' });
+
+  if (method === 'GET' && path === '/admin/settings') {
+    return json(200, { gamificationTone: await getGamificationTone() });
+  }
+
+  if (method === 'PATCH' && path === '/admin/settings') {
+    const body = readBody<{ gamificationTone?: GamificationTone }>(event);
+    if (!body.gamificationTone || !gamificationTones.has(body.gamificationTone)) {
+      return json(400, { error: 'gamificationTone must be professional, friendly, or banter.' });
+    }
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: 'gamification_tone', value: body.gamificationTone }, { onConflict: 'key' });
+    if (error) return json(500, { error: error.message });
+    return json(200, { gamificationTone: body.gamificationTone });
+  }
 
   if (method === 'GET' && path === '/admin/locations') {
     const [areas, locations, units, members] = await Promise.all([

@@ -294,7 +294,8 @@ small,
 }
 
 .optional-indicators,
-.brief-card {
+.brief-card,
+.mission-nudge {
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -310,6 +311,10 @@ small,
 
 .brief-card p {
   margin-bottom: 2px;
+}
+
+.mission-nudge p {
+  margin-bottom: 0;
 }
 
 .confirmation-details {
@@ -341,6 +346,7 @@ small,
 }
 
 .tab-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 14px;
 }
 
@@ -386,6 +392,7 @@ small,
 }
 
 .check-row span,
+.unit-card span,
 .unit-card div,
 .score-row div,
 .admin-row div {
@@ -516,8 +523,69 @@ small,
   margin-top: 12px;
 }
 
+.mission-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mission-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.mission-stats div {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mission-stats dt {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.mission-stats dd {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 850;
+}
+
+.mission-needs {
+  display: grid;
+  gap: 8px;
+}
+
 .score-row {
   border-left-width: 1px;
+}
+
+.mission-row {
+  align-items: flex-start;
+}
+
+.mission-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mission-badge {
+  background: #eef6fb;
+  color: var(--brand);
+}
+
+.score-points {
+  font-size: 1.35rem;
 }
 
 .rank {

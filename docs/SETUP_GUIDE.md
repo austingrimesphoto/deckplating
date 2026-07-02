@@ -24,7 +24,7 @@ Use this path if you do not want to touch Terminal. If the project owner has giv
 
 1. Make your own GitHub copy.
 2. Create a Supabase database.
-3. Copy and run two SQL files.
+3. Copy and run the SQL migration files.
 4. Use the browser setup wizard to generate Netlify values.
 5. Deploy to Netlify.
 6. Open the app and finish setup from the Admin tab.
@@ -78,6 +78,14 @@ Then run the offline visit batch migration:
 
 1. Click **New query** again.
 2. In your GitHub copy, open `supabase/migrations/003_offline_batches_outcomes_and_hardening.sql`.
+3. Copy the whole file.
+4. Paste it into Supabase SQL Editor.
+5. Click **Run**.
+
+Then run the Mission Board settings migration:
+
+1. Click **New query** again.
+2. In your GitHub copy, open `supabase/migrations/004_mission_board_settings.sql`.
 3. Copy the whole file.
 4. Paste it into Supabase SQL Editor.
 5. Click **Run**.

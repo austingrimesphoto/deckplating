@@ -6,9 +6,11 @@ import type {
   Area,
   Bootstrap,
   Identity,
+  GamificationTone,
   IndicatorReportRow,
   LeaderboardRow,
   LocationSummary,
+  MissionBadge,
   PendingVisitBatch,
   TeamMember,
   UnitSummary,
@@ -142,6 +144,53 @@ const unitTypeLabel: Record<UnitType, string> = {
   tenant: 'Tenant command',
 };
 
+const toneLabel: Record<GamificationTone, string> = {
+  professional: 'Professional',
+  friendly: 'Friendly',
+  banter: 'Deckplate Banter',
+};
+
+const badgeLabel: Record<MissionBadge, string> = {
+  first_rounds: 'First Rounds',
+  recovery_team: 'Recovery Team',
+  wide_coverage: 'Wide Coverage',
+  sustained_presence: 'Sustained Presence',
+};
+
+const missionNudges: Record<GamificationTone, string[]> = {
+  professional: [
+    'Prioritize overdue and never-visited units before repeating recent visits.',
+    'Meaningful coverage comes from broad, timely presence across the command.',
+    'Recovering overdue units has the greatest effect on coverage readiness.',
+    'Use manual check-in when location data is unavailable or unreliable.',
+  ],
+  friendly: [
+    'A quick round through an overdue space can move the whole board.',
+    'The best score usually comes from going where the team has not been lately.',
+    'One recovered unit is worth more than another lap through familiar ground.',
+    'If GPS is having a day, manual check-in still counts the ministry presence.',
+  ],
+  banter: [
+    'The red units are not going to visit themselves.',
+    'Somewhere, a neglected deckplate is wondering where you went.',
+    'Green is good. Red is a polite cough from the coverage board.',
+    'One recovered unit beats five victory laps around the same hallway.',
+    'The map has opinions. It thinks you should go outside.',
+    'Fresh air, real people, fewer red cards. Strong plan.',
+    'A never-visited unit is basically an RSVP waiting for a chaplain.',
+    'The leaderboard respects meaningful coverage, not hallway cardio.',
+    'That overdue command has been aging like unrefrigerated coffee.',
+    'Excellent day to turn gray boxes into actual ministry presence.',
+  ],
+};
+
+function missionNudge(tone: GamificationTone, key: string) {
+  const messages = missionNudges[tone] ?? missionNudges.professional;
+  let total = 0;
+  for (const character of key) total += character.charCodeAt(0);
+  return messages[total % messages.length];
+}
+
 function circlePolygon(longitude: number, latitude: number, radiusMeters: number) {
   const points = 64;
   const earthRadius = 6371000;
@@ -242,12 +291,14 @@ function CheckInScreen({
   identity,
   bootstrap,
   cachedMode,
+  gamificationTone,
   refresh,
   onPendingChanged,
 }: {
   identity: Identity;
   bootstrap: Bootstrap;
   cachedMode: boolean;
+  gamificationTone: GamificationTone;
   refresh: () => void;
   onPendingChanged: () => void;
 }) {
@@ -659,6 +710,10 @@ function CheckInScreen({
               <dd>{confirmation.syncStatus === 'queued' ? 'Waiting to upload' : confirmation.totalScore}</dd>
             </div>
           </dl>
+          <section className="mission-nudge">
+            <p className="eyebrow">Mission nudge</p>
+            <p>{missionNudge(gamificationTone, `${confirmation.clientBatchId}:${confirmation.totalScore}`)}</p>
+          </section>
           <section className="optional-indicators">
             <h3>Optional visit indicators</h3>
             <p className="muted">Optional counts only. Do not add names, circumstances, counseling details, medical information, or other sensitive information.</p>
@@ -759,12 +814,14 @@ function CoverageBoard({
   units,
   cachedAt,
   cachedMode,
+  gamificationTone,
 }: {
   identity: Identity;
   areas: Area[];
   units: UnitSummary[];
   cachedAt: string | null;
   cachedMode: boolean;
+  gamificationTone: GamificationTone;
 }) {
   const [area, setArea] = useState('');
   const [unitType, setUnitType] = useState('');
@@ -793,6 +850,21 @@ function CoverageBoard({
         return rank[b.status] - rank[a.status] || a.name.localeCompare(b.name);
       });
   }, [area, from, neverOnly, overdueOnly, to, unitType, units]);
+
+  const missionSummary = useMemo(() => {
+    const neverVisited = units.filter((unit) => unit.status === 'gray').length;
+    const overdue = units.filter((unit) => unit.status === 'red').length;
+    const dueSoon = units.filter((unit) => unit.status === 'yellow').length;
+    const current = units.filter((unit) => unit.status === 'green').length;
+    const topNeeds = units
+      .filter((unit) => unit.status === 'gray' || unit.status === 'red' || unit.status === 'yellow')
+      .sort((a, b) => {
+        const rank = { gray: 3, red: 2, yellow: 1, green: 0 };
+        return rank[b.status] - rank[a.status] || (b.days_since_last_visit ?? 9999) - (a.days_since_last_visit ?? 9999);
+      })
+      .slice(0, 3);
+    return { neverVisited, overdue, dueSoon, current, topNeeds };
+  }, [units]);
 
   async function openUnit(unit: UnitSummary) {
     setSelectedUnit(unit);
@@ -936,6 +1008,53 @@ function CoverageBoard({
         </label>
         <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
         <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+      </section>
+      <section className="panel mission-panel">
+        <div>
+          <p className="eyebrow">Mission Board</p>
+          <h2>Meaningful coverage</h2>
+          <p className="muted">{missionNudge(gamificationTone, `${missionSummary.overdue}:${missionSummary.neverVisited}:${cachedAt ?? ''}`)}</p>
+        </div>
+        <dl className="mission-stats">
+          <div>
+            <dt>Never</dt>
+            <dd>{missionSummary.neverVisited}</dd>
+          </div>
+          <div>
+            <dt>Overdue</dt>
+            <dd>{missionSummary.overdue}</dd>
+          </div>
+          <div>
+            <dt>Due soon</dt>
+            <dd>{missionSummary.dueSoon}</dd>
+          </div>
+          <div>
+            <dt>Current</dt>
+            <dd>{missionSummary.current}</dd>
+          </div>
+        </dl>
+        {missionSummary.topNeeds.length > 0 && (
+          <div className="mission-needs">
+            <strong>Top needs today</strong>
+            {missionSummary.topNeeds.map((unit) => (
+              <div key={unit.id} className="card-with-detail">
+                <button
+                  className={`unit-card unit-button ${unit.status}`}
+                  onClick={() => void openUnit(unit)}
+                  aria-expanded={selectedUnit?.id === unit.id}
+                >
+                  <span>
+                    <strong>{unit.name}</strong>
+                    <small>
+                      {statusLabel(unit)} - {unit.location_name ?? 'Unmapped'} - Last visit {niceDate(unit.last_visit_at)}
+                    </small>
+                  </span>
+                </button>
+                {renderUnitDetail(unit)}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
       <section className="coverage-list">
         <section className="panel report-panel">
@@ -1262,7 +1381,7 @@ function MapScreen({
   );
 }
 
-function Scoreboard({ identity }: { identity: Identity }) {
+function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamificationTone: GamificationTone }) {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
 
@@ -1276,24 +1395,42 @@ function Scoreboard({ identity }: { identity: Identity }) {
     <main className="screen">
       <div className="screen-title">
         <div>
-          <p className="eyebrow">Team Scoreboard</p>
-          <h1>Monthly leaderboard</h1>
+          <p className="eyebrow">Mission Board</p>
+          <h1>Meaningful coverage</h1>
         </div>
       </div>
       <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
+      <section className="panel mission-panel">
+        <p className="eyebrow">Monthly focus</p>
+        <h2>Recover overdue and never-visited units</h2>
+        <p className="muted">{missionNudge(gamificationTone, `${month}:${rows[0]?.score ?? 0}:${rows.length}`)}</p>
+      </section>
       <section className="coverage-list">
         {rows.map((row, index) => (
-          <article key={row.team_member_id} className="score-row">
+          <article key={row.team_member_id} className="score-row mission-row">
             <span className="rank">{index + 1}</span>
-            <div>
-              <strong>{row.name}</strong>
-              <small>
-                {row.qualifying_checkins} qualifying - {row.distinct_units} units - {row.recovered_units} recovered
-              </small>
+            <div className="mission-row-body">
+              <div>
+                <strong>{row.name}</strong>
+                <small>
+                  {row.qualifying_checkins} meaningful - {row.distinct_units} units - {row.recovered_units} recovered - {row.active_days} active day
+                  {row.active_days === 1 ? '' : 's'}
+                </small>
+              </div>
+              {row.badges.length > 0 && (
+                <div className="badge-list">
+                  {row.badges.map((badge) => (
+                    <span key={badge} className="status-pill mission-badge">
+                      {badgeLabel[badge]}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-            <strong>{row.score}</strong>
+            <strong className="score-points">{row.score}</strong>
           </article>
         ))}
+        {!rows.length && <p className="notice">No Mission Board activity for this month yet.</p>}
       </section>
     </main>
   );
@@ -1475,7 +1612,7 @@ function AdminScreen({
   const [unitForm, setUnitForm] = useState({ name: '', unit_type: 'department' as UnitType, visit_interval_days: '30', location_id: '' });
   const [memberForm, setMemberForm] = useState({ name: '', role: '' });
   const [attachUnitIds, setAttachUnitIds] = useState<string[]>([]);
-  const [adminSection, setAdminSection] = useState<'setup' | 'activity'>('setup');
+  const [adminSection, setAdminSection] = useState<'setup' | 'activity' | 'settings'>('setup');
   const [activity, setActivity] = useState<AdminCheckin[]>([]);
   const [activityFilters, setActivityFilters] = useState({
     from: '',
@@ -1486,6 +1623,7 @@ function AdminScreen({
     includeVoided: false,
   });
   const [actingTeamMemberId, setActingTeamMemberId] = useState('');
+  const [gamificationTone, setGamificationTone] = useState<GamificationTone>('professional');
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -1494,11 +1632,33 @@ function AdminScreen({
     setToken(result.token);
   }
 
+  async function loadAdminSettings() {
+    try {
+      return await api<{ gamificationTone: GamificationTone }>('/api/admin/settings', { headers: { authorization: `Bearer ${token}` } });
+    } catch {
+      return { gamificationTone: 'professional' as GamificationTone };
+    }
+  }
+
   async function load() {
-    const result = await api<AdminData>('/api/admin/locations', { headers: { authorization: `Bearer ${token}` } });
+    const [result, settings] = await Promise.all([
+      api<AdminData>('/api/admin/locations', { headers: { authorization: `Bearer ${token}` } }),
+      loadAdminSettings(),
+    ]);
     setData(result);
+    setGamificationTone(settings.gamificationTone);
     setLocationForm((current) => ({ ...current, area_id: result.areas[0]?.id ?? current.area_id }));
     setActingTeamMemberId((current) => current || result.teamMembers[0]?.id || '');
+  }
+
+  async function saveSettings() {
+    const result = await api<{ gamificationTone: GamificationTone }>('/api/admin/settings', {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ gamificationTone }),
+    });
+    setGamificationTone(result.gamificationTone);
+    setMessage('Mission Board tone saved. Users will receive it on their next refresh.');
   }
 
   useEffect(() => {
@@ -1612,7 +1772,7 @@ function AdminScreen({
       <div className="screen-title">
         <div>
           <p className="eyebrow">Admin</p>
-          <h1>{adminSection === 'setup' ? 'Manage mapping' : 'Activity Log'}</h1>
+          <h1>{adminSection === 'setup' ? 'Manage mapping' : adminSection === 'activity' ? 'Activity Log' : 'Settings'}</h1>
         </div>
       </div>
       {message && <p className="notice">{message}</p>}
@@ -1623,7 +1783,32 @@ function AdminScreen({
         <button className={adminSection === 'activity' ? 'active' : ''} onClick={() => setAdminSection('activity')}>
           Activity Log
         </button>
+        <button className={adminSection === 'settings' ? 'active' : ''} onClick={() => setAdminSection('settings')}>
+          Settings
+        </button>
       </div>
+      {adminSection === 'settings' && (
+        <section className="panel">
+          <p className="eyebrow">Mission Board</p>
+          <h2>Tone</h2>
+          <p className="muted">Controls curated in-app nudges only. No notifications, live AI text, or public shaming.</p>
+          <label>
+            Nudge tone
+            <select value={gamificationTone} onChange={(event) => setGamificationTone(event.target.value as GamificationTone)}>
+              <option value="professional">Professional</option>
+              <option value="friendly">Friendly</option>
+              <option value="banter">Deckplate Banter</option>
+            </select>
+          </label>
+          <section className="mission-nudge">
+            <p className="eyebrow">Preview</p>
+            <p>{missionNudge(gamificationTone, 'admin-preview')}</p>
+          </section>
+          <button className="primary" onClick={saveSettings}>
+            Save tone
+          </button>
+        </section>
+      )}
       {adminSection === 'activity' && data && (
         <>
           <section className="panel">
@@ -2208,6 +2393,7 @@ export default function App() {
           identity={identity}
           bootstrap={bootstrap}
           cachedMode={cachedMode}
+          gamificationTone={bootstrap.gamificationTone}
           refresh={() => void load(identity)}
           onPendingChanged={() => void refreshPendingCount(identity)}
         />
@@ -2219,6 +2405,7 @@ export default function App() {
           units={bootstrap.units}
           cachedAt={cachedAt}
           cachedMode={cachedMode}
+          gamificationTone={bootstrap.gamificationTone}
         />
       )}
       {screen === 'map' && (
@@ -2237,7 +2424,15 @@ export default function App() {
           mapDefaultLongitude={bootstrap.mapDefaultLongitude}
         />
       )}
-      {screen === 'scoreboard' && (cachedMode ? <main className="screen"><p className="notice">Scoreboard needs a live connection.</p></main> : <Scoreboard identity={identity} />)}
+      {screen === 'scoreboard' && (
+        cachedMode ? (
+          <main className="screen">
+            <p className="notice">Mission Board needs a live connection.</p>
+          </main>
+        ) : (
+          <Scoreboard identity={identity} gamificationTone={bootstrap.gamificationTone} />
+        )
+      )}
       {screen === 'settings' && <Settings identity={identity} members={bootstrap.teamMembers} pendingCount={pendingCount} onIdentity={handleIdentity} />}
       <nav className="bottom-nav">
         {[

@@ -145,7 +145,8 @@ Run these files in Supabase SQL Editor, in order:
 1. `supabase/migrations/001_initial_schema.sql`
 2. `supabase/migrations/002_checkin_corrections.sql`
 3. `supabase/migrations/003_offline_batches_outcomes_and_hardening.sql`
-4. `supabase/seed.sql`
+4. `supabase/migrations/004_mission_board_settings.sql`
+5. `supabase/seed.sql`
 
 The schema enables row level security on all tables. Browser code never talks directly to Supabase. All database access goes through Netlify Functions using the server-side service-role key.
 
@@ -235,6 +236,8 @@ Admin-session protected:
 - `PATCH /api/admin/team-members/:id`
 - `GET /api/admin/checkins`
 - `PATCH /api/admin/checkins/:id`
+- `GET /api/admin/settings`
+- `PATCH /api/admin/settings`
 
 ## Test Checklist
 
@@ -269,8 +272,10 @@ Admin-session protected:
 - Safe-use notices appear on identity selection, Settings, and Admin location editing.
 - No PIN is stored outside the user’s typed-entry flow.
 - No authenticated API responses are stored in service-worker Cache Storage.
-- Existing identity, map, coverage board, admin location editing, and leaderboard still work.
+- Existing identity, map, coverage board, admin location editing, and Mission Board still work.
 - Admin can create/edit locations, move units, deactivate units, and create team members.
-- Leaderboard uses stored `score_awarded` values and monthly filtering.
+- Mission Board uses stored `score_awarded` values, active check-ins only, monthly filtering, recovered-unit credit, distinct-unit credit, and computed badges.
+- Admin can switch Mission Board tone between Professional, Friendly, and Deckplate Banter.
+- Tone-controlled nudges remain curated local text and do not shame individual users.
 - Service-role key is absent from built browser assets.
 - Netlify deploy serves the app and all `/api/*` routes.

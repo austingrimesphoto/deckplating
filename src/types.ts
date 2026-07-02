@@ -54,6 +54,7 @@ export type Bootstrap = {
   mapDefaultLatitude: number;
   mapDefaultLongitude: number;
   installationName: string;
+  gamificationTone: GamificationTone;
 };
 
 export type Identity = {
@@ -70,8 +71,14 @@ export type LeaderboardRow = {
   qualifying_checkins: number;
   distinct_units: number;
   recovered_units: number;
+  active_days: number;
   score: number;
+  badges: MissionBadge[];
 };
+
+export type GamificationTone = 'professional' | 'friendly' | 'banter';
+
+export type MissionBadge = 'first_rounds' | 'recovery_team' | 'wide_coverage' | 'sustained_presence';
 
 export type AdminCheckin = {
   id: string;
