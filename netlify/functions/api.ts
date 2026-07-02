@@ -789,15 +789,44 @@ async function route(event: HandlerEvent) {
     const start = `${month}-01T00:00:00.000Z`;
     const endDate = new Date(start);
     endDate.setUTCMonth(endDate.getUTCMonth() + 1);
-    const { data, error } = await supabase
-      .from('checkins')
-      .select('unit_id, checked_in_at, score_awarded, team_members!checkins_team_member_id_fkey(id, name)')
-      .is('voided_at', null)
-      .gte('checked_in_at', start)
-      .lt('checked_in_at', endDate.toISOString());
+    const end = endDate.toISOString();
+    const [monthlyResult, allBeforeEndResult, coverage] = await Promise.all([
+      supabase
+        .from('checkins')
+        .select('unit_id, checked_in_at, score_awarded, team_members!checkins_team_member_id_fkey(id, name), units(id, location_id, locations(id, area_id))')
+        .is('voided_at', null)
+        .gte('checked_in_at', start)
+        .lt('checked_in_at', end),
+      supabase
+        .from('checkins')
+        .select('unit_id, checked_in_at')
+        .is('voided_at', null)
+        .lt('checked_in_at', end)
+        .order('checked_in_at', { ascending: true }),
+      getCoverage(),
+    ]);
+    const error = monthlyResult.error ?? allBeforeEndResult.error;
     if (error) return json(500, { error: error.message });
+
+    const firstVisitByUnit = new Map<string, string>();
+    for (const checkin of allBeforeEndResult.data ?? []) {
+      if (!firstVisitByUnit.has(checkin.unit_id)) firstVisitByUnit.set(checkin.unit_id, checkin.checked_in_at);
+    }
+
+    const sweptAreaIds = new Set(
+      (coverage.areas ?? [])
+        .filter((area: any) =>
+          coverage.units
+            .filter((unit: any) => unit.area_id === area.id)
+            .every((unit: any) => unit.status !== 'red' && unit.status !== 'gray'),
+        )
+        .map((area: any) => area.id),
+    );
+
     const rows = new Map<string, any>();
-    for (const checkin of data ?? []) {
+    const recoveredUnitsThisMonth = new Set<string>();
+    const distinctUnitsCovered = new Set<string>();
+    for (const checkin of monthlyResult.data ?? []) {
       const member = checkin.team_members as any;
       if (!member) continue;
       const row = rows.get(member.id) ?? {
@@ -806,12 +835,25 @@ async function route(event: HandlerEvent) {
         qualifying_checkins: 0,
         distinct_units: new Set<string>(),
         recovered_units: 0,
+        gray_to_green_units: new Set<string>(),
+        coverage_sweep_areas: new Set<string>(),
         active_days: new Set<string>(),
         score: 0,
       };
       if (checkin.score_awarded > 0) row.qualifying_checkins += 1;
-      if (checkin.score_awarded >= 3) row.recovered_units += 1;
+      if (checkin.score_awarded >= 3) {
+        row.recovered_units += 1;
+        recoveredUnitsThisMonth.add(checkin.unit_id);
+      }
+      if (checkin.score_awarded > 0 && firstVisitByUnit.get(checkin.unit_id) === checkin.checked_in_at) {
+        row.gray_to_green_units.add(checkin.unit_id);
+      }
+      const areaId = (checkin.units as any)?.locations?.area_id ?? null;
+      if (checkin.score_awarded > 0 && areaId && sweptAreaIds.has(areaId)) {
+        row.coverage_sweep_areas.add(areaId);
+      }
       row.distinct_units.add(checkin.unit_id);
+      distinctUnitsCovered.add(checkin.unit_id);
       row.active_days.add(String(checkin.checked_in_at).slice(0, 10));
       row.score += checkin.score_awarded;
       rows.set(member.id, row);
@@ -822,19 +864,31 @@ async function route(event: HandlerEvent) {
         .map((row) => {
           const distinctUnits = row.distinct_units.size;
           const activeDays = row.active_days.size;
+          const grayToGreenUnits = row.gray_to_green_units.size;
+          const coverageSweepAreas = row.coverage_sweep_areas.size;
           const badges = [];
           if (row.qualifying_checkins > 0) badges.push('first_rounds');
           if (row.recovered_units > 0) badges.push('recovery_team');
+          if (grayToGreenUnits > 0) badges.push('gray_to_green');
           if (distinctUnits >= 5) badges.push('wide_coverage');
           if (activeDays >= 4) badges.push('sustained_presence');
+          if (coverageSweepAreas > 0) badges.push('coverage_sweep');
           return {
             ...row,
             distinct_units: distinctUnits,
             active_days: activeDays,
+            gray_to_green_units: grayToGreenUnits,
+            coverage_sweep_areas: coverageSweepAreas,
             badges,
           };
         })
         .sort((a, b) => b.score - a.score),
+      summary: {
+        units_recovered_this_month: recoveredUnitsThisMonth.size,
+        distinct_units_covered: distinctUnitsCovered.size,
+        overdue_remaining: coverage.units.filter((unit: any) => unit.status === 'red').length,
+        never_visited_remaining: coverage.units.filter((unit: any) => unit.status === 'gray').length,
+      },
     });
   }
 

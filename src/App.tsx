@@ -10,6 +10,7 @@ import type {
   IndicatorReportRow,
   LeaderboardRow,
   LocationSummary,
+  MissionBoardSummary,
   MissionBadge,
   PendingVisitBatch,
   TeamMember,
@@ -153,42 +154,138 @@ const toneLabel: Record<GamificationTone, string> = {
 const badgeLabel: Record<MissionBadge, string> = {
   first_rounds: 'First Rounds',
   recovery_team: 'Recovery Team',
+  gray_to_green: 'Gray to Green',
   wide_coverage: 'Wide Coverage',
   sustained_presence: 'Sustained Presence',
+  coverage_sweep: 'Coverage Sweep',
 };
 
-const missionNudges: Record<GamificationTone, string[]> = {
-  professional: [
-    'Prioritize overdue and never-visited units before repeating recent visits.',
-    'Meaningful coverage comes from broad, timely presence across the command.',
-    'Recovering overdue units has the greatest effect on coverage readiness.',
-    'Use manual check-in when location data is unavailable or unreliable.',
-  ],
-  friendly: [
-    'A quick round through an overdue space can move the whole board.',
-    'The best score usually comes from going where the team has not been lately.',
-    'One recovered unit is worth more than another lap through familiar ground.',
-    'If GPS is having a day, manual check-in still counts the ministry presence.',
-  ],
-  banter: [
-    'The red units are not going to visit themselves.',
-    'Somewhere, a neglected deckplate is wondering where you went.',
-    'Green is good. Red is a polite cough from the coverage board.',
-    'One recovered unit beats five victory laps around the same hallway.',
-    'The map has opinions. It thinks you should go outside.',
-    'Fresh air, real people, fewer red cards. Strong plan.',
-    'A never-visited unit is basically an RSVP waiting for a chaplain.',
-    'The leaderboard respects meaningful coverage, not hallway cardio.',
-    'That overdue command has been aging like unrefrigerated coffee.',
-    'Excellent day to turn gray boxes into actual ministry presence.',
-  ],
+const badgeDetails: Record<MissionBadge, { title: string; description: string; icon: string }> = {
+  first_rounds: {
+    title: 'First Rounds',
+    description: 'First qualifying check-in by that team member in the current calendar month.',
+    icon: 'FR',
+  },
+  recovery_team: {
+    title: 'Recovery Team',
+    description: 'Recovered at least one overdue or never-visited unit using meaningful recovery scoring.',
+    icon: 'RT',
+  },
+  gray_to_green: {
+    title: 'Gray to Green',
+    description: 'Completed a first-ever visit to a previously never-visited unit.',
+    icon: 'G2',
+  },
+  wide_coverage: {
+    title: 'Wide Coverage',
+    description: 'Reached five distinct units visited in the current calendar month.',
+    icon: 'WC',
+  },
+  sustained_presence: {
+    title: 'Sustained Presence',
+    description: 'Completed qualifying check-ins on four distinct local calendar days this month.',
+    icon: 'SP',
+  },
+  coverage_sweep: {
+    title: 'Coverage Sweep',
+    description: 'Contributed to coverage in an area that has no overdue or never-visited active units remaining.',
+    icon: 'CS',
+  },
 };
 
-function missionNudge(tone: GamificationTone, key: string) {
-  const messages = missionNudges[tone] ?? missionNudges.professional;
+type MissionBriefContext = 'gray' | 'red' | 'yellow' | 'recovery' | 'current';
+
+const missionBriefMessages: Record<GamificationTone, Record<MissionBriefContext, string[]>> = {
+  professional: {
+    gray: ['Prioritize first visits to units with no recorded coverage.'],
+    red: ['Prioritize overdue units before repeating recent visits.'],
+    yellow: ['Several units are approaching their coverage interval.'],
+    recovery: ['Recent recovery progress is improving coverage readiness.'],
+    current: ['Coverage is current. Maintain steady presence across the command.'],
+  },
+  friendly: {
+    gray: ['A first visit can turn an unknown space into real coverage.'],
+    red: ['A quick round through an overdue space can move the whole board.'],
+    yellow: ['A few due-soon visits now can prevent a red board later.'],
+    recovery: ['Good recovery work. Keep the momentum moving across the deckplates.'],
+    current: ['Coverage is looking healthy. Keep the rhythm steady.'],
+  },
+  banter: {
+    gray: [
+      'The gray boxes are calling. They have been calling for some time.',
+      'Somewhere, a neglected deckplate is wondering where you went.',
+      'This mission, should you choose to accept it: one meaningful visit.',
+      'May the force of actual presence be with you.',
+      'Excellent day to turn gray boxes into actual ministry presence.',
+    ],
+    red: [
+      'I feel the need-the need for deckplate coverage.',
+      'Talk to me, Goose: which red unit are we visiting?',
+      'The board has entered the danger zone. Time for a visit.',
+      "I'm going to need a bigger coverage plan.",
+      'Show me the coverage.',
+      "You can't handle the red-unless you go visit it.",
+      'There is no try. There is only getting out of the office.',
+      "What we've got here is a failure to communicate-perhaps with that overdue unit.",
+      'Nobody puts deckplate coverage in a corner.',
+      'Keep your friends close and your overdue units closer.',
+      'The red units are not going to visit themselves.',
+    ],
+    yellow: [
+      'You can be my wingman on the next overdue unit.',
+      'Fresh air, real people, fewer red cards. Strong plan.',
+      'The map has opinions. It thinks you should go outside.',
+    ],
+    recovery: [
+      'One recovered unit beats five victory laps around the same hallway.',
+      'The leaderboard respects meaningful coverage, not hallway cardio.',
+      'This mission, should you choose to accept it: one meaningful visit.',
+    ],
+    current: [
+      'Fresh air, real people, fewer red cards. Strong plan.',
+      'The map has opinions. It thinks you should go outside.',
+      'May the force of actual presence be with you.',
+    ],
+  },
+};
+
+const missionBriefDateKey = 'deckplate.missionBrief.lastExpandedDate';
+const missionBriefLastMessageKey = 'deckplate.missionBrief.lastMessage';
+const badgeCelebrationsKey = 'deckplate.badgeCelebrations';
+
+function localDateKey(date = new Date()) {
+  return date.toLocaleDateString('en-CA');
+}
+
+function missionNudge(tone: GamificationTone, context: MissionBriefContext, key: string) {
+  const messages = missionBriefMessages[tone]?.[context] ?? missionBriefMessages.professional[context];
   let total = 0;
   for (const character of key) total += character.charCodeAt(0);
-  return messages[total % messages.length];
+  let message = messages[total % messages.length];
+  const lastMessage = localStorage.getItem(missionBriefLastMessageKey);
+  if (messages.length > 1 && message === lastMessage) message = messages[(total + 1) % messages.length];
+  localStorage.setItem(missionBriefLastMessageKey, message);
+  return message;
+}
+
+function missionContextFromUnits(units: UnitSummary[], recentRecovery = false): MissionBriefContext {
+  if (recentRecovery) return 'recovery';
+  if (units.some((unit) => unit.status === 'gray')) return 'gray';
+  if (units.some((unit) => unit.status === 'red')) return 'red';
+  if (units.some((unit) => unit.status === 'yellow')) return 'yellow';
+  return 'current';
+}
+
+function readCelebratedBadges() {
+  try {
+    return JSON.parse(localStorage.getItem(badgeCelebrationsKey) ?? '{}') as Record<string, true>;
+  } catch {
+    return {};
+  }
+}
+
+function celebrationKey(teamMemberId: string, month: string, badge: MissionBadge) {
+  return `${teamMemberId}:${month}:${badge}`;
 }
 
 function circlePolygon(longitude: number, latitude: number, radiusMeters: number) {
@@ -310,6 +407,7 @@ function CheckInScreen({
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [confirmation, setConfirmation] = useState<CheckinConfirmation | null>(null);
+  const [unlockedBadges, setUnlockedBadges] = useState<MissionBadge[]>([]);
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const brief = useMemo(() => briefForDate(identity.teamMemberId), [identity.teamMemberId]);
@@ -430,6 +528,7 @@ function CheckInScreen({
     setLoading(true);
     setMessage('');
     setConfirmation(null);
+    setUnlockedBadges([]);
     const selectedUnits = selectedUnitsForSubmit();
     const locationIds = Array.from(new Set(selectedUnits.map((unit) => unit.location_id ?? null)));
     if (locationIds.length > 1) {
@@ -508,6 +607,7 @@ function CheckInScreen({
         syncStatus: 'synced',
         indicators: result.indicators,
       });
+      void loadNewBadgeCelebrations();
       refresh();
     } catch (err) {
       if (isNetworkFailure(err)) {
@@ -520,11 +620,33 @@ function CheckInScreen({
     }
   }
 
+  async function loadNewBadgeCelebrations() {
+    if (!navigator.onLine) return;
+    try {
+      const month = new Date().toISOString().slice(0, 7);
+      const result = await api<{ rows: LeaderboardRow[] }>(`/api/leaderboard?month=${month}`, {
+        headers: authHeaders(identity),
+        timeoutMs: 5000,
+      });
+      const row = result.rows.find((candidate) => candidate.team_member_id === identity.teamMemberId);
+      if (!row?.badges.length) return;
+      const celebrated = readCelebratedBadges();
+      const fresh = row.badges.filter((badge) => !celebrated[celebrationKey(identity.teamMemberId, month, badge)]);
+      if (!fresh.length) return;
+      for (const badge of fresh) celebrated[celebrationKey(identity.teamMemberId, month, badge)] = true;
+      localStorage.setItem(badgeCelebrationsKey, JSON.stringify(celebrated));
+      setUnlockedBadges(fresh);
+    } catch {
+      setUnlockedBadges([]);
+    }
+  }
+
   async function undoCheckin() {
     if (!confirmation) return;
     if (confirmation.syncStatus === 'queued') {
       await removePendingBatch(confirmation.clientBatchId);
       setConfirmation(null);
+      setUnlockedBadges([]);
       setSelected([]);
       setMessage('Queued visit removed from this device.');
       onPendingChanged();
@@ -544,6 +666,7 @@ function CheckInScreen({
         body: JSON.stringify({ teamMemberId: identity.teamMemberId, checkinIds: confirmation.checkinIds }),
       });
       setConfirmation(null);
+      setUnlockedBadges([]);
       setSelected([]);
       setMessage('Check-in undone. Coverage and scores have been refreshed.');
       refresh();
@@ -712,8 +835,31 @@ function CheckInScreen({
           </dl>
           <section className="mission-nudge">
             <p className="eyebrow">Mission nudge</p>
-            <p>{missionNudge(gamificationTone, `${confirmation.clientBatchId}:${confirmation.totalScore}`)}</p>
+            <p>
+              {missionNudge(
+                gamificationTone,
+                confirmation.totalScore >= 3 ? 'recovery' : missionContextFromUnits(selectedUnitsForSubmit()),
+                `${confirmation.clientBatchId}:${confirmation.totalScore}`,
+              )}
+            </p>
           </section>
+          {unlockedBadges.length > 0 && (
+            <section className="achievement-card">
+              <p className="eyebrow">Achievement unlocked</p>
+              <div className="achievement-list">
+                {unlockedBadges.slice(0, 2).map((badge) => (
+                  <article key={badge} className="badge-card">
+                    <span className="badge-icon">{badgeDetails[badge].icon}</span>
+                    <div>
+                      <strong>{badgeDetails[badge].title}</strong>
+                      <small>{badgeDetails[badge].description}</small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {unlockedBadges.length > 2 && <small>+{unlockedBadges.length - 2} more on Mission Board</small>}
+            </section>
+          )}
           <section className="optional-indicators">
             <h3>Optional visit indicators</h3>
             <p className="muted">Optional counts only. Do not add names, circumstances, counseling details, medical information, or other sensitive information.</p>
@@ -749,7 +895,14 @@ function CheckInScreen({
             <button className="secondary danger-text" onClick={undoCheckin} disabled={loading}>
               Undo this check-in
             </button>
-            <button className="primary" onClick={() => setConfirmation(null)} disabled={loading}>
+            <button
+              className="primary"
+              onClick={() => {
+                setConfirmation(null);
+                setUnlockedBadges([]);
+              }}
+              disabled={loading}
+            >
               Done
             </button>
           </div>
@@ -805,6 +958,59 @@ function SyncStatusBar({
         </button>
       )}
     </div>
+  );
+}
+
+function MissionBrief({
+  units,
+  tone,
+  recentRecovery,
+}: {
+  units: UnitSummary[];
+  tone: GamificationTone;
+  recentRecovery: boolean;
+}) {
+  const today = localDateKey();
+  const [expanded, setExpanded] = useState(() => localStorage.getItem(missionBriefDateKey) !== today);
+  const context = missionContextFromUnits(units, recentRecovery);
+  const counts = useMemo(
+    () => ({
+      gray: units.filter((unit) => unit.status === 'gray').length,
+      red: units.filter((unit) => unit.status === 'red').length,
+      yellow: units.filter((unit) => unit.status === 'yellow').length,
+    }),
+    [units],
+  );
+  const message = useMemo(
+    () => missionNudge(tone, context, `${today}:${context}:${counts.gray}:${counts.red}:${counts.yellow}`),
+    [context, counts.gray, counts.red, counts.yellow, today, tone],
+  );
+
+  useEffect(() => {
+    if (!expanded) return;
+    localStorage.setItem(missionBriefDateKey, today);
+    const timeout = window.setTimeout(() => setExpanded(false), 9000);
+    return () => window.clearTimeout(timeout);
+  }, [expanded, today]);
+
+  return (
+    <section className={`mission-brief ${expanded ? 'expanded' : 'collapsed'}`}>
+      {expanded ? (
+        <>
+          <div>
+            <p className="eyebrow">Mission Brief</p>
+            <p>{message}</p>
+          </div>
+          <button className="secondary" onClick={() => setExpanded(false)} aria-label="Collapse Mission Brief">
+            Close
+          </button>
+        </>
+      ) : (
+        <button className="mission-brief-pill" onClick={() => setExpanded(true)}>
+          Mission Brief
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -1013,7 +1219,13 @@ function CoverageBoard({
         <div>
           <p className="eyebrow">Mission Board</p>
           <h2>Meaningful coverage</h2>
-          <p className="muted">{missionNudge(gamificationTone, `${missionSummary.overdue}:${missionSummary.neverVisited}:${cachedAt ?? ''}`)}</p>
+          <p className="muted">
+            {missionNudge(
+              gamificationTone,
+              missionContextFromUnits(units),
+              `${missionSummary.overdue}:${missionSummary.neverVisited}:${cachedAt ?? ''}`,
+            )}
+          </p>
         </div>
         <dl className="mission-stats">
           <div>
@@ -1383,11 +1595,16 @@ function MapScreen({
 
 function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamificationTone: GamificationTone }) {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
+  const [summary, setSummary] = useState<MissionBoardSummary | null>(null);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [selectedBadge, setSelectedBadge] = useState<{ memberId: string; badge: MissionBadge } | null>(null);
 
   useEffect(() => {
-    api<{ rows: LeaderboardRow[] }>(`/api/leaderboard?month=${month}`, { headers: authHeaders(identity) }).then((result) =>
-      setRows(result.rows),
+    api<{ rows: LeaderboardRow[]; summary: MissionBoardSummary }>(`/api/leaderboard?month=${month}`, { headers: authHeaders(identity) }).then(
+      (result) => {
+        setRows(result.rows);
+        setSummary(result.summary);
+      },
     );
   }, [identity, month]);
 
@@ -1403,31 +1620,82 @@ function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamifi
       <section className="panel mission-panel">
         <p className="eyebrow">Monthly focus</p>
         <h2>Recover overdue and never-visited units</h2>
-        <p className="muted">{missionNudge(gamificationTone, `${month}:${rows[0]?.score ?? 0}:${rows.length}`)}</p>
+        <p className="muted">
+          {missionNudge(gamificationTone, rows.some((row) => row.recovered_units > 0) ? 'recovery' : 'red', `${month}:${rows[0]?.score ?? 0}:${rows.length}`)}
+        </p>
+        {summary && (
+          <dl className="mission-stats">
+            <div>
+              <dt>Recovered</dt>
+              <dd>{summary.units_recovered_this_month}</dd>
+            </div>
+            <div>
+              <dt>Covered</dt>
+              <dd>{summary.distinct_units_covered}</dd>
+            </div>
+            <div>
+              <dt>Overdue</dt>
+              <dd>{summary.overdue_remaining}</dd>
+            </div>
+            <div>
+              <dt>Never</dt>
+              <dd>{summary.never_visited_remaining}</dd>
+            </div>
+          </dl>
+        )}
       </section>
       <section className="coverage-list">
         {rows.map((row, index) => (
-          <article key={row.team_member_id} className="score-row mission-row">
-            <span className="rank">{index + 1}</span>
-            <div className="mission-row-body">
-              <div>
-                <strong>{row.name}</strong>
-                <small>
-                  {row.qualifying_checkins} meaningful - {row.distinct_units} units - {row.recovered_units} recovered - {row.active_days} active day
-                  {row.active_days === 1 ? '' : 's'}
-                </small>
-              </div>
-              {row.badges.length > 0 && (
-                <div className="badge-list">
-                  {row.badges.map((badge) => (
-                    <span key={badge} className="status-pill mission-badge">
-                      {badgeLabel[badge]}
-                    </span>
-                  ))}
+          <article
+            key={row.team_member_id}
+            className="score-row mission-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => setSelectedBadge({ memberId: row.team_member_id, badge: row.badges[0] ?? 'first_rounds' })}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') setSelectedBadge({ memberId: row.team_member_id, badge: row.badges[0] ?? 'first_rounds' });
+            }}
+          >
+            <div className="mission-row-main">
+              <span className="rank">{index + 1}</span>
+              <div className="mission-row-body">
+                <div>
+                  <strong>{row.name}</strong>
+                  <small>
+                    {row.qualifying_checkins} meaningful - {row.distinct_units} units - {row.recovered_units} recovered - {row.active_days} active day
+                    {row.active_days === 1 ? '' : 's'}
+                  </small>
                 </div>
-              )}
+                {row.badges.length > 0 && (
+                  <div className="badge-list">
+                    {row.badges.slice(0, 3).map((badge) => (
+                      <span
+                        key={badge}
+                        className="status-pill mission-badge"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedBadge({ memberId: row.team_member_id, badge });
+                        }}
+                      >
+                        <span className="mini-badge-icon">{badgeDetails[badge].icon}</span>
+                        {badgeLabel[badge]}
+                      </span>
+                    ))}
+                    {row.badges.length > 3 && <span className="status-pill">+{row.badges.length - 3}</span>}
+                  </div>
+                )}
+              </div>
+              <strong className="score-points">{row.score}</strong>
             </div>
-            <strong className="score-points">{row.score}</strong>
+            {selectedBadge?.memberId === row.team_member_id && (
+              <section className="badge-detail">
+                <span className="badge-icon">{badgeDetails[selectedBadge.badge].icon}</span>
+                <div>
+                  <strong>{badgeDetails[selectedBadge.badge].title}</strong>
+                  <small>{badgeDetails[selectedBadge.badge].description}</small>
+                </div>
+              </section>
+            )}
           </article>
         ))}
         {!rows.length && <p className="notice">No Mission Board activity for this month yet.</p>}
@@ -1802,7 +2070,7 @@ function AdminScreen({
           </label>
           <section className="mission-nudge">
             <p className="eyebrow">Preview</p>
-            <p>{missionNudge(gamificationTone, 'admin-preview')}</p>
+            <p>{missionNudge(gamificationTone, 'red', 'admin-preview')}</p>
           </section>
           <button className="primary" onClick={saveSettings}>
             Save tone
@@ -2373,6 +2641,7 @@ export default function App() {
           if (pendingCount === 0) void applyUpdate?.();
         }}
       />
+      <MissionBrief units={bootstrap.units} tone={bootstrap.gamificationTone ?? 'professional'} recentRecovery={false} />
       {syncState === 'auth' && (
         <form className="pin-refresh" onSubmit={refreshSession}>
           <label>
@@ -2393,7 +2662,7 @@ export default function App() {
           identity={identity}
           bootstrap={bootstrap}
           cachedMode={cachedMode}
-          gamificationTone={bootstrap.gamificationTone}
+          gamificationTone={bootstrap.gamificationTone ?? 'professional'}
           refresh={() => void load(identity)}
           onPendingChanged={() => void refreshPendingCount(identity)}
         />
@@ -2405,7 +2674,7 @@ export default function App() {
           units={bootstrap.units}
           cachedAt={cachedAt}
           cachedMode={cachedMode}
-          gamificationTone={bootstrap.gamificationTone}
+          gamificationTone={bootstrap.gamificationTone ?? 'professional'}
         />
       )}
       {screen === 'map' && (
@@ -2430,7 +2699,7 @@ export default function App() {
             <p className="notice">Mission Board needs a live connection.</p>
           </main>
         ) : (
-          <Scoreboard identity={identity} gamificationTone={bootstrap.gamificationTone} />
+          <Scoreboard identity={identity} gamificationTone={bootstrap.gamificationTone ?? 'professional'} />
         )
       )}
       {screen === 'settings' && <Settings identity={identity} members={bootstrap.teamMembers} pendingCount={pendingCount} onIdentity={handleIdentity} />}

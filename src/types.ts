@@ -71,6 +71,8 @@ export type LeaderboardRow = {
   qualifying_checkins: number;
   distinct_units: number;
   recovered_units: number;
+  gray_to_green_units: number;
+  coverage_sweep_areas: number;
   active_days: number;
   score: number;
   badges: MissionBadge[];
@@ -78,7 +80,20 @@ export type LeaderboardRow = {
 
 export type GamificationTone = 'professional' | 'friendly' | 'banter';
 
-export type MissionBadge = 'first_rounds' | 'recovery_team' | 'wide_coverage' | 'sustained_presence';
+export type MissionBadge =
+  | 'first_rounds'
+  | 'recovery_team'
+  | 'gray_to_green'
+  | 'wide_coverage'
+  | 'sustained_presence'
+  | 'coverage_sweep';
+
+export type MissionBoardSummary = {
+  units_recovered_this_month: number;
+  distinct_units_covered: number;
+  overdue_remaining: number;
+  never_visited_remaining: number;
+};
 
 export type AdminCheckin = {
   id: string;
