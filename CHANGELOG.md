@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Pilot Readiness Package v0.5.
+  - Added outside-team pilot handoff guide.
+  - Added pilot feedback template.
+  - Added Mission Board validation checklist.
+  - Updated setup-site SQL block to include current schema migrations through Mission Board settings.
+  - Fixed setup troubleshooting and release-process documentation drift.
 - Mission Board v0.4.
   - Renamed the score surface around meaningful coverage.
   - Added recovered-unit, distinct-unit, active-day, and computed badge display.

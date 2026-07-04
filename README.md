@@ -26,6 +26,18 @@ Offline release validation checklist:
 
 [docs/OFFLINE_TEST_CHECKLIST.md](docs/OFFLINE_TEST_CHECKLIST.md)
 
+Mission Board validation checklist:
+
+[docs/MISSION_BOARD_TEST_CHECKLIST.md](docs/MISSION_BOARD_TEST_CHECKLIST.md)
+
+Pilot readiness guide:
+
+[docs/PILOT_READINESS_GUIDE.md](docs/PILOT_READINESS_GUIDE.md)
+
+Pilot feedback template:
+
+[docs/PILOT_FEEDBACK_TEMPLATE.md](docs/PILOT_FEEDBACK_TEMPLATE.md)
+
 Safe-use policy:
 
 [docs/SAFE_USE.md](docs/SAFE_USE.md)
@@ -201,6 +213,7 @@ supabase/seed.sql            Starter areas, units, and team roster
 public/                      PWA icons, manifest, background assets
 scripts/setup.mjs            Local setup helper
 docs/SETUP_GUIDE.md          Non-technical deployment guide
+docs/PILOT_READINESS_GUIDE.md Outside-team pilot handoff guide
 setup-site/                  Public static onboarding wizard
 netlify.toml                 Build and API rewrite config
 .env.example                 Environment variable names
@@ -275,7 +288,9 @@ Admin-session protected:
 - Existing identity, map, coverage board, admin location editing, and Mission Board still work.
 - Admin can create/edit locations, move units, deactivate units, and create team members.
 - Mission Board uses stored `score_awarded` values, active check-ins only, monthly filtering, recovered-unit credit, distinct-unit credit, and computed badges.
+- Mission Brief appears once per local day, collapses, and does not block app controls.
 - Admin can switch Mission Board tone between Professional, Friendly, and Deckplate Banter.
 - Tone-controlled nudges remain curated local text and do not shame individual users.
+- Pilot readiness and feedback docs are current before sharing with an outside RMT.
 - Service-role key is absent from built browser assets.
 - Netlify deploy serves the app and all `/api/*` routes.

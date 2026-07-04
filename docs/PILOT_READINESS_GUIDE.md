@@ -1,0 +1,93 @@
+# Pilot Readiness Guide
+
+Use this guide before handing Deckplate Coverage to an outside RMT.
+
+## Pilot Goal
+
+Confirm that a normal RMT can use Deckplate Coverage for unclassified, non-sensitive coverage awareness without developer help.
+
+The pilot is successful only if the team can:
+
+- open the app on phones,
+- sign in with name and PIN,
+- add or edit roster, areas, locations, and units,
+- check in online and offline,
+- sync queued visits,
+- understand safe-use limits,
+- read coverage status and Mission Board progress,
+- report issues clearly.
+
+## Who To Recruit
+
+Start with two outside RMTs that are willing to test for 2-4 weeks.
+
+Prefer teams that have:
+
+- one command chaplain or RMT lead willing to own setup,
+- at least one RP or chaplain who will use the app on a phone,
+- a manageable number of departments, divisions, or tenant commands,
+- enough building access to test normal deckplate workflows,
+- permission to use a beta tool for unclassified coverage metadata only.
+
+## What To Send Them
+
+Send one message with these links:
+
+- Repository: `https://github.com/austingrimesphoto/deckplate-coverage`
+- Setup guide: `docs/SETUP_GUIDE.md`
+- Safe-use policy: `docs/SAFE_USE.md`
+- Offline test checklist: `docs/OFFLINE_TEST_CHECKLIST.md`
+- Pilot feedback template: `docs/PILOT_FEEDBACK_TEMPLATE.md`
+
+Suggested message:
+
+```text
+Deckplate Coverage is a beta tool for unclassified, non-sensitive ministry coverage awareness.
+
+Start here:
+https://github.com/austingrimesphoto/deckplate-coverage
+
+Please read docs/SAFE_USE.md first, then follow docs/SETUP_GUIDE.md.
+After setup, use the app for normal deckplate coverage for 2-4 weeks and capture feedback with docs/PILOT_FEEDBACK_TEMPLATE.md.
+```
+
+## First 30 Minutes
+
+1. Read the safe-use policy.
+2. Open the app on a phone.
+3. Select the example team member and create a 4-digit PIN.
+4. Open Admin and enter the admin passphrase.
+5. Replace the example area, unit, and team member.
+6. Add one real mapped public building or general area.
+7. Attach one or more departments, divisions, or tenant commands to that location.
+8. Return to Check In and test a normal check-in.
+9. Open Coverage and confirm the unit status changed.
+10. Open Mission Board and confirm the check-in appears.
+
+## Pilot Boundaries
+
+Do not use Deckplate Coverage for:
+
+- CUI,
+- classified information,
+- counseling notes,
+- medical details,
+- incident details,
+- home addresses,
+- sensitive operational locations,
+- official records.
+
+If a location should not be broadly shared, leave it unmapped and use manual check-in.
+
+## Support Triage
+
+When a tester reports a problem, capture:
+
+- phone type and browser or PWA mode,
+- whether the app was online or offline,
+- what screen they were on,
+- exact error text,
+- whether a visit was pending sync,
+- whether the issue repeated after closing and reopening the app.
+
+Do not ask testers to send screenshots that expose sensitive locations or personal details.

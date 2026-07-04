@@ -18,6 +18,11 @@ Create these accounts first:
 
 Use a command email or shared team account if your local policy allows it. Do not tie the whole app to one person who will PCS.
 
+If you are helping another RMT test the beta, use this setup guide together with:
+
+- [PILOT_READINESS_GUIDE.md](PILOT_READINESS_GUIDE.md)
+- [PILOT_FEEDBACK_TEMPLATE.md](PILOT_FEEDBACK_TEMPLATE.md)
+
 ## Best Beta Path
 
 Use this path if you do not want to touch Terminal. If the project owner has given you a public setup-site URL, start there and use this guide as the backup reference.
@@ -262,7 +267,19 @@ If the app loads but data does not:
 - Check Netlify environment variables.
 - Confirm the Supabase URL is correct.
 - Confirm the `service_role` key was used, not the anon key.
-- Confirm both SQL files were run in Supabase.
+- Confirm all four migration files and `seed.sql` were run in Supabase.
+
+If offline mode does not work:
+
+- Open the app once while online before testing offline.
+- Confirm the first online launch reached the Check In, Coverage, or Map screen.
+- Close and reopen the phone app after reconnecting if queued visits do not sync immediately.
+- Use **Sync Now** after reconnecting.
+
+If Mission Board tone will not save:
+
+- Confirm `supabase/migrations/004_mission_board_settings.sql` was run.
+- Confirm the Admin tab unlocks with the current admin passphrase.
 
 If the Admin tab will not unlock:
 

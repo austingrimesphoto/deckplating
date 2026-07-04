@@ -370,7 +370,7 @@
           <p class="eyebrow">Step 3</p>
           <h2>Create your Supabase database</h2>
           <p>
-            Open Supabase, create a new project, then run the two SQL blocks below. This creates your tables and starter data.
+            Open Supabase, create a new project, then run the schema/migrations block and the starter-data block below.
           </p>
           <a class="button secondary" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Supabase Projects</a>
           <div class="checklist">
@@ -381,20 +381,20 @@
             <label><input type="checkbox" /> I opened SQL Editor</label>
           </div>
           <label>
-            First SQL block: create the database tables
+            First SQL block: create and update the database tables
             <textarea id="schemaSql" readonly></textarea>
           </label>
-          <button type="button" data-copy="schemaSql">Copy First SQL Block</button>
+          <button type="button" data-copy="schemaSql">Copy Schema/Migrations Block</button>
           <p class="notice">Copied.</p>
           <label>
             Second SQL block: load one example area, team member, and unit
             <textarea id="seedSql" readonly></textarea>
           </label>
-          <button type="button" data-copy="seedSql">Copy Second SQL Block</button>
+          <button type="button" data-copy="seedSql">Copy Starter-Data Block</button>
           <p class="notice">Copied.</p>
           <div class="checklist">
-            <label><input type="checkbox" /> I ran the first SQL block</label>
-            <label><input type="checkbox" /> I ran the second SQL block and understand it only adds example starter rows</label>
+            <label><input type="checkbox" /> I ran the schema/migrations block</label>
+            <label><input type="checkbox" /> I ran the starter-data block and understand it only adds example starter rows</label>
           </div>
         </section>
 
@@ -586,7 +586,149 @@ alter table team_members enable row level security;
 alter table devices enable row level security;
 alter table locations enable row level security;
 alter table units enable row level security;
-alter table checkins enable row level security;`;
+alter table checkins enable row level security;
+
+alter table checkins
+  add column if not exists voided_at timestamptz null,
+  add column if not exists voided_by_team_member_id uuid null references team_members(id),
+  add column if not exists void_reason text null,
+  add column if not exists updated_at timestamptz not null default now(),
+  add column if not exists updated_by_team_member_id uuid null references team_members(id);
+
+create index if not exists idx_checkins_active_unit_time
+  on checkins(unit_id, checked_in_at desc)
+  where voided_at is null;
+
+drop trigger if exists checkins_set_updated_at on checkins;
+create trigger checkins_set_updated_at
+before update on checkins
+for each row execute function set_updated_at();
+
+create table if not exists checkin_batches (
+  id uuid primary key default gen_random_uuid(),
+  client_batch_id uuid not null unique,
+  location_id uuid null references locations(id),
+  team_member_id uuid not null references team_members(id),
+  device_id uuid not null references devices(id),
+  occurred_at timestamptz not null,
+  received_at timestamptz not null default now(),
+  confidential_care_provided boolean null,
+  referral_provided boolean null,
+  outcomes_recorded_at timestamptz null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  updated_by_team_member_id uuid null references team_members(id)
+);
+
+alter table checkin_batches enable row level security;
+
+drop trigger if exists checkin_batches_set_updated_at on checkin_batches;
+create trigger checkin_batches_set_updated_at
+before update on checkin_batches
+for each row execute function set_updated_at();
+
+alter table checkins
+  add column if not exists batch_id uuid null references checkin_batches(id);
+
+create index if not exists idx_checkins_batch_id on checkins(batch_id);
+
+create unique index if not exists idx_checkins_unique_batch_unit
+  on checkins(batch_id, unit_id)
+  where batch_id is not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'checkin_batches_confidential_care_true_or_null'
+      and conrelid = 'checkin_batches'::regclass
+  ) then
+    alter table checkin_batches
+      add constraint checkin_batches_confidential_care_true_or_null
+      check (confidential_care_provided is null or confidential_care_provided is true)
+      not valid;
+    alter table checkin_batches validate constraint checkin_batches_confidential_care_true_or_null;
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'checkin_batches_referral_true_or_null'
+      and conrelid = 'checkin_batches'::regclass
+  ) then
+    alter table checkin_batches
+      add constraint checkin_batches_referral_true_or_null
+      check (referral_provided is null or referral_provided is true)
+      not valid;
+    alter table checkin_batches validate constraint checkin_batches_referral_true_or_null;
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'checkins_void_reason_allowed'
+      and conrelid = 'checkins'::regclass
+  ) then
+    alter table checkins
+      add constraint checkins_void_reason_allowed
+      check (
+        void_reason is null
+        or void_reason in (
+          'immediate_undo',
+          'accidental',
+          'wrong_unit',
+          'duplicate',
+          'incorrect_datetime',
+          'incorrect_member'
+        )
+      )
+      not valid;
+    alter table checkins validate constraint checkins_void_reason_allowed;
+  end if;
+end $$;
+
+create table if not exists app_settings (
+  key text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table app_settings enable row level security;
+
+drop trigger if exists app_settings_set_updated_at on app_settings;
+create trigger app_settings_set_updated_at
+before update on app_settings
+for each row execute function set_updated_at();
+
+insert into app_settings (key, value)
+values ('gamification_tone', 'professional')
+on conflict (key) do nothing;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'app_settings_gamification_tone_allowed'
+      and conrelid = 'app_settings'::regclass
+  ) then
+    alter table app_settings
+      add constraint app_settings_gamification_tone_allowed
+      check (
+        key <> 'gamification_tone'
+        or value in ('professional', 'friendly', 'banter')
+      )
+      not valid;
+    alter table app_settings validate constraint app_settings_gamification_tone_allowed;
+  end if;
+end $$;`;
 
       const seedSql = `insert into areas (name, sort_order) values
   ('Ex: Truman Annex or 62 Area', 1)

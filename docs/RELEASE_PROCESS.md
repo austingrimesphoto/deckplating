@@ -31,6 +31,8 @@ Check:
 - The app builds successfully.
 - `README.md` is current.
 - `docs/SETUP_GUIDE.md` is current.
+- `docs/PILOT_READINESS_GUIDE.md` and `docs/PILOT_FEEDBACK_TEMPLATE.md` are current before outside-team pilots.
+- `docs/OFFLINE_TEST_CHECKLIST.md` and `docs/MISSION_BOARD_TEST_CHECKLIST.md` were reviewed for relevant changes.
 - `setup-site/` is current if setup instructions changed.
 - Any database changes are documented.
 - Any new environment variables are documented.
