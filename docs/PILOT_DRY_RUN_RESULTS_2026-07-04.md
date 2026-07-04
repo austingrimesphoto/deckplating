@@ -2,9 +2,15 @@
 
 ## Summary
 
-This dry run tested the public Deckplating setup handoff path as far as the available local account authentication allowed.
+This dry run tested the public Deckplating handoff path and a full temporary GitHub, Supabase, and Netlify setup.
 
-## Passed
+Result: **passed**.
+
+All temporary external resources were deleted after validation.
+
+## Public Handoff Checks
+
+Passed:
 
 - Hosted setup site loaded:
   - <https://deckplatingsetup.netlify.app>
@@ -14,9 +20,6 @@ This dry run tested the public Deckplating setup handoff path as far as the avai
   - <https://deckplatingsetup.netlify.app/pilot-feedback-thanks.html>
 - GitHub template repository is public and marked as a template:
   - <https://github.com/austingrimesphoto/deckplating>
-- Temporary GitHub template copy was created successfully:
-  - `austingrimesphoto/deckplating-dry-run-20260704143205`
-- The temporary copy contained expected root files, `setup-site/`, `supabase/`, `netlify/`, `src/`, and documentation.
 - The deployed setup site points to:
   - <https://github.com/austingrimesphoto/deckplating>
   - <https://github.com/austingrimesphoto/deckplating/generate>
@@ -24,51 +27,83 @@ This dry run tested the public Deckplating setup handoff path as far as the avai
   - `deckplating-pilot-feedback`
 - A clearly marked non-sensitive test feedback submission reached the feedback thank-you page.
 
-## Blocked
+## Temporary Resources Created
 
-The full live throwaway deployment could not continue from this machine because:
+- GitHub repo:
+  - `austingrimesphoto/deckplating-dry-run-20260704144527`
+- Supabase project:
+  - `deckplating-dry-run-20260704144527`
+  - Ref: `kpncivxarqzvhqfuhced`
+- Netlify site:
+  - `deckplating-dry-run-20260704144527`
+  - Site ID: `abb9bfb6-27e3-47e1-ac59-3b84328e23f2`
 
-- Netlify CLI is installed but not logged in.
-- Supabase CLI is not installed.
-- No Supabase access-token path was available locally.
+## Database Setup
 
-No Supabase project, Netlify app site, database migration, or production app deployment was created during this dry run.
+Passed:
 
-## Temporary Repo Cleanup
+- Created the temporary Supabase project through Supabase CLI.
+- Linked a disposable `/tmp` clone of the GitHub template to the temporary Supabase project.
+- Applied migrations through Supabase CLI:
+  - `001_initial_schema.sql`
+  - `002_checkin_corrections.sql`
+  - `003_offline_batches_outcomes_and_hardening.sql`
+  - `004_mission_board_settings.sql`
+- Applied `supabase/seed.sql`.
+- Verified starter data:
+  - areas: `1`
+  - team members: `1`
+  - units: `1`
+  - locations: `0`
 
-The temporary public repo could not be deleted because the current GitHub token lacks the `delete_repo` scope.
+Note: direct `psql` to `db.<project-ref>.supabase.co:5432` failed from this machine because the host resolved to IPv6 and the machine had no route. Supabase CLI linking and `supabase db push --linked` worked.
 
-To delete it:
+## Netlify Setup
 
-```bash
-gh auth refresh -h github.com -s delete_repo
-gh repo delete austingrimesphoto/deckplating-dry-run-20260704143205 --yes
-```
+Passed:
 
-The temporary repo is only a public copy of the public Deckplating template. It does not contain secrets, Supabase data, Netlify settings, or pilot data.
+- Created the temporary Netlify site.
+- Imported required environment variables.
+- Built and deployed the app to production through Netlify CLI.
+- Deployed URL was:
+  - `https://deckplating-dry-run-20260704144527.netlify.app`
 
-## Required Before Full Live Setup Test
+Security note: Netlify CLI printed the temporary Supabase service-role key during `netlify env:import`. The temporary Supabase project was deleted after testing, so that key is no longer valid. Avoid copying real service-role keys into logs or screenshots during real pilot support.
 
-Authenticate Netlify CLI:
+## App Smoke Test
 
-```bash
-netlify login
-netlify status
-```
+Passed against the temporary deployed app:
 
-Install and authenticate Supabase CLI, or create the Supabase project manually through the hosted setup guide:
+- App shell returned HTTP `200`.
+- `GET /api/team-members` returned the seeded example team member.
+- `POST /api/device/register` succeeded with a temporary PIN.
+- `GET /api/bootstrap` succeeded.
+- Manual check-in for the seeded unmapped unit succeeded.
+- Dashboard endpoint returned HTTP `200`.
+- Leaderboard endpoint returned HTTP `200`.
+- Leaderboard showed one row with score `3` after the manual check-in.
 
-```bash
-brew install supabase/tap/supabase
-supabase login
-```
+## Cleanup
 
-After those are available, repeat the dry run using:
+Deleted:
 
-- [PILOT_DRY_RUN_CHECKLIST.md](PILOT_DRY_RUN_CHECKLIST.md)
-- <https://deckplatingsetup.netlify.app>
+- Temporary GitHub repo:
+  - `austingrimesphoto/deckplating-dry-run-20260704144527`
+- Temporary Supabase project:
+  - `kpncivxarqzvhqfuhced`
+- Temporary Netlify site:
+  - `abb9bfb6-27e3-47e1-ac59-3b84328e23f2`
+- Local temp clone and secret files under `/tmp`.
 
-## Notes
+Cleanup verification:
 
-- The setup site, user guide, feedback route, and GitHub template handoff are ready for an outside-team setup attempt.
-- The remaining untested portion is the full external-service creation path: Supabase project, Netlify site, environment variables, SQL execution, and first app launch.
+- GitHub repo lookup returned not found.
+- Netlify site lookup returned not found.
+- Supabase project list no longer included `kpncivxarqzvhqfuhced`.
+
+## Remaining Notes
+
+- The self-hosted setup path is viable for a technically guided beta.
+- The biggest user-facing friction remains account creation and copying values between GitHub, Supabase, and Netlify.
+- The setup wizard and docs are ready for an outside-team setup attempt.
+- For a non-technical broad rollout, the managed-distribution plan is still the right long-term path.
