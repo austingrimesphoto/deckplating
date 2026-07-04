@@ -524,7 +524,7 @@
           <form
             name="deckplate-pilot-feedback"
             method="POST"
-            action="/pilot-feedback-thanks.html"
+            action="pilot-feedback-thanks.html"
             data-netlify="true"
             netlify-honeypot="bot-field"
             class="feedback-form"
@@ -545,18 +545,44 @@
             </div>
             <div class="grid-two">
               <label>
-                Pilot dates
-                <input name="pilot_dates" placeholder="Example: 7 Jul 2026 to 28 Jul 2026" />
+                Pilot start date
+                <input name="pilot_start_date" type="date" />
               </label>
               <label>
-                Number of users
-                <input name="number_of_users" inputmode="numeric" />
+                Pilot end date
+                <input name="pilot_end_date" type="date" />
               </label>
             </div>
             <label>
               Phone types used
-              <input name="phone_types_used" placeholder="Example: iPhone 14, iPhone SE, Galaxy S23" />
+              <select name="phone_types_used" multiple>
+                <option>iPhone 15</option>
+                <option>iPhone 15 Pro</option>
+                <option>iPhone 15 Pro Max</option>
+                <option>iPhone 14</option>
+                <option>iPhone 14 Pro</option>
+                <option>iPhone 14 Pro Max</option>
+                <option>iPhone 13</option>
+                <option>iPhone SE</option>
+                <option>Samsung Galaxy S24</option>
+                <option>Samsung Galaxy S23</option>
+              </select>
+              <p class="helper">Hold Command on Mac or Ctrl on Windows to select more than one.</p>
             </label>
+            <label>
+              Other phone type, if needed
+              <input name="other_phone_type" placeholder="Example: Google Pixel 8" />
+            </label>
+            <div class="grid-two">
+              <label>
+                Number of users
+                <input name="number_of_users" inputmode="numeric" />
+              </label>
+              <label>
+                Browser or PWA used
+                <input name="browser_or_pwa_used" placeholder="Example: Safari PWA, Chrome browser" />
+              </label>
+            </div>
             <div class="grid-two">
               <label>
                 Did setup make sense?
