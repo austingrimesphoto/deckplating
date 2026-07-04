@@ -33,7 +33,7 @@ Scope:
 
 - at least two outside RMTs use the current app for 2-4 weeks
 - collect setup friction, offline behavior, check-in reliability, admin workflow, and reporting feedback
-- identify data model gaps before adding organization scope
+- validate the default-organization foundation before adding workspace onboarding
 - verify safe-use language is understood and followed
 
 Exclusions:
@@ -55,8 +55,8 @@ Objective: build one centrally hosted Deckplating service with controlled organi
 
 Scope:
 
-- organization/workspace schema
-- `organization_id` on all organization-owned records
+- organization/workspace onboarding beyond the default-organization foundation
+- complete organization-scoped authorization for managed hosting
 - invitation/setup-code onboarding
 - organization admin model
 - tenant-isolation tests

@@ -47,6 +47,7 @@ export type LocationSummary = {
 };
 
 export type Bootstrap = {
+  organizationId?: string | null;
   areas: Area[];
   teamMembers: TeamMember[];
   units: UnitSummary[];
@@ -58,6 +59,7 @@ export type Bootstrap = {
 };
 
 export type Identity = {
+  organizationId?: string | null;
   teamMemberId: string;
   teamMemberName: string;
   deviceToken: string;
@@ -154,6 +156,7 @@ export type VisitIndicatorState = {
 
 export type PendingVisitBatch = VisitIndicatorState & {
   clientBatchId: string;
+  organizationId?: string | null;
   teamMemberId: string;
   teamMemberName: string;
   deviceToken: string;

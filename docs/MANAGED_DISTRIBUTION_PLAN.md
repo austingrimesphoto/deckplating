@@ -20,29 +20,30 @@ The current self-hosted template path should remain available as an advanced/loc
 
 ## Organization Model
 
-Future managed hosting should add an `organizations` or `workspaces` table and treat every customer command/RMT as one workspace. All organization-owned records must include `organization_id`.
+Managed hosting should use an `organizations` or `workspaces` table and treat every customer command/RMT as one workspace. Migration `005_multi_site_foundation.sql` adds the first default-organization groundwork while preserving current single-site behavior.
 
 Required future schema changes:
 
-- `organizations`
-- `organization_id` on `areas`
-- `organization_id` on `locations`
-- `organization_id` on `units`
-- `organization_id` on `team_members`
-- `organization_id` on `devices`
-- `organization_id` on `checkins`
-- `organization_id` on `checkin_batches`
-- `organization_id` on future settings
+- `organizations` - foundation added in `005_multi_site_foundation.sql`
+- `organization_id` on `areas` - foundation added
+- `organization_id` on `locations` - foundation added
+- `organization_id` on `units` - foundation added
+- `organization_id` on `team_members` - foundation added
+- `organization_id` on `devices` - foundation added
+- `organization_id` on `checkins` - foundation added
+- `organization_id` on `checkin_batches` - foundation added
+- `organization_id` on settings - foundation added for `app_settings`
 - `organization_id` on future invitations
 
 ## Migration Sequence
 
-1. Add `organizations`.
-2. Create a default organization for existing single-organization data.
-3. Backfill `organization_id` on existing rows.
-4. Add not-null constraints and indexes.
-5. Update every server API route to enforce organization scope.
-6. Introduce invitation/setup flow for controlled onboarding.
+1. Add `organizations`. Done in foundation migration.
+2. Create a default organization for existing single-organization data. Done in foundation migration.
+3. Backfill `organization_id` on existing rows. Done in foundation migration.
+4. Add not-null constraints and indexes. Done for current organization-owned tables.
+5. Update every server API route to enforce organization scope. Started for default-organization scope.
+6. Replace environment-wide admin access with organization-scoped admin access.
+7. Introduce invitation/setup flow for controlled onboarding.
 
 ## Controlled Pilot Onboarding
 

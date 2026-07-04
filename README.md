@@ -209,7 +209,8 @@ Run these files in Supabase SQL Editor, in order:
 2. `supabase/migrations/002_checkin_corrections.sql`
 3. `supabase/migrations/003_offline_batches_outcomes_and_hardening.sql`
 4. `supabase/migrations/004_mission_board_settings.sql`
-5. `supabase/seed.sql`
+5. `supabase/migrations/005_multi_site_foundation.sql`
+6. `supabase/seed.sql`
 
 The schema enables row level security on all tables. Browser code never talks directly to Supabase. All database access goes through Netlify Functions using the server-side service-role key.
 

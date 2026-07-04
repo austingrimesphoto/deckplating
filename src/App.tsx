@@ -329,7 +329,7 @@ function IdentitySetup({
     if (!member) return;
     const deviceToken = newToken();
     try {
-      const result = await api<{ deviceId: string; sessionToken: string }>('/api/device/register', {
+      const result = await api<{ deviceId: string; sessionToken: string; organizationId?: string | null }>('/api/device/register', {
         method: 'POST',
         body: JSON.stringify({
           teamMemberId,
@@ -338,7 +338,14 @@ function IdentitySetup({
           deviceLabel: navigator.userAgent.slice(0, 120),
         }),
       });
-      const identity = { teamMemberId, teamMemberName: member.name, deviceToken, deviceId: result.deviceId, sessionToken: result.sessionToken };
+      const identity = {
+        organizationId: result.organizationId ?? null,
+        teamMemberId,
+        teamMemberName: member.name,
+        deviceToken,
+        deviceId: result.deviceId,
+        sessionToken: result.sessionToken,
+      };
       localStorage.setItem(identityKey, JSON.stringify(identity));
       onRegistered(identity);
     } catch (err) {
@@ -547,6 +554,7 @@ function CheckInScreen({
     const locationName = selectedUnits[0]?.location_name ?? null;
     const pendingBatch: PendingVisitBatch = {
       clientBatchId,
+      organizationId: identity.organizationId ?? null,
       teamMemberId: identity.teamMemberId,
       teamMemberName: identity.teamMemberName,
       deviceToken: identity.deviceToken,
@@ -2315,7 +2323,7 @@ function Settings({
     const member = members.find((candidate) => candidate.id === newMember);
     if (!member) return;
     try {
-      const result = await api<{ deviceId: string; sessionToken: string }>('/api/device/change-identity', {
+      const result = await api<{ deviceId: string; sessionToken: string; organizationId?: string | null }>('/api/device/change-identity', {
         method: 'POST',
         headers: authHeaders(identity),
         body: JSON.stringify({
@@ -2330,6 +2338,7 @@ function Settings({
         ...identity,
         teamMemberId: newMember,
         teamMemberName: member.name,
+        organizationId: result.organizationId ?? identity.organizationId ?? null,
         deviceId: result.deviceId,
         sessionToken: result.sessionToken,
       };
@@ -2558,7 +2567,7 @@ export default function App() {
     event.preventDefault();
     if (!identity || !/^\d{4}$/.test(refreshPin)) return;
     try {
-      const result = await api<{ deviceId: string; sessionToken: string }>('/api/device/register', {
+      const result = await api<{ deviceId: string; sessionToken: string; organizationId?: string | null }>('/api/device/register', {
         method: 'POST',
         body: JSON.stringify({
           teamMemberId: identity.teamMemberId,
@@ -2567,7 +2576,7 @@ export default function App() {
           deviceLabel: navigator.userAgent.slice(0, 120),
         }),
       });
-      const next = { ...identity, deviceId: result.deviceId, sessionToken: result.sessionToken };
+      const next = { ...identity, organizationId: result.organizationId ?? identity.organizationId ?? null, deviceId: result.deviceId, sessionToken: result.sessionToken };
       localStorage.setItem(identityKey, JSON.stringify(next));
       setIdentity(next);
       setRefreshPin('');

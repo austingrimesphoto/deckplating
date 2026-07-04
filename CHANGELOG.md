@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Multi-Site Foundation v0.5.
+  - Added `organizations` and default-organization schema groundwork.
+  - Added `organization_id` to current organization-owned records.
+  - Scoped API helpers and route queries to the default organization when the new schema is present.
+  - Preserved current single-site behavior for existing self-hosted beta teams.
 - Pilot Readiness Package v0.5.
   - Added outside-team pilot handoff guide.
   - Added pilot feedback template.

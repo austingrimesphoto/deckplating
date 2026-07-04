@@ -11,6 +11,8 @@ const supabaseUrl = process.env.SUPABASE_URL ?? '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const adminPassphraseHash = process.env.ADMIN_PASSPHRASE_HASH ?? '';
 const adminSessionSecret = process.env.ADMIN_SESSION_SECRET ?? serviceRoleKey;
+const defaultOrganizationId =
+  process.env.DECKPLATING_DEFAULT_ORGANIZATION_ID ?? '00000000-0000-4000-8000-000000000001';
 
 const supabase =
   supabaseUrl && serviceRoleKey
@@ -44,6 +46,25 @@ const readBody = <T>(event: HandlerEvent): T => {
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
 const pinHash = (teamMemberId: string, pin: string) => sha256(`${teamMemberId}:${pin}`);
+
+let organizationSchemaEnabledCache: boolean | null = null;
+
+async function organizationSchemaEnabled() {
+  if (organizationSchemaEnabledCache !== null) return organizationSchemaEnabledCache;
+  const { error } = await supabase.from('organizations').select('id').limit(1);
+  organizationSchemaEnabledCache = !error;
+  return organizationSchemaEnabledCache;
+}
+
+async function currentOrganizationId() {
+  return (await organizationSchemaEnabled()) ? defaultOrganizationId : null;
+}
+
+const scoped = (query: any, organizationId: string | null) =>
+  organizationId ? query.eq('organization_id', organizationId) : query;
+
+const withOrganization = <T extends Record<string, unknown>>(values: T, organizationId: string | null) =>
+  organizationId ? { ...values, organization_id: organizationId } : values;
 
 const hmac = (value: string) =>
   crypto.createHmac('sha256', adminSessionSecret).update(value).digest('hex');
@@ -124,12 +145,12 @@ const statusBefore = (checkedInAt: string | null, occurredAt: string, interval: 
   return statusFromDays(days, interval);
 };
 
-async function getGamificationTone(): Promise<GamificationTone> {
-  const { data, error } = await supabase
+async function getGamificationTone(organizationId: string | null): Promise<GamificationTone> {
+  const query = supabase
     .from('app_settings')
     .select('value')
-    .eq('key', 'gamification_tone')
-    .maybeSingle();
+    .eq('key', 'gamification_tone');
+  const { data, error } = await scoped(query, organizationId).maybeSingle();
   if (error || !gamificationTones.has(data?.value as GamificationTone)) return 'professional';
   return data!.value as GamificationTone;
 }
@@ -150,11 +171,12 @@ const createAdminToken = () => {
   return `${expires}.${hmac(expires)}`;
 };
 
-const createUserToken = (teamMemberId: string, deviceToken: string) => {
+const createUserToken = (teamMemberId: string, deviceToken: string, organizationId: string | null) => {
   const payload = base64url(
     JSON.stringify({
       teamMemberId,
       deviceHash: sha256(deviceToken),
+      organizationId,
       expires: Date.now() + 1000 * 60 * 60 * 24 * 30,
     }),
   );
@@ -172,7 +194,7 @@ async function requireUser(event: HandlerEvent) {
   if (signature.length !== expected.length) return null;
   if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
 
-  let parsed: { teamMemberId?: string; deviceHash?: string; expires?: number };
+  let parsed: { teamMemberId?: string; deviceHash?: string; organizationId?: string | null; expires?: number };
   try {
     parsed = JSON.parse(fromBase64url(payload));
   } catch {
@@ -180,36 +202,47 @@ async function requireUser(event: HandlerEvent) {
   }
 
   if (!parsed.teamMemberId || !parsed.deviceHash || !parsed.expires || parsed.expires < Date.now()) return null;
-  const { data, error } = await supabase
+  const organizationId = (await organizationSchemaEnabled()) ? parsed.organizationId ?? defaultOrganizationId : null;
+  const baseQuery = supabase
     .from('devices')
-    .select('id, team_member_id, team_members!inner(id, name, active)')
+    .select(
+      organizationId
+        ? 'id, team_member_id, organization_id, team_members!inner(id, name, active, organization_id)'
+        : 'id, team_member_id, team_members!inner(id, name, active)',
+    )
     .eq('team_member_id', parsed.teamMemberId)
     .eq('device_token_hash', parsed.deviceHash)
-    .eq('active', true)
-    .single();
+    .eq('active', true);
+  const { data, error } = await scoped(baseQuery, organizationId).single();
   if (error || !data) return null;
 
-  const member = data.team_members as { active?: boolean } | null;
+  const member = data.team_members as { active?: boolean; organization_id?: string } | null;
   if (!member?.active) return null;
-  await supabase.from('devices').update({ last_seen_at: new Date().toISOString() }).eq('id', data.id);
-  return { teamMemberId: parsed.teamMemberId, deviceId: data.id };
+  if (organizationId && member.organization_id !== organizationId) return null;
+  let update = supabase.from('devices').update({ last_seen_at: new Date().toISOString() }).eq('id', data.id);
+  update = scoped(update, organizationId);
+  await update;
+  return { teamMemberId: parsed.teamMemberId, deviceId: data.id, organizationId };
 }
 
-async function getCoverage() {
+async function getCoverage(organizationId: string | null) {
+  const areaQuery = scoped(supabase.from('areas').select('*'), organizationId).order('sort_order');
+  const unitQuery = scoped(
+    supabase
+      .from('units')
+      .select('*, locations(*, areas(*))')
+      .eq('active', true),
+    organizationId,
+  ).order('name');
+  const checkinQuery = scoped(
+    supabase
+      .from('checkins')
+      .select('unit_id, checked_in_at, team_members!checkins_team_member_id_fkey(name)')
+      .is('voided_at', null),
+    organizationId,
+  ).order('checked_in_at', { ascending: false });
   const [{ data: areas, error: areaError }, { data: units, error: unitError }, { data: checkins, error: checkinError }] =
-    await Promise.all([
-      supabase.from('areas').select('*').order('sort_order'),
-      supabase
-        .from('units')
-        .select('*, locations(*, areas(*))')
-        .eq('active', true)
-        .order('name'),
-      supabase
-        .from('checkins')
-        .select('unit_id, checked_in_at, team_members!checkins_team_member_id_fkey(name)')
-        .is('voided_at', null)
-        .order('checked_in_at', { ascending: false }),
-    ]);
+    await Promise.all([areaQuery, unitQuery, checkinQuery]);
 
   if (areaError || unitError || checkinError) {
     throw areaError ?? unitError ?? checkinError;
@@ -259,8 +292,8 @@ async function getCoverage() {
   return { areas: areas ?? [], units: summaries };
 }
 
-async function getLocationSummaries() {
-  const coverage = await getCoverage();
+async function getLocationSummaries(organizationId: string | null) {
+  const coverage = await getCoverage(organizationId);
   const byLocation = new Map<string, any>();
   for (const unit of coverage.units) {
     if (!unit.location_id || unit.latitude == null || unit.longitude == null) continue;
@@ -285,17 +318,19 @@ async function getLocationSummaries() {
   return Array.from(byLocation.values());
 }
 
-async function verifyDevice(teamMemberId: string, deviceToken: string) {
+async function verifyDevice(teamMemberId: string, deviceToken: string, organizationId: string | null) {
   const deviceHash = sha256(deviceToken);
-  const { data, error } = await supabase
+  const query = supabase
     .from('devices')
     .select('*')
     .eq('team_member_id', teamMemberId)
     .eq('device_token_hash', deviceHash)
-    .eq('active', true)
-    .single();
+    .eq('active', true);
+  const { data, error } = await scoped(query, organizationId).single();
   if (error) return null;
-  await supabase.from('devices').update({ last_seen_at: new Date().toISOString() }).eq('id', data.id);
+  let update = supabase.from('devices').update({ last_seen_at: new Date().toISOString() }).eq('id', data.id);
+  update = scoped(update, organizationId);
+  await update;
   return data;
 }
 
@@ -303,34 +338,41 @@ async function registerDevice(body: { teamMemberId: string; pin: string; deviceT
   if (!body.teamMemberId || !/^\d{4}$/.test(body.pin) || !body.deviceToken) {
     return json(400, { error: 'teamMemberId, 4-digit pin, and deviceToken are required.' });
   }
-  const { data: member, error: memberError } = await supabase
+  const organizationId = await currentOrganizationId();
+  const memberQuery = supabase
     .from('team_members')
     .select('*')
     .eq('id', body.teamMemberId)
-    .eq('active', true)
-    .single();
+    .eq('active', true);
+  const { data: member, error: memberError } = await scoped(memberQuery, organizationId).single();
   if (memberError || !member) return json(404, { error: 'Team member not found.' });
   const nextPinHash = pinHash(body.teamMemberId, body.pin);
   if (member.pin_hash && member.pin_hash !== nextPinHash) return json(403, { error: 'PIN does not match.' });
-  if (!member.pin_hash) await supabase.from('team_members').update({ pin_hash: nextPinHash }).eq('id', body.teamMemberId);
-  const { data: device, error } = await supabase
-    .from('devices')
-    .upsert(
-      {
+  if (!member.pin_hash) {
+    let update = supabase.from('team_members').update({ pin_hash: nextPinHash }).eq('id', body.teamMemberId);
+    update = scoped(update, organizationId);
+    await update;
+  }
+  const deviceValues = withOrganization(
+    {
         team_member_id: body.teamMemberId,
         device_token_hash: sha256(body.deviceToken),
         device_label: body.deviceLabel ?? null,
         active: true,
         last_seen_at: new Date().toISOString(),
       },
-      { onConflict: 'device_token_hash' },
-    )
+    organizationId,
+  );
+  const { data: device, error } = await supabase
+    .from('devices')
+    .upsert(deviceValues, { onConflict: organizationId ? 'organization_id,device_token_hash' : 'device_token_hash' })
     .select('id')
     .single();
   if (error) return json(500, { error: error.message });
   return json(200, {
+    organizationId,
     deviceId: device.id,
-    sessionToken: createUserToken(body.teamMemberId, body.deviceToken),
+    sessionToken: createUserToken(body.teamMemberId, body.deviceToken, organizationId),
     teamMember: { id: member.id, name: member.name },
   });
 }
@@ -342,24 +384,32 @@ async function route(event: HandlerEvent) {
   const method = event.httpMethod;
 
   if (method === 'GET' && path === '/team-members') {
-    const { data: teamMembers, error } = await supabase
+    const organizationId = await currentOrganizationId();
+    const query = supabase
       .from('team_members')
       .select('id, name')
       .eq('active', true)
       .order('name');
+    const { data: teamMembers, error } = await scoped(query, organizationId);
     if (error) return json(500, { error: error.message });
-    return json(200, { teamMembers: (teamMembers ?? []).map((member) => ({ ...member, role: null })) });
+    return json(200, { teamMembers: (teamMembers ?? []).map((member: any) => ({ ...member, role: null })) });
   }
 
   if (method === 'GET' && path === '/bootstrap') {
-    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
+    const user = await requireUser(event);
+    if (!user) return json(403, { error: 'Authentication required.' });
+    const teamMemberQuery = scoped(
+      supabase.from('team_members').select('id, name, role').eq('active', true),
+      user.organizationId,
+    ).order('name');
     const [{ data: teamMembers, error }, coverage, gamificationTone] = await Promise.all([
-      supabase.from('team_members').select('id, name, role').eq('active', true).order('name'),
-      getCoverage(),
-      getGamificationTone(),
+      teamMemberQuery,
+      getCoverage(user.organizationId),
+      getGamificationTone(user.organizationId),
     ]);
     if (error) return json(500, { error: error.message });
     return json(200, {
+      organizationId: user.organizationId,
       areas: coverage.areas,
       teamMembers: teamMembers ?? [],
       units: coverage.units,
@@ -380,11 +430,14 @@ async function route(event: HandlerEvent) {
     const body = readBody<{ currentTeamMemberId: string; pin: string; newTeamMemberId: string; newPin: string; deviceToken: string }>(event);
     const user = await requireUser(event);
     if (!user || user.teamMemberId !== body.currentTeamMemberId) return json(403, { error: 'Authentication required.' });
-    const { data: current } = await supabase.from('team_members').select('*').eq('id', body.currentTeamMemberId).single();
+    const currentQuery = supabase.from('team_members').select('*').eq('id', body.currentTeamMemberId);
+    const { data: current } = await scoped(currentQuery, user.organizationId).single();
     if (!current?.pin_hash || current.pin_hash !== pinHash(body.currentTeamMemberId, body.pin)) {
       return json(403, { error: 'Current PIN does not match.' });
     }
-    await supabase.from('devices').update({ active: false }).eq('device_token_hash', sha256(body.deviceToken));
+    let update = supabase.from('devices').update({ active: false }).eq('device_token_hash', sha256(body.deviceToken));
+    update = scoped(update, user.organizationId);
+    await update;
     return registerDevice({
       teamMemberId: body.newTeamMemberId,
       pin: body.newPin,
@@ -394,11 +447,12 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'GET' && path === '/nearby-locations') {
-    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
+    const user = await requireUser(event);
+    if (!user) return json(403, { error: 'Authentication required.' });
     const lat = Number(event.queryStringParameters?.lat);
     const lon = Number(event.queryStringParameters?.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json(400, { error: 'lat and lon are required.' });
-    const locations = await getLocationSummaries();
+    const locations = await getLocationSummaries(user.organizationId);
     const matches = locations
       .map((location) => ({ ...location, distance_meters: distanceMeters(lat, lon, location.latitude, location.longitude) }))
       .filter((location) => location.distance_meters <= location.radius_meters)
@@ -422,7 +476,7 @@ async function route(event: HandlerEvent) {
     }>(event);
     const user = await requireUser(event);
     if (!user || user.teamMemberId !== body.teamMemberId) return json(403, { error: 'Authentication required.' });
-    const device = await verifyDevice(body.teamMemberId, body.deviceToken);
+    const device = await verifyDevice(body.teamMemberId, body.deviceToken, user.organizationId);
     if (!device) return json(403, { error: 'Device is not registered for this team member.' });
     if (!Array.isArray(body.unitIds) || body.unitIds.length === 0) return json(400, { error: 'unitIds are required.' });
     const clientBatchId = body.clientBatchId ?? crypto.randomUUID();
@@ -440,11 +494,12 @@ async function route(event: HandlerEvent) {
     }
 
     const requestedUnitIds = Array.from(new Set(body.unitIds));
-    const { data: units, error: unitError } = await supabase
+    const unitsQuery = supabase
       .from('units')
       .select('*, locations(*)')
       .in('id', requestedUnitIds)
       .eq('active', true);
+    const { data: units, error: unitError } = await scoped(unitsQuery, user.organizationId);
     if (unitError) return json(500, { error: unitError.message });
     if ((units ?? []).length !== requestedUnitIds.length) return json(404, { error: 'One or more units were not found.' });
 
@@ -458,16 +513,16 @@ async function route(event: HandlerEvent) {
       return json(400, { error: 'Unmapped manual check-ins must be submitted one unit at a time.' });
     }
 
-    let { data: batch, error: batchLookupError } = await supabase
+    const batchLookupQuery = supabase
       .from('checkin_batches')
       .select('*')
-      .eq('client_batch_id', clientBatchId)
-      .maybeSingle();
+      .eq('client_batch_id', clientBatchId);
+    let { data: batch, error: batchLookupError } = await scoped(batchLookupQuery, user.organizationId).maybeSingle();
     if (batchLookupError) return json(500, { error: batchLookupError.message });
     if (!batch) {
       const { data: insertedBatch, error: batchError } = await supabase
         .from('checkin_batches')
-        .insert({
+        .insert(withOrganization({
           client_batch_id: clientBatchId,
           location_id: batchLocationId,
           team_member_id: body.teamMemberId,
@@ -477,11 +532,12 @@ async function route(event: HandlerEvent) {
           referral_provided: referralProvided,
           outcomes_recorded_at: confidentialCareProvided || referralProvided ? new Date().toISOString() : null,
           updated_by_team_member_id: body.teamMemberId,
-        })
+        }, user.organizationId))
         .select('*')
         .single();
       if (batchError) {
-        const retry = await supabase.from('checkin_batches').select('*').eq('client_batch_id', clientBatchId).single();
+        const retryQuery = supabase.from('checkin_batches').select('*').eq('client_batch_id', clientBatchId);
+        const retry = await scoped(retryQuery, user.organizationId).single();
         if (retry.error || !retry.data) return json(500, { error: batchError.message });
         batch = retry.data;
       } else {
@@ -491,7 +547,7 @@ async function route(event: HandlerEvent) {
       if (batch.team_member_id !== body.teamMemberId || batch.device_id !== device.id) {
         return json(403, { error: 'This client batch belongs to another user or device.' });
       }
-      const { data: updatedBatch, error: indicatorUpdateError } = await supabase
+      const batchUpdateQuery = supabase
         .from('checkin_batches')
         .update({
           confidential_care_provided: confidentialCareProvided,
@@ -499,7 +555,8 @@ async function route(event: HandlerEvent) {
           outcomes_recorded_at: confidentialCareProvided || referralProvided ? new Date().toISOString() : null,
           updated_by_team_member_id: body.teamMemberId,
         })
-        .eq('id', batch.id)
+        .eq('id', batch.id);
+      const { data: updatedBatch, error: indicatorUpdateError } = await scoped(batchUpdateQuery, user.organizationId)
         .select('*')
         .single();
       if (indicatorUpdateError) return json(500, { error: indicatorUpdateError.message });
@@ -509,13 +566,14 @@ async function route(event: HandlerEvent) {
       return json(403, { error: 'This client batch belongs to another user or device.' });
     }
 
-    const { data: existingRows, error: existingError } = await supabase
+    const existingQuery = supabase
       .from('checkins')
       .select('id, unit_id, score_awarded')
       .eq('batch_id', batch.id);
+    const { data: existingRows, error: existingError } = await scoped(existingQuery, user.organizationId);
     if (existingError) return json(500, { error: existingError.message });
 
-    const existingUnitIds = new Set((existingRows ?? []).map((row) => row.unit_id));
+    const existingUnitIds = new Set((existingRows ?? []).map((row: any) => row.unit_id));
     const rowsToInsert = [];
     for (const unit of units ?? []) {
       if (existingUnitIds.has(unit.id)) continue;
@@ -528,24 +586,23 @@ async function route(event: HandlerEvent) {
       }
 
       const cooldownStart = new Date(new Date(occurredAt).getTime() - 14 * 86400000).toISOString();
-      const { data: recent } = await supabase
+      const recentQuery = supabase
         .from('checkins')
         .select('id')
         .eq('unit_id', unit.id)
         .is('voided_at', null)
         .lt('checked_in_at', occurredAt)
-        .gte('checked_in_at', cooldownStart)
-        .limit(1);
+        .gte('checked_in_at', cooldownStart);
+      const { data: recent } = await scoped(recentQuery, user.organizationId).limit(1);
 
-      const { data: prior } = await supabase
+      const priorQuery = supabase
         .from('checkins')
         .select('checked_in_at')
         .eq('unit_id', unit.id)
         .is('voided_at', null)
         .lt('checked_in_at', occurredAt)
-        .order('checked_in_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order('checked_in_at', { ascending: false });
+      const { data: prior } = await scoped(priorQuery, user.organizationId).limit(1).maybeSingle();
 
       let score = 0;
       if (!recent?.length) {
@@ -555,7 +612,7 @@ async function route(event: HandlerEvent) {
         if (status === 'red' || status === 'gray') score += 2;
       }
 
-      rowsToInsert.push({
+      rowsToInsert.push(withOrganization({
         batch_id: batch.id,
         unit_id: unit.id,
         location_id: unit.location_id,
@@ -565,7 +622,7 @@ async function route(event: HandlerEvent) {
         geofence_verified: geofenceVerified,
         distance_meters: distance,
         score_awarded: score,
-      });
+      }, user.organizationId));
     }
 
     let insertedRows: Array<{ id: string; unit_id: string; score_awarded: number }> = [];
@@ -600,23 +657,24 @@ async function route(event: HandlerEvent) {
       return json(400, { error: 'checkinIds are required.' });
     }
 
-    const { data: owned, error: ownedError } = await supabase
+    const ownedQuery = supabase
       .from('checkins')
       .select('id, created_at')
       .in('id', body.checkinIds)
       .eq('team_member_id', user.teamMemberId)
       .is('voided_at', null);
+    const { data: owned, error: ownedError } = await scoped(ownedQuery, user.organizationId);
     if (ownedError) return json(500, { error: ownedError.message });
     if ((owned ?? []).length !== body.checkinIds.length) {
       return json(403, { error: 'Only your own active check-ins can be undone.' });
     }
     const undoCutoff = Date.now() - 15 * 60000;
-    if ((owned ?? []).some((checkin) => new Date(checkin.created_at).getTime() < undoCutoff)) {
+    if ((owned ?? []).some((checkin: any) => new Date(checkin.created_at).getTime() < undoCutoff)) {
       return json(400, { error: 'Immediate undo is available only for check-ins created within the last 15 minutes.' });
     }
 
     const now = new Date().toISOString();
-    const { error } = await supabase
+    const undoQuery = supabase
       .from('checkins')
       .update({
         voided_at: now,
@@ -628,8 +686,9 @@ async function route(event: HandlerEvent) {
       .in('id', body.checkinIds)
       .eq('team_member_id', user.teamMemberId)
       .is('voided_at', null);
+    const { error } = await scoped(undoQuery, user.organizationId);
     if (error) return json(500, { error: error.message });
-    return json(200, { undone: body.checkinIds.length, coverage: await getCoverage() });
+    return json(200, { undone: body.checkinIds.length, coverage: await getCoverage(user.organizationId) });
   }
 
   const indicatorMatch = path.match(/^\/checkin-batches\/([^/]+)\/indicators$/);
@@ -650,17 +709,17 @@ async function route(event: HandlerEvent) {
       return json(400, { error: errorMessage(error) });
     }
 
-    const { data: batch, error: batchError } = await supabase
+    const batchQuery = supabase
       .from('checkin_batches')
       .select('id, team_member_id, device_id')
-      .eq('client_batch_id', indicatorMatch[1])
-      .single();
+      .eq('client_batch_id', indicatorMatch[1]);
+    const { data: batch, error: batchError } = await scoped(batchQuery, user.organizationId).single();
     if (batchError || !batch) return json(404, { error: 'Check-in batch not found.' });
     if (batch.team_member_id !== user.teamMemberId || batch.device_id !== user.deviceId) {
       return json(403, { error: 'This check-in batch belongs to another user or device.' });
     }
 
-    const { data, error } = await supabase
+    const indicatorQuery = supabase
       .from('checkin_batches')
       .update({
         confidential_care_provided: confidentialCareProvided,
@@ -668,7 +727,8 @@ async function route(event: HandlerEvent) {
         outcomes_recorded_at: confidentialCareProvided || referralProvided ? new Date().toISOString() : null,
         updated_by_team_member_id: user.teamMemberId,
       })
-      .eq('id', batch.id)
+      .eq('id', batch.id);
+    const { data, error } = await scoped(indicatorQuery, user.organizationId)
       .select('client_batch_id, confidential_care_provided, referral_provided, outcomes_recorded_at')
       .single();
     if (error) return json(500, { error: error.message });
@@ -683,25 +743,26 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'GET' && path === '/dashboard') {
-    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
-    return json(200, await getCoverage());
+    const user = await requireUser(event);
+    if (!user) return json(403, { error: 'Authentication required.' });
+    return json(200, await getCoverage(user.organizationId));
   }
 
   if (method === 'GET' && path === '/coverage-detail') {
-    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
+    const user = await requireUser(event);
+    if (!user) return json(403, { error: 'Authentication required.' });
     const unitId = event.queryStringParameters?.unitId;
     if (!unitId) return json(400, { error: 'unitId is required.' });
-    const coverage = await getCoverage();
+    const coverage = await getCoverage(user.organizationId);
     const unit = coverage.units.find((candidate: any) => candidate.id === unitId);
     if (!unit) return json(404, { error: 'Unit not found.' });
-    const { data, error } = await supabase
+    const detailQuery = supabase
       .from('checkins')
       .select(
         'id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, team_members!checkins_team_member_id_fkey(name), checkin_batches!checkins_batch_id_fkey(confidential_care_provided, referral_provided)',
       )
-      .eq('unit_id', unitId)
-      .order('checked_in_at', { ascending: false })
-      .limit(100);
+      .eq('unit_id', unitId);
+    const { data, error } = await scoped(detailQuery, user.organizationId).order('checked_in_at', { ascending: false }).limit(100);
     if (error) return json(500, { error: error.message });
     return json(200, {
       unit,
@@ -720,9 +781,11 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'GET' && path === '/reports/indicators') {
-    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
+    const user = await requireUser(event);
+    if (!user) return json(403, { error: 'Authentication required.' });
     const params = event.queryStringParameters ?? {};
-    let query = supabase
+    let query = scoped(
+      supabase
       .from('checkins')
       .select(
         'id, batch_id, checked_in_at, location_id, checkin_batches!checkins_batch_id_fkey(id, location_id, occurred_at, confidential_care_provided, referral_provided), units(id, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name))',
@@ -730,7 +793,9 @@ async function route(event: HandlerEvent) {
       .not('batch_id', 'is', null)
       .is('voided_at', null)
       .order('checked_in_at', { ascending: false })
-      .limit(2000);
+      .limit(2000),
+      user.organizationId,
+    );
     if (params.from) query = query.gte('checked_in_at', `${params.from}T00:00:00.000Z`);
     if (params.to) query = query.lte('checked_in_at', `${params.to}T23:59:59.999Z`);
 
@@ -784,26 +849,33 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'GET' && path === '/leaderboard') {
-    if (!(await requireUser(event))) return json(403, { error: 'Authentication required.' });
+    const user = await requireUser(event);
+    if (!user) return json(403, { error: 'Authentication required.' });
     const month = event.queryStringParameters?.month ?? new Date().toISOString().slice(0, 7);
     const start = `${month}-01T00:00:00.000Z`;
     const endDate = new Date(start);
     endDate.setUTCMonth(endDate.getUTCMonth() + 1);
     const end = endDate.toISOString();
     const [monthlyResult, allBeforeEndResult, coverage] = await Promise.all([
-      supabase
+      scoped(
+        supabase
         .from('checkins')
         .select('unit_id, checked_in_at, score_awarded, team_members!checkins_team_member_id_fkey(id, name), units(id, location_id, locations(id, area_id))')
         .is('voided_at', null)
         .gte('checked_in_at', start)
         .lt('checked_in_at', end),
-      supabase
+        user.organizationId,
+      ),
+      scoped(
+        supabase
         .from('checkins')
         .select('unit_id, checked_in_at')
         .is('voided_at', null)
         .lt('checked_in_at', end)
         .order('checked_in_at', { ascending: true }),
-      getCoverage(),
+        user.organizationId,
+      ),
+      getCoverage(user.organizationId),
     ]);
     const error = monthlyResult.error ?? allBeforeEndResult.error;
     if (error) return json(500, { error: error.message });
@@ -903,27 +975,31 @@ async function route(event: HandlerEvent) {
   if (path.startsWith('/admin/') && !requireAdmin(event)) return json(403, { error: 'Admin authorization required.' });
 
   if (method === 'GET' && path === '/admin/settings') {
-    return json(200, { gamificationTone: await getGamificationTone() });
+    const organizationId = await currentOrganizationId();
+    return json(200, { organizationId, gamificationTone: await getGamificationTone(organizationId) });
   }
 
   if (method === 'PATCH' && path === '/admin/settings') {
+    const organizationId = await currentOrganizationId();
     const body = readBody<{ gamificationTone?: GamificationTone }>(event);
     if (!body.gamificationTone || !gamificationTones.has(body.gamificationTone)) {
       return json(400, { error: 'gamificationTone must be professional, friendly, or banter.' });
     }
-    const { error } = await supabase
-      .from('app_settings')
-      .upsert({ key: 'gamification_tone', value: body.gamificationTone }, { onConflict: 'key' });
+    const { error } = await supabase.from('app_settings').upsert(
+      withOrganization({ key: 'gamification_tone', value: body.gamificationTone }, organizationId),
+      { onConflict: organizationId ? 'organization_id,key' : 'key' },
+    );
     if (error) return json(500, { error: error.message });
     return json(200, { gamificationTone: body.gamificationTone });
   }
 
   if (method === 'GET' && path === '/admin/locations') {
+    const organizationId = await currentOrganizationId();
     const [areas, locations, units, members] = await Promise.all([
-      supabase.from('areas').select('*').order('sort_order'),
-      supabase.from('locations').select('*, areas(*)').order('name'),
-      supabase.from('units').select('*').order('name'),
-      supabase.from('team_members').select('id, name, role, active, created_at').order('name'),
+      scoped(supabase.from('areas').select('*'), organizationId).order('sort_order'),
+      scoped(supabase.from('locations').select('*, areas(*)'), organizationId).order('name'),
+      scoped(supabase.from('units').select('*'), organizationId).order('name'),
+      scoped(supabase.from('team_members').select('id, name, role, active, created_at'), organizationId).order('name'),
     ]);
     const error = areas.error ?? locations.error ?? units.error ?? members.error;
     if (error) return json(500, { error: error.message });
@@ -931,14 +1007,18 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'GET' && path === '/admin/checkins') {
+    const organizationId = await currentOrganizationId();
     const params = event.queryStringParameters ?? {};
-    let query = supabase
-      .from('checkins')
-      .select(
-        'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, updated_at, batch_id, checkin_batches!checkins_batch_id_fkey(client_batch_id, confidential_care_provided, referral_provided), units(id, name, unit_type, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name)), team_members!checkins_team_member_id_fkey(id, name)',
-      )
-      .order('checked_in_at', { ascending: false })
-      .limit(300);
+    let query = scoped(
+      supabase
+        .from('checkins')
+        .select(
+          'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, updated_at, batch_id, checkin_batches!checkins_batch_id_fkey(client_batch_id, confidential_care_provided, referral_provided), units(id, name, unit_type, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name)), team_members!checkins_team_member_id_fkey(id, name)',
+        )
+        .order('checked_in_at', { ascending: false })
+        .limit(300),
+      organizationId,
+    );
 
     if (params.from) query = query.gte('checked_in_at', `${params.from}T00:00:00.000Z`);
     if (params.to) query = query.lte('checked_in_at', `${params.to}T23:59:59.999Z`);
@@ -977,13 +1057,14 @@ async function route(event: HandlerEvent) {
           referral_provided: checkin.checkin_batches?.referral_provided ?? null,
         };
       })
-      .filter((checkin) => !params.areaId || checkin.area_id === params.areaId);
+      .filter((checkin: any) => !params.areaId || checkin.area_id === params.areaId);
 
     return json(200, { checkins });
   }
 
   const adminCheckinMatch = path.match(/^\/admin\/checkins\/([^/]+)$/);
   if (method === 'PATCH' && adminCheckinMatch) {
+    const organizationId = await currentOrganizationId();
     const body = readBody<{
       unit_id?: string;
       checked_in_at?: string;
@@ -994,21 +1075,21 @@ async function route(event: HandlerEvent) {
     }>(event);
     if (!body.adminTeamMemberId) return json(400, { error: 'adminTeamMemberId is required.' });
 
-    const { data: existing, error: existingError } = await supabase
+    const existingQuery = supabase
       .from('checkins')
       .select('id, unit_id, voided_at')
-      .eq('id', adminCheckinMatch[1])
-      .single();
+      .eq('id', adminCheckinMatch[1]);
+    const { data: existing, error: existingError } = await scoped(existingQuery, organizationId).single();
     if (existingError || !existing) return json(404, { error: 'Check-in not found.' });
 
     const update: Record<string, unknown> = { updated_by_team_member_id: body.adminTeamMemberId };
 
     if (body.unit_id && body.unit_id !== existing.unit_id) {
-      const { data: unit, error: unitError } = await supabase
+      const unitQuery = supabase
         .from('units')
         .select('id, location_id')
-        .eq('id', body.unit_id)
-        .single();
+        .eq('id', body.unit_id);
+      const { data: unit, error: unitError } = await scoped(unitQuery, organizationId).single();
       if (unitError || !unit) return json(404, { error: 'Replacement unit not found.' });
       update.unit_id = body.unit_id;
       update.location_id = unit.location_id;
@@ -1039,61 +1120,89 @@ async function route(event: HandlerEvent) {
       update.void_reason = null;
     }
 
-    const { data, error } = await supabase
+    const checkinUpdateQuery = supabase
       .from('checkins')
       .update(update)
-      .eq('id', adminCheckinMatch[1])
-      .select('id')
-      .single();
+      .eq('id', adminCheckinMatch[1]);
+    const { data, error } = await scoped(checkinUpdateQuery, organizationId).select('id').single();
     if (error) return json(500, { error: error.message });
-    return json(200, { checkin: data, coverage: await getCoverage() });
+    return json(200, { checkin: data, coverage: await getCoverage(organizationId) });
   }
 
   if (method === 'POST' && path === '/admin/locations') {
+    const organizationId = await currentOrganizationId();
     const body = readBody<any>(event);
     const { unitIds = [], ...locationValues } = body;
-    const { data, error } = await supabase.from('locations').insert(locationValues).select('*').single();
+    delete locationValues.organization_id;
+    const { data, error } = await supabase
+      .from('locations')
+      .insert(withOrganization(locationValues, organizationId))
+      .select('*')
+      .single();
     if (error) return json(500, { error: error.message });
-    if (unitIds.length) await supabase.from('units').update({ location_id: data.id }).in('id', unitIds);
+    if (unitIds.length) {
+      const update = supabase.from('units').update({ location_id: data.id }).in('id', unitIds);
+      await scoped(update, organizationId);
+    }
     return json(200, { location: data });
   }
 
   const locationMatch = path.match(/^\/admin\/locations\/([^/]+)$/);
   if (method === 'PATCH' && locationMatch) {
+    const organizationId = await currentOrganizationId();
     const body = readBody<any>(event);
     const { unitIds, ...locationValues } = body;
-    const { data, error } = await supabase.from('locations').update(locationValues).eq('id', locationMatch[1]).select('*').single();
+    delete locationValues.organization_id;
+    const locationUpdate = supabase.from('locations').update(locationValues).eq('id', locationMatch[1]);
+    const { data, error } = await scoped(locationUpdate, organizationId).select('*').single();
     if (error) return json(500, { error: error.message });
-    if (Array.isArray(unitIds)) await supabase.from('units').update({ location_id: data.id }).in('id', unitIds);
+    if (Array.isArray(unitIds)) {
+      const unitUpdate = supabase.from('units').update({ location_id: data.id }).in('id', unitIds);
+      await scoped(unitUpdate, organizationId);
+    }
     return json(200, { location: data });
   }
 
   if (method === 'POST' && path === '/admin/units') {
+    const organizationId = await currentOrganizationId();
     const body = readBody<any>(event);
-    const { data, error } = await supabase.from('units').insert(body).select('*').single();
+    delete body.organization_id;
+    const { data, error } = await supabase.from('units').insert(withOrganization(body, organizationId)).select('*').single();
     if (error) return json(500, { error: error.message });
     return json(200, { unit: data });
   }
 
   const unitMatch = path.match(/^\/admin\/units\/([^/]+)$/);
   if (method === 'PATCH' && unitMatch) {
+    const organizationId = await currentOrganizationId();
     const body = readBody<any>(event);
-    const { data, error } = await supabase.from('units').update(body).eq('id', unitMatch[1]).select('*').single();
+    delete body.organization_id;
+    const unitUpdate = supabase.from('units').update(body).eq('id', unitMatch[1]);
+    const { data, error } = await scoped(unitUpdate, organizationId).select('*').single();
     if (error) return json(500, { error: error.message });
     return json(200, { unit: data });
   }
 
   if (method === 'POST' && path === '/admin/team-members') {
+    const organizationId = await currentOrganizationId();
     const body = readBody<any>(event);
-    const { data, error } = await supabase.from('team_members').insert(body).select('id, name, role, active').single();
+    delete body.organization_id;
+    const { data, error } = await supabase
+      .from('team_members')
+      .insert(withOrganization(body, organizationId))
+      .select('id, name, role, active')
+      .single();
     if (error) return json(500, { error: error.message });
     return json(200, { teamMember: data });
   }
 
   const memberMatch = path.match(/^\/admin\/team-members\/([^/]+)$/);
   if (method === 'PATCH' && memberMatch) {
+    const organizationId = await currentOrganizationId();
     const body = readBody<any>(event);
-    const { data, error } = await supabase.from('team_members').update(body).eq('id', memberMatch[1]).select('id, name, role, active').single();
+    delete body.organization_id;
+    const memberUpdate = supabase.from('team_members').update(body).eq('id', memberMatch[1]);
+    const { data, error } = await scoped(memberUpdate, organizationId).select('id, name, role, active').single();
     if (error) return json(500, { error: error.message });
     return json(200, { teamMember: data });
   }

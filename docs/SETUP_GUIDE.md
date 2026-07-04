@@ -124,6 +124,14 @@ Then run the Mission Board settings migration:
 4. Paste it into Supabase SQL Editor.
 5. Click **Run**.
 
+Then run the multi-site foundation migration:
+
+1. Click **New query** again.
+2. In your GitHub copy, open `supabase/migrations/005_multi_site_foundation.sql`.
+3. Copy the whole file.
+4. Paste it into Supabase SQL Editor.
+5. Click **Run**.
+
 Then load starter data:
 
 1. Click **New query** again.
@@ -301,7 +309,7 @@ If the app loads but data does not:
 - Check Netlify environment variables.
 - Confirm the Supabase URL is correct.
 - Confirm the `service_role` key was used, not the anon key.
-- Confirm all four migration files and `seed.sql` were run in Supabase.
+- Confirm all five migration files and `seed.sql` were run in Supabase.
 
 If offline mode does not work:
 
@@ -312,7 +320,7 @@ If offline mode does not work:
 
 If Mission Board tone will not save:
 
-- Confirm `supabase/migrations/004_mission_board_settings.sql` was run.
+- Confirm `supabase/migrations/004_mission_board_settings.sql` and `supabase/migrations/005_multi_site_foundation.sql` were run.
 - Confirm the Admin tab unlocks with the current admin passphrase.
 
 If the Admin tab will not unlock:
