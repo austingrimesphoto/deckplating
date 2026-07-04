@@ -39,6 +39,7 @@ Suggested pilot use:
 - one RMT lead handles setup
 - at least one chaplain or RP uses it on a phone
 - normal deckplate coverage only
+- start with GitHub first, then use GitHub login for Supabase and Netlify when available
 
 Please capture setup friction, offline behavior, map/GPS issues, Mission Board usefulness, and anything that would stop another team from adopting it.
 ```

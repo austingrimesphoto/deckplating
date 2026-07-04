@@ -14,7 +14,9 @@ Before using the app, read the safe-use policy:
 
 ## What You Need
 
-Create these accounts first:
+Start with GitHub first. Then use GitHub sign-in for Supabase and Netlify if those sites offer it.
+
+Create or open these accounts:
 
 - GitHub: <https://github.com/signup>
 - Supabase: <https://supabase.com/dashboard/sign-up>
@@ -58,12 +60,13 @@ Important: your copy will not automatically receive future updates. That keeps y
 
 1. Go to Supabase projects:
    <https://supabase.com/dashboard/projects>
-2. Click **New project**.
-3. Pick your organization.
-4. Project name: `deckplate-coverage`
-5. Create a strong database password and save it somewhere approved.
-6. Pick the closest region.
-7. Click **Create new project**.
+2. If Supabase offers **Continue with GitHub**, use that sign-in if it matches your command-owned GitHub account.
+3. Click **New project**.
+4. Pick your organization.
+5. Project name: `deckplate-coverage`
+6. Create a strong database password and save it somewhere approved.
+7. Pick the closest region.
+8. Click **Create new project**.
 
 Wait until Supabase says the project is ready.
 
@@ -146,7 +149,7 @@ In the wizard:
 3. Type the admin passphrase you want for your Admin tab.
 4. Type your installation or unit name.
 5. Click **Look Up Map Center**.
-6. Confirm the latitude and longitude look reasonable.
+6. Confirm the latitude and longitude look reasonable. Overseas locations should work too, but enter latitude and longitude manually if lookup still fails.
 7. Leave map tile fields blank unless you already have a map provider key.
 8. Click **Generate Netlify Values**.
 9. Click **Copy All**.
@@ -157,10 +160,11 @@ Keep this copied text ready. You will paste it into Netlify.
 
 1. Go to Netlify's import page:
    <https://app.netlify.com/start>
-2. Click **Import an existing project**.
-3. Choose **GitHub**.
-4. Pick your Deckplate Coverage repository.
-5. Netlify should read the settings from `netlify.toml`.
+2. If Netlify offers **Sign in with GitHub**, use that if it matches your command-owned GitHub account.
+3. Click **Import an existing project**.
+4. Choose **GitHub**.
+5. Pick your Deckplate Coverage repository.
+6. Netlify should read the settings from `netlify.toml`.
 
 Confirm these settings if Netlify asks:
 

@@ -56,6 +56,8 @@ Please read docs/SAFE_USE.md first, then follow docs/SETUP_GUIDE.md as needed.
 After setup, use the app for normal deckplate coverage for 2-4 weeks and capture feedback with docs/PILOT_FEEDBACK_TEMPLATE.md.
 ```
 
+Tell pilot teams to start with GitHub first, then use GitHub sign-in for Supabase and Netlify when those sites offer it.
+
 ## First 30 Minutes
 
 1. Read the safe-use policy.

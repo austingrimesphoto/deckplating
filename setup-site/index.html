@@ -346,20 +346,20 @@
 
         <section id="accounts" class="panel">
           <p class="eyebrow">Step 1</p>
-          <h2>Create or open your accounts</h2>
+          <h2>Start with GitHub</h2>
           <p>
-            You need these three accounts before anything else will work. Use command-owned accounts if your local policy allows it.
+            Start by creating or opening your GitHub account. Then use GitHub sign-in when Supabase and Netlify offer it. That keeps the setup simpler and makes turnover easier.
           </p>
           <div class="grid-two">
             <a class="button secondary" href="https://github.com/signup" target="_blank" rel="noreferrer">Create GitHub Account</a>
-            <a class="button secondary" href="https://supabase.com/dashboard/sign-up" target="_blank" rel="noreferrer">Create Supabase Account</a>
-            <a class="button secondary" href="https://app.netlify.com/signup" target="_blank" rel="noreferrer">Create Netlify Account</a>
             <a class="button secondary" href="https://github.com/login" target="_blank" rel="noreferrer">Open GitHub Login</a>
+            <a class="button secondary" href="https://supabase.com/dashboard/sign-up" target="_blank" rel="noreferrer">Open Supabase Sign Up</a>
+            <a class="button secondary" href="https://app.netlify.com/signup" target="_blank" rel="noreferrer">Open Netlify Sign Up</a>
           </div>
           <div class="checklist">
             <label><input type="checkbox" /> I can sign in to GitHub</label>
-            <label><input type="checkbox" /> I can sign in to Supabase</label>
-            <label><input type="checkbox" /> I can sign in to Netlify</label>
+            <label><input type="checkbox" /> I used GitHub sign-in for Supabase or created a Supabase account</label>
+            <label><input type="checkbox" /> I used GitHub sign-in for Netlify or created a Netlify account</label>
           </div>
           <div class="warning">
             Save these logins somewhere approved. Do not make the whole setup depend on one person’s personal account.
@@ -389,7 +389,7 @@
           <p class="eyebrow">Step 3</p>
           <h2>Create your Supabase database</h2>
           <p>
-            Open Supabase, create a new project, then run the schema/migrations block and the starter-data block below.
+            Open Supabase, click <strong>New project</strong>, then run the schema/migrations block and the starter-data block below.
           </p>
           <a class="button secondary" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Supabase Projects</a>
           <div class="checklist">
@@ -480,7 +480,7 @@
           <p class="eyebrow">Step 5</p>
           <h2>Deploy your app to Netlify</h2>
           <p>
-            Netlify turns your GitHub copy into a live website. Import your GitHub repository, add the values from Step 4, then deploy.
+            Netlify turns your GitHub copy into a live website. Click <strong>Import an existing project</strong>, choose GitHub, add the values from Step 4, then deploy.
           </p>
           <a class="button secondary" href="https://app.netlify.com/start" target="_blank" rel="noreferrer">Open Netlify Import</a>
           <div class="checklist">
@@ -1031,7 +1031,6 @@ on conflict (name) do update set
             q: installationName,
             format: 'jsonv2',
             limit: '1',
-            countrycodes: 'us',
           });
           const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
             headers: { accept: 'application/json' },
