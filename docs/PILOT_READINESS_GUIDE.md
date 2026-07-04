@@ -38,6 +38,7 @@ Send one message with these links:
 - Hosted pilot feedback form: `https://deckplatingsetup.netlify.app/#feedback`
 - Repository: `https://github.com/austingrimesphoto/deckplating`
 - Pilot packet: `docs/PILOT_PACKET.md`
+- Pilot support playbook: `docs/PILOT_SUPPORT_PLAYBOOK.md`
 - Setup guide: `docs/SETUP_GUIDE.md`
 - Safe-use policy: `docs/SAFE_USE.md`
 - Offline test checklist: `docs/OFFLINE_TEST_CHECKLIST.md`

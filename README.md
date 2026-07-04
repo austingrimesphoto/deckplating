@@ -46,6 +46,10 @@ Pilot readiness guide:
 
 [docs/PILOT_READINESS_GUIDE.md](docs/PILOT_READINESS_GUIDE.md)
 
+Pilot support playbook:
+
+[docs/PILOT_SUPPORT_PLAYBOOK.md](docs/PILOT_SUPPORT_PLAYBOOK.md)
+
 Pilot packet:
 
 [docs/PILOT_PACKET.md](docs/PILOT_PACKET.md)

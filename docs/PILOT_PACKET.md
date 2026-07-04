@@ -61,6 +61,7 @@ Suggested pilot:
 - Safe-use policy: [SAFE_USE.md](SAFE_USE.md)
 - Setup guide: [SETUP_GUIDE.md](SETUP_GUIDE.md)
 - Pilot readiness guide: [PILOT_READINESS_GUIDE.md](PILOT_READINESS_GUIDE.md)
+- Pilot support playbook: [PILOT_SUPPORT_PLAYBOOK.md](PILOT_SUPPORT_PLAYBOOK.md)
 - Pilot dry-run checklist: [PILOT_DRY_RUN_CHECKLIST.md](PILOT_DRY_RUN_CHECKLIST.md)
 - Latest dry-run results: [PILOT_DRY_RUN_RESULTS_2026-07-04.md](PILOT_DRY_RUN_RESULTS_2026-07-04.md)
 - Pilot feedback review workflow: [PILOT_FEEDBACK_REVIEW.md](PILOT_FEEDBACK_REVIEW.md)
