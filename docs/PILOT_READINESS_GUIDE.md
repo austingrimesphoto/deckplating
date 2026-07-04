@@ -44,6 +44,7 @@ Send one message with these links:
 - Pilot dry run checklist: `docs/PILOT_DRY_RUN_CHECKLIST.md`
 - Latest dry run results: `docs/PILOT_DRY_RUN_RESULTS_2026-07-04.md`
 - Pilot feedback template: `docs/PILOT_FEEDBACK_TEMPLATE.md`
+- Pilot feedback review workflow: `docs/PILOT_FEEDBACK_REVIEW.md`
 
 Suggested message:
 

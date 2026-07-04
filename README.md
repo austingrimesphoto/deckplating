@@ -62,6 +62,10 @@ Pilot feedback template:
 
 [docs/PILOT_FEEDBACK_TEMPLATE.md](docs/PILOT_FEEDBACK_TEMPLATE.md)
 
+Pilot feedback review workflow:
+
+[docs/PILOT_FEEDBACK_REVIEW.md](docs/PILOT_FEEDBACK_REVIEW.md)
+
 Pilot invitation message:
 
 [docs/PILOT_INVITATION_MESSAGE.md](docs/PILOT_INVITATION_MESSAGE.md)
