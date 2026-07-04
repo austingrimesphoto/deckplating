@@ -34,6 +34,7 @@ Prefer teams that have:
 Send one message with these links:
 
 - Hosted setup site: `https://deckplatingsetup.netlify.app`
+- Hosted pilot feedback form: `https://deckplatingsetup.netlify.app/#feedback`
 - Repository: `https://github.com/austingrimesphoto/deckplate-coverage`
 - Setup guide: `docs/SETUP_GUIDE.md`
 - Safe-use policy: `docs/SAFE_USE.md`
@@ -95,3 +96,12 @@ When a tester reports a problem, capture:
 - whether the issue repeated after closing and reopening the app.
 
 Do not ask testers to send screenshots that expose sensitive locations or personal details.
+
+## Where Feedback Goes
+
+Pilot web-form submissions should be collected through the hosted setup site:
+
+- Feedback link: `https://deckplatingsetup.netlify.app/#feedback`
+- Storage location: Netlify Forms on the `deckplatingsetup.netlify.app` site
+
+That keeps feedback centralized without asking pilot teams to paste notes back manually.

@@ -12,6 +12,7 @@ It can be deployed as a public Netlify site that points users to the public Deck
 - Generates Netlify environment variables in the browser.
 - Looks up an installation/unit map center and includes it in generated variables.
 - Gives a deployment and launch checklist.
+- Includes a hosted pilot feedback form captured by Netlify Forms.
 
 ## What It Does Not Do Yet
 
@@ -22,6 +23,16 @@ It can be deployed as a public Netlify site that points users to the public Deck
 - It does not create Netlify sites automatically.
 
 Those steps would require a hosted app with GitHub, Supabase, and Netlify API/OAuth integrations.
+
+## Pilot Feedback Collection
+
+The setup site can also host a pilot feedback form.
+
+- Direct pilot feedback URL: `https://deckplatingsetup.netlify.app/#feedback`
+- Thank-you page: `https://deckplatingsetup.netlify.app/pilot-feedback-thanks.html`
+- Submission storage: Netlify Forms for the setup-site deployment
+
+To review submissions, open the Netlify site dashboard for the setup site and check the **Forms** section.
 
 ## What The App Owner Needs To Provide
 

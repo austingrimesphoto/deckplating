@@ -30,7 +30,8 @@
 
       button,
       input,
-      textarea {
+      textarea,
+      select {
         font: inherit;
       }
 
@@ -205,7 +206,8 @@
       }
 
       input,
-      textarea {
+      textarea,
+      select {
         width: 100%;
         min-height: 46px;
         padding: 10px 12px;
@@ -251,6 +253,22 @@
         margin: 8px 0 0;
         color: var(--green);
         font-weight: 900;
+      }
+
+      .helper {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      .stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .feedback-form {
+        display: grid;
+        gap: 12px;
       }
 
       .warning {
@@ -310,6 +328,7 @@
           <a class="step-link" href="#variables"><span>4</span>App Settings</a>
           <a class="step-link" href="#deploy"><span>5</span>Deploy</a>
           <a class="step-link" href="#launch"><span>6</span>Launch</a>
+          <a class="step-link" href="#feedback"><span>7</span>Feedback</a>
         </nav>
       </aside>
 
@@ -488,6 +507,163 @@
             <label><input type="checkbox" /> Edited team members, units, locations, and mapped areas</label>
             <label><input type="checkbox" /> Added the app to my phone home screen</label>
           </div>
+        </section>
+
+        <section id="feedback" class="panel">
+          <p class="eyebrow">Step 7</p>
+          <h2>Send pilot feedback back to the app owner</h2>
+          <p>
+            Use this form during or after the pilot. Submissions are stored by Netlify Forms on this setup site, so the app owner can review them without copy and paste.
+          </p>
+          <div class="warning">
+            Keep feedback unclassified and non-sensitive. Do not include counseling details, medical details, home addresses, personal identifying information, or sensitive operational locations.
+          </div>
+          <p class="helper">
+            Direct feedback link for pilots: <a href="#feedback">https://deckplatingsetup.netlify.app/#feedback</a>
+          </p>
+          <form
+            name="deckplate-pilot-feedback"
+            method="POST"
+            action="/pilot-feedback-thanks.html"
+            data-netlify="true"
+            netlify-honeypot="bot-field"
+            class="feedback-form"
+          >
+            <input type="hidden" name="form-name" value="deckplate-pilot-feedback" />
+            <p hidden>
+              <label>Do not fill this out: <input name="bot-field" /></label>
+            </p>
+            <div class="grid-two">
+              <label>
+                Installation or command
+                <input name="installation_or_command" required />
+              </label>
+              <label>
+                Pilot lead email, optional
+                <input name="pilot_lead_email" type="email" />
+              </label>
+            </div>
+            <div class="grid-two">
+              <label>
+                Pilot dates
+                <input name="pilot_dates" placeholder="Example: 7 Jul 2026 to 28 Jul 2026" />
+              </label>
+              <label>
+                Number of users
+                <input name="number_of_users" inputmode="numeric" />
+              </label>
+            </div>
+            <label>
+              Phone types used
+              <input name="phone_types_used" placeholder="Example: iPhone 14, iPhone SE, Galaxy S23" />
+            </label>
+            <div class="grid-two">
+              <label>
+                Did setup make sense?
+                <select name="setup_made_sense" required>
+                  <option value="">Choose one</option>
+                  <option>Yes</option>
+                  <option>Mostly</option>
+                  <option>No</option>
+                </select>
+              </label>
+              <label>
+                Hardest step
+                <select name="hardest_step" required>
+                  <option value="">Choose one</option>
+                  <option>GitHub</option>
+                  <option>Supabase</option>
+                  <option>Netlify</option>
+                  <option>SQL steps</option>
+                  <option>Phone/PWA setup</option>
+                  <option>Admin setup</option>
+                </select>
+              </label>
+            </div>
+            <div class="grid-two">
+              <label>
+                Did Locate Me work reliably?
+                <select name="locate_me_reliable" required>
+                  <option value="">Choose one</option>
+                  <option>Yes</option>
+                  <option>Mostly</option>
+                  <option>No</option>
+                </select>
+              </label>
+              <label>
+                Did offline sync work?
+                <select name="offline_sync_worked" required>
+                  <option value="">Choose one</option>
+                  <option>Yes</option>
+                  <option>Mostly</option>
+                  <option>No</option>
+                  <option>Did not test</option>
+                </select>
+              </label>
+            </div>
+            <div class="grid-two">
+              <label>
+                Was Mission Board useful?
+                <select name="mission_board_useful" required>
+                  <option value="">Choose one</option>
+                  <option>Yes</option>
+                  <option>Somewhat</option>
+                  <option>No</option>
+                </select>
+              </label>
+              <label>
+                Mission Brief tone used
+                <select name="mission_brief_tone">
+                  <option value="">Choose one</option>
+                  <option>Professional</option>
+                  <option>Friendly</option>
+                  <option>Deckplate Banter</option>
+                  <option>Did not notice</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              Top setup friction
+              <textarea name="top_setup_friction" placeholder="What slowed your team down the most?"></textarea>
+            </label>
+            <label>
+              Check-in and map issues
+              <textarea name="checkin_and_map_issues" placeholder="What made normal phone use difficult?"></textarea>
+            </label>
+            <label>
+              Offline and sync issues
+              <textarea name="offline_and_sync_issues" placeholder="What happened when connectivity was weak or absent?"></textarea>
+            </label>
+            <label>
+              Admin and reporting issues
+              <textarea name="admin_and_reporting_issues" placeholder="What was unclear in setup, corrections, or reports?"></textarea>
+            </label>
+            <label>
+              Top issues before another team should try it
+              <textarea name="top_issues_before_next_team" required placeholder="List the main blockers or rough edges."></textarea>
+            </label>
+            <div class="grid-two">
+              <label>
+                Would this team keep using it?
+                <select name="would_keep_using" required>
+                  <option value="">Choose one</option>
+                  <option>Yes</option>
+                  <option>Maybe</option>
+                  <option>No</option>
+                </select>
+              </label>
+              <label>
+                Would centralized hosting make adoption easier?
+                <select name="central_hosting_helpful" required>
+                  <option value="">Choose one</option>
+                  <option>Yes</option>
+                  <option>Maybe</option>
+                  <option>No</option>
+                </select>
+              </label>
+            </div>
+            <button type="submit">Send Pilot Feedback</button>
+          </form>
         </section>
       </main>
     </div>

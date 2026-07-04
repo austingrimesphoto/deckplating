@@ -31,6 +31,9 @@ Please use these documents in order:
 3. docs/PILOT_READINESS_GUIDE.md
 4. docs/PILOT_FEEDBACK_TEMPLATE.md
 
+Feedback form:
+https://deckplatingsetup.netlify.app/#feedback
+
 Suggested pilot use:
 - 2 to 4 weeks
 - one RMT lead handles setup
