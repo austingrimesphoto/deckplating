@@ -13,10 +13,17 @@ Migration `006_org_admin_and_invitations.sql` adds:
 
 The API adds:
 
+- `POST /api/operator/login`
+- `GET /api/operator/organizations`
+- `POST /api/operator/organizations`
+- `POST /api/operator/organizations/:id/setup-codes`
+- `POST /api/operator/setup-codes/:id/revoke`
 - `POST /api/workspaces/activate`
 - `POST /api/admin/organization-admin/passphrase`
 
 Current self-hosted teams can keep using the environment admin passphrase. Organization admin passphrases are groundwork for managed hosting.
+
+See `docs/CENTRAL_OPERATOR_GUIDE.md` for the protected operator workflow.
 
 ## Intended Flow
 
@@ -29,6 +36,64 @@ Current self-hosted teams can keep using the environment admin passphrase. Organ
 7. Team members open the app, select their name, set a PIN, and use the app.
 
 ## Current API Contract
+
+### Central Operator Login
+
+`POST /api/operator/login`
+
+Body:
+
+```json
+{
+  "passphrase": "central operator passphrase"
+}
+```
+
+Behavior:
+
+- Disabled unless `CENTRAL_OPERATOR_PASSPHRASE_HASH` is configured.
+- Uses a separate central operator passphrase, not a local organization admin passphrase.
+- Returns a short-lived central operator token.
+
+### Create Organization
+
+`POST /api/operator/organizations`
+
+Body:
+
+```json
+{
+  "name": "Example RMT",
+  "slug": "example-rmt"
+}
+```
+
+Behavior:
+
+- Requires a central operator token.
+- Creates an approved workspace.
+- Does not create roster, locations, units, or local admin credentials.
+
+### Create Setup Code
+
+`POST /api/operator/organizations/{organizationId}/setup-codes`
+
+Body:
+
+```json
+{
+  "label": "Example RMT lead setup",
+  "purpose": "pilot_setup",
+  "expiresInDays": 14
+}
+```
+
+Behavior:
+
+- Requires a central operator token.
+- Stores only the setup-code hash.
+- Returns the plaintext setup code only once.
+- Supports revocation through `POST /api/operator/setup-codes/{setupCodeId}/revoke`.
 
 ### Activate Workspace
 
@@ -105,7 +170,6 @@ The setup code table stores:
 
 Still needed before managed pilots:
 
-- central operator UI for creating organizations and setup codes,
 - organization-aware roster selection before login,
 - organization admin session refresh behavior,
 - tenant-isolation tests,

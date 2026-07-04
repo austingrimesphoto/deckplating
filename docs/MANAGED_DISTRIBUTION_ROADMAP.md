@@ -35,6 +35,7 @@ Scope:
 - collect setup friction, offline behavior, check-in reliability, admin workflow, and reporting feedback
 - validate the default-organization foundation before adding workspace onboarding
 - validate organization-scoped admin credential groundwork
+- validate protected central-operator workspace/setup-code groundwork
 - verify safe-use language is understood and followed
 
 Exclusions:
@@ -58,7 +59,7 @@ Scope:
 
 - organization/workspace onboarding beyond the default-organization foundation
 - complete organization-scoped authorization for managed hosting
-- invitation/setup-code onboarding UI and central admin tooling
+- invitation/setup-code onboarding UI and central operator console
 - organization admin model
 - tenant-isolation tests
 - migration strategy from current single-organization schema

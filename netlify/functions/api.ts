@@ -10,11 +10,15 @@ type AdminContext = {
   organizationId: string | null;
   authMethod: 'organization' | 'environment' | 'legacy';
 };
+type OperatorContext = {
+  authMethod: 'central_operator';
+};
 
 const supabaseUrl = process.env.SUPABASE_URL ?? '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const adminPassphraseHash = process.env.ADMIN_PASSPHRASE_HASH ?? '';
 const adminSessionSecret = process.env.ADMIN_SESSION_SECRET ?? serviceRoleKey;
+const centralOperatorPassphraseHash = process.env.CENTRAL_OPERATOR_PASSPHRASE_HASH ?? '';
 const defaultOrganizationId =
   process.env.DECKPLATING_DEFAULT_ORGANIZATION_ID ?? '00000000-0000-4000-8000-000000000001';
 
@@ -235,6 +239,51 @@ function tryEnvironmentAdminLogin(passphrase: string, organizationId: string | n
 }
 
 const setupCodeHash = (code: string) => sha256(`setup-code:${code.trim()}`);
+
+const createOperatorToken = () => {
+  const payload = base64url(
+    JSON.stringify({
+      authMethod: 'central_operator',
+      expires: Date.now() + 1000 * 60 * 60 * 4,
+    }),
+  );
+  return `${payload}.${hmac(payload)}`;
+};
+
+async function requireOperator(event: HandlerEvent): Promise<OperatorContext | null> {
+  const header = event.headers.authorization ?? event.headers.Authorization;
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!token) return null;
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return null;
+  const expected = hmac(payload);
+  if (signature.length !== expected.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  let parsed: { authMethod?: string; expires?: number };
+  try {
+    parsed = JSON.parse(fromBase64url(payload));
+  } catch {
+    return null;
+  }
+  if (parsed.authMethod !== 'central_operator' || !parsed.expires || parsed.expires < Date.now()) return null;
+  return { authMethod: 'central_operator' };
+}
+
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+
+const createSetupCode = () => {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(16);
+  let value = '';
+  for (let i = 0; i < 16; i += 1) value += alphabet[bytes[i] % alphabet.length];
+  return `${value.slice(0, 4)}-${value.slice(4, 8)}-${value.slice(8, 12)}-${value.slice(12)}`;
+};
 
 async function verifySetupCode(code: string) {
   if (!(await organizationAdminSchemaEnabled())) return null;
@@ -474,6 +523,128 @@ async function route(event: HandlerEvent) {
 
   const path = normalizePath(event);
   const method = event.httpMethod;
+
+  if (method === 'POST' && path === '/operator/login') {
+    const body = readBody<{ passphrase?: string }>(event);
+    if (!centralOperatorPassphraseHash) {
+      return json(503, { error: 'Central operator access is not configured.' });
+    }
+    if (sha256(body.passphrase ?? '') !== centralOperatorPassphraseHash) {
+      return json(403, { error: 'Invalid central operator passphrase.' });
+    }
+    return json(200, { token: createOperatorToken(), authMethod: 'central_operator' });
+  }
+
+  if (path.startsWith('/operator/')) {
+    const operator = await requireOperator(event);
+    if (!operator) return json(403, { error: 'Central operator authorization required.' });
+    if (!(await organizationSchemaEnabled()) || !(await organizationAdminSchemaEnabled())) {
+      return json(400, { error: 'Organization workspace tables are not available for this database yet.' });
+    }
+  }
+
+  if (method === 'GET' && path === '/operator/organizations') {
+    const [{ data: organizations, error: orgError }, { data: setupCodes, error: codeError }] = await Promise.all([
+      supabase.from('organizations').select('id, slug, name, active, created_at, updated_at').order('created_at', { ascending: false }),
+      supabase
+        .from('organization_setup_codes')
+        .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
+        .order('created_at', { ascending: false }),
+    ]);
+    if (orgError) return json(500, { error: orgError.message });
+    if (codeError) return json(500, { error: codeError.message });
+    const codesByOrg = new Map<string, any[]>();
+    for (const code of setupCodes ?? []) {
+      const values = codesByOrg.get(code.organization_id) ?? [];
+      values.push(code);
+      codesByOrg.set(code.organization_id, values);
+    }
+    return json(200, {
+      organizations: (organizations ?? []).map((organization: any) => {
+        const codes = codesByOrg.get(organization.id) ?? [];
+        return {
+          ...organization,
+          setupCodes: codes,
+          setupCodeSummary: {
+            total: codes.length,
+            activeUnused: codes.filter((code) => code.active && !code.used_at).length,
+            used: codes.filter((code) => code.used_at).length,
+          },
+        };
+      }),
+    });
+  }
+
+  if (method === 'POST' && path === '/operator/organizations') {
+    const body = readBody<{ name?: string; slug?: string; active?: boolean }>(event);
+    const name = body.name?.trim();
+    if (!name || name.length < 2) return json(400, { error: 'Organization name is required.' });
+    const slug = slugify(body.slug || name);
+    if (!slug || slug.length < 2) return json(400, { error: 'Organization slug must contain letters or numbers.' });
+    const { data, error } = await supabase
+      .from('organizations')
+      .insert({ name, slug, active: body.active ?? true })
+      .select('id, slug, name, active, created_at, updated_at')
+      .single();
+    if (error) {
+      if (error.code === '23505') return json(409, { error: 'An organization with that slug already exists.' });
+      return json(500, { error: error.message });
+    }
+    return json(201, { organization: data });
+  }
+
+  const operatorSetupCodeMatch = path.match(/^\/operator\/organizations\/([^/]+)\/setup-codes$/);
+  if (method === 'POST' && operatorSetupCodeMatch) {
+    const organizationId = operatorSetupCodeMatch[1];
+    if (!isUuid(organizationId)) return json(400, { error: 'Organization ID must be a UUID.' });
+    const body = readBody<{ label?: string; purpose?: string; expiresInDays?: number }>(event);
+    const { data: organization, error: orgError } = await supabase
+      .from('organizations')
+      .select('id, slug, name, active')
+      .eq('id', organizationId)
+      .maybeSingle();
+    if (orgError) return json(500, { error: orgError.message });
+    if (!organization) return json(404, { error: 'Organization not found.' });
+    if (!organization.active) return json(400, { error: 'Cannot create setup codes for an inactive organization.' });
+    if (body.purpose && !['workspace_setup', 'pilot_setup'].includes(body.purpose)) {
+      return json(400, { error: 'purpose must be workspace_setup or pilot_setup.' });
+    }
+    const purpose = body.purpose === 'pilot_setup' ? 'pilot_setup' : 'workspace_setup';
+    const expiresInDays = body.expiresInDays == null ? 14 : Number(body.expiresInDays);
+    if (expiresInDays < 1 || expiresInDays > 90) return json(400, { error: 'expiresInDays must be between 1 and 90.' });
+    const code = createSetupCode();
+    const expiresAt = new Date(Date.now() + expiresInDays * 86400000).toISOString();
+    const { data, error } = await supabase
+      .from('organization_setup_codes')
+      .insert({
+        organization_id: organizationId,
+        code_hash: setupCodeHash(code),
+        label: body.label?.trim() || null,
+        purpose,
+        active: true,
+        expires_at: expiresAt,
+      })
+      .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
+      .single();
+    if (error) return json(500, { error: error.message });
+    return json(201, { organization, setupCode: { ...data, code } });
+  }
+
+  const operatorCodeRevokeMatch = path.match(/^\/operator\/setup-codes\/([^/]+)\/revoke$/);
+  if (method === 'POST' && operatorCodeRevokeMatch) {
+    const setupCodeId = operatorCodeRevokeMatch[1];
+    if (!isUuid(setupCodeId)) return json(400, { error: 'Setup code ID must be a UUID.' });
+    const { data, error } = await supabase
+      .from('organization_setup_codes')
+      .update({ active: false })
+      .eq('id', setupCodeId)
+      .is('used_at', null)
+      .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
+      .maybeSingle();
+    if (error) return json(500, { error: error.message });
+    if (!data) return json(404, { error: 'Unused setup code not found.' });
+    return json(200, { setupCode: data });
+  }
 
   if (method === 'GET' && path === '/team-members') {
     const organizationId = await currentOrganizationId();

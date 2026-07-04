@@ -192,6 +192,7 @@ SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 ADMIN_PASSPHRASE_HASH
 ADMIN_SESSION_SECRET
+CENTRAL_OPERATOR_PASSPHRASE_HASH
 MAP_TILE_URL
 MAP_TILE_KEY
 MAP_DEFAULT_LATITUDE
@@ -200,6 +201,8 @@ INSTALLATION_NAME
 ```
 
 `npm run setup` generates `ADMIN_PASSPHRASE_HASH` and `ADMIN_SESSION_SECRET` for local use. Use the same values in Netlify.
+
+`CENTRAL_OPERATOR_PASSPHRASE_HASH` is optional and should be used only on a future managed pilot host. When set, it enables protected operator API routes for creating approved organization workspaces and one-time setup codes. Leave it blank for normal self-hosted installs.
 
 `MAP_TILE_URL` and `MAP_TILE_KEY` may be blank for basic use.
 
@@ -283,6 +286,14 @@ Public:
 - `GET /api/team-members`
 - `POST /api/device/register`
 - `POST /api/workspaces/activate`
+
+Central-operator protected:
+
+- `POST /api/operator/login`
+- `GET /api/operator/organizations`
+- `POST /api/operator/organizations`
+- `POST /api/operator/organizations/:id/setup-codes`
+- `POST /api/operator/setup-codes/:id/revoke`
 
 User-session protected:
 
