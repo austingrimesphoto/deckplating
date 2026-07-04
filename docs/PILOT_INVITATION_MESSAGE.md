@@ -2,6 +2,8 @@
 
 Use this as the message you send to an outside RMT lead.
 
+For the complete sendable packet, use [PILOT_PACKET.md](PILOT_PACKET.md).
+
 ## Email Or Teams Draft
 
 ```text

@@ -46,6 +46,10 @@ Pilot readiness guide:
 
 [docs/PILOT_READINESS_GUIDE.md](docs/PILOT_READINESS_GUIDE.md)
 
+Pilot packet:
+
+[docs/PILOT_PACKET.md](docs/PILOT_PACKET.md)
+
 Pilot dry-run checklist:
 
 [docs/PILOT_DRY_RUN_CHECKLIST.md](docs/PILOT_DRY_RUN_CHECKLIST.md)
