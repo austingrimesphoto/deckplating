@@ -18,6 +18,7 @@ The API adds:
 - `POST /api/operator/organizations`
 - `POST /api/operator/organizations/:id/setup-codes`
 - `POST /api/operator/setup-codes/:id/revoke`
+- `GET /api/workspaces/resolve`
 - `POST /api/workspaces/activate`
 - `POST /api/admin/organization-admin/passphrase`
 
@@ -34,6 +35,8 @@ See `docs/CENTRAL_OPERATOR_GUIDE.md` for the protected operator workflow.
 5. Local RMT lead creates the organization admin passphrase.
 6. Local RMT lead creates roster, areas, locations, and units.
 7. Team members open the app, select their name, set a PIN, and use the app.
+
+Workspace links may include `?workspace=workspace-slug`. The browser stores the selected workspace locally so roster selection, device registration, admin login, and cached bootstrap data stay attached to that workspace.
 
 ## Current API Contract
 
@@ -117,6 +120,7 @@ Behavior:
 - Stores only an organization-scoped admin passphrase hash.
 - Marks the setup code used.
 - Returns an organization-scoped admin token.
+- Lets the local lead continue directly into Admin Setup before any roster identities exist.
 
 ### Set Organization Admin Passphrase
 

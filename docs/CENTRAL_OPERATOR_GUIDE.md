@@ -53,6 +53,14 @@ The slug is used as a stable internal label. Keep it short, lowercase, and comma
 
 The response includes the plaintext setup code one time. Send it directly to the local RMT lead with the setup link. Do not store setup codes in docs, screenshots, public chats, or tickets.
 
+Use a workspace link in this form when possible:
+
+```text
+https://your-managed-app.example/?workspace=example-rmt
+```
+
+The app resolves that slug, stores the workspace on the device, and loads the roster/admin context for that workspace.
+
 ### 4. Local RMT Lead Activates the Workspace
 
 The local lead uses:
@@ -68,7 +76,7 @@ The local lead uses:
 }
 ```
 
-Activation stores only an organization-scoped admin passphrase hash and marks the setup code used.
+Activation stores only an organization-scoped admin passphrase hash and marks the setup code used. The lead can continue directly into Admin Setup to create the roster, areas, locations, and units before any team member identity exists.
 
 ### 5. Revoke an Unused Setup Code
 
@@ -87,7 +95,8 @@ Use this when a code was sent to the wrong recipient, expired operationally, or 
 
 ## Current Limitations
 
-- This is API groundwork only; there is no polished operator console yet.
-- The app still defaults normal users to the configured default organization until full multi-workspace selection is implemented.
+- This is API and app-entry groundwork only; there is no polished operator console yet.
+- The app can remember one selected workspace per device and can resolve workspace links by slug.
+- The app does not yet provide a full public workspace directory or unrestricted self-service signup.
 - Environment-wide admin fallback still exists for self-hosted beta compatibility.
 - Tenant-isolation testing must be completed before any broad managed pilot.

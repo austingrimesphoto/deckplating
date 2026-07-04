@@ -283,6 +283,7 @@ netlify.toml                 Build and API rewrite config
 
 Public:
 
+- `GET /api/workspaces/resolve`
 - `GET /api/team-members`
 - `POST /api/device/register`
 - `POST /api/workspaces/activate`

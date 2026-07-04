@@ -29,14 +29,18 @@ const dbPromise = openDB<DeckplateOfflineDb>('deckplate-coverage-offline', 1, {
   },
 });
 
+const bootstrapKey = (organizationId?: string | null) => `workspace:${organizationId ?? 'default'}`;
+
 export async function saveBootstrapSnapshot(bootstrap: Bootstrap) {
   const db = await dbPromise;
-  await db.put('bootstrap', { ...bootstrap, cachedAt: new Date().toISOString() }, 'latest');
+  const snapshot = { ...bootstrap, cachedAt: new Date().toISOString() };
+  await db.put('bootstrap', snapshot, bootstrapKey(bootstrap.organizationId));
+  await db.put('bootstrap', snapshot, 'latest');
 }
 
-export async function getBootstrapSnapshot() {
+export async function getBootstrapSnapshot(organizationId?: string | null) {
   const db = await dbPromise;
-  return (await db.get('bootstrap', 'latest')) ?? null;
+  return (await db.get('bootstrap', bootstrapKey(organizationId))) ?? (await db.get('bootstrap', 'latest')) ?? null;
 }
 
 export async function savePendingBatch(batch: PendingVisitBatch) {

@@ -69,6 +69,46 @@ async function currentOrganizationId() {
   return (await organizationSchemaEnabled()) ? defaultOrganizationId : null;
 }
 
+async function resolveOrganizationId(value?: string | null) {
+  if (!(await organizationSchemaEnabled())) return null;
+  const requested = value?.trim();
+  if (!requested) return defaultOrganizationId;
+  if (!isUuid(requested)) throw new Error('organizationId must be a UUID.');
+  const { data, error } = await supabase
+    .from('organizations')
+    .select('id, active')
+    .eq('id', requested)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || !data.active) throw new Error('Workspace not found or inactive.');
+  return data.id as string;
+}
+
+async function resolveOrganizationSlug(slug: string) {
+  if (!(await organizationSchemaEnabled())) return null;
+  const normalized = slugify(slug);
+  if (!normalized) throw new Error('workspace slug is required.');
+  const { data, error } = await supabase
+    .from('organizations')
+    .select('id, slug, name, active')
+    .eq('slug', normalized)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || !data.active) throw new Error('Workspace not found or inactive.');
+  return data as { id: string; slug: string; name: string; active: boolean };
+}
+
+async function organizationSummary(organizationId: string | null) {
+  if (!organizationId || !(await organizationSchemaEnabled())) return null;
+  const { data, error } = await supabase
+    .from('organizations')
+    .select('id, slug, name, active')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (error || !data || !data.active) return null;
+  return data as { id: string; slug: string; name: string; active: boolean };
+}
+
 async function organizationAdminSchemaEnabled() {
   if (organizationAdminSchemaEnabledCache !== null) return organizationAdminSchemaEnabledCache;
   const { error } = await supabase.from('organization_admin_credentials').select('id').limit(1);
@@ -475,11 +515,16 @@ async function verifyDevice(teamMemberId: string, deviceToken: string, organizat
   return data;
 }
 
-async function registerDevice(body: { teamMemberId: string; pin: string; deviceToken: string; deviceLabel?: string }) {
+async function registerDevice(body: { teamMemberId: string; pin: string; deviceToken: string; deviceLabel?: string; organizationId?: string | null }) {
   if (!body.teamMemberId || !/^\d{4}$/.test(body.pin) || !body.deviceToken) {
     return json(400, { error: 'teamMemberId, 4-digit pin, and deviceToken are required.' });
   }
-  const organizationId = await currentOrganizationId();
+  let organizationId: string | null;
+  try {
+    organizationId = await resolveOrganizationId(body.organizationId);
+  } catch (error) {
+    return json(400, { error: errorMessage(error) });
+  }
   const memberQuery = supabase
     .from('team_members')
     .select('*')
@@ -512,6 +557,7 @@ async function registerDevice(body: { teamMemberId: string; pin: string; deviceT
   if (error) return json(500, { error: error.message });
   return json(200, {
     organizationId,
+    organization: await organizationSummary(organizationId),
     deviceId: device.id,
     sessionToken: createUserToken(body.teamMemberId, body.deviceToken, organizationId),
     teamMember: { id: member.id, name: member.name },
@@ -646,8 +692,25 @@ async function route(event: HandlerEvent) {
     return json(200, { setupCode: data });
   }
 
+  if (method === 'GET' && path === '/workspaces/resolve') {
+    try {
+      const slug = event.queryStringParameters?.slug;
+      const organizationId = event.queryStringParameters?.organizationId;
+      if (slug) return json(200, { organization: await resolveOrganizationSlug(slug) });
+      const resolvedId = await resolveOrganizationId(organizationId);
+      return json(200, { organization: await organizationSummary(resolvedId) });
+    } catch (error) {
+      return json(404, { error: errorMessage(error) });
+    }
+  }
+
   if (method === 'GET' && path === '/team-members') {
-    const organizationId = await currentOrganizationId();
+    let organizationId: string | null;
+    try {
+      organizationId = await resolveOrganizationId(event.queryStringParameters?.organizationId);
+    } catch (error) {
+      return json(400, { error: errorMessage(error) });
+    }
     const query = supabase
       .from('team_members')
       .select('id, name')
@@ -655,7 +718,11 @@ async function route(event: HandlerEvent) {
       .order('name');
     const { data: teamMembers, error } = await scoped(query, organizationId);
     if (error) return json(500, { error: error.message });
-    return json(200, { teamMembers: (teamMembers ?? []).map((member: any) => ({ ...member, role: null })) });
+    return json(200, {
+      organizationId,
+      organization: await organizationSummary(organizationId),
+      teamMembers: (teamMembers ?? []).map((member: any) => ({ ...member, role: null })),
+    });
   }
 
   if (method === 'GET' && path === '/bootstrap') {
@@ -673,6 +740,7 @@ async function route(event: HandlerEvent) {
     if (error) return json(500, { error: error.message });
     return json(200, {
       organizationId: user.organizationId,
+      organization: await organizationSummary(user.organizationId),
       areas: coverage.areas,
       teamMembers: teamMembers ?? [],
       units: coverage.units,
@@ -685,7 +753,7 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'POST' && path === '/device/register') {
-    const body = readBody<{ teamMemberId: string; pin: string; deviceToken: string; deviceLabel?: string }>(event);
+    const body = readBody<{ teamMemberId: string; pin: string; deviceToken: string; deviceLabel?: string; organizationId?: string | null }>(event);
     return registerDevice(body);
   }
 
@@ -706,6 +774,7 @@ async function route(event: HandlerEvent) {
       pin: body.newPin,
       deviceToken: body.deviceToken,
       deviceLabel: 'Changed identity',
+      organizationId: user.organizationId,
     });
   }
 
@@ -1250,20 +1319,31 @@ async function route(event: HandlerEvent) {
     await markSetupCodeUsed(setupCode.id, organizationId, body.leadLabel?.trim() || null);
     return json(200, {
       organizationId,
+      organization: await organizationSummary(organizationId),
       token: createAdminToken({ organizationId, authMethod: 'organization' }),
     });
   }
 
   if (method === 'POST' && path === '/admin/login') {
-    const body = readBody<{ passphrase: string }>(event);
-    const organizationId = await currentOrganizationId();
+    const body = readBody<{ passphrase: string; organizationId?: string | null }>(event);
+    let organizationId: string | null;
+    try {
+      organizationId = await resolveOrganizationId(body.organizationId);
+    } catch (error) {
+      return json(400, { error: errorMessage(error) });
+    }
     const adminContext =
       (await tryOrganizationAdminLogin(organizationId, body.passphrase ?? '')) ??
       tryEnvironmentAdminLogin(body.passphrase ?? '', organizationId);
     if (!adminContext) {
       return json(403, { error: 'Invalid admin passphrase.' });
     }
-    return json(200, { token: createAdminToken(adminContext), organizationId: adminContext.organizationId, authMethod: adminContext.authMethod });
+    return json(200, {
+      token: createAdminToken(adminContext),
+      organizationId: adminContext.organizationId,
+      organization: await organizationSummary(adminContext.organizationId),
+      authMethod: adminContext.authMethod,
+    });
   }
 
   const adminContext = path.startsWith('/admin/') ? await requireAdmin(event) : null;

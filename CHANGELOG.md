@@ -8,6 +8,7 @@
   - Scoped API helpers and route queries to the default organization when the new schema is present.
   - Added organization-scoped admin credential and controlled setup-code groundwork.
   - Added protected central-operator API groundwork for approved workspace and setup-code creation.
+  - Added workspace-aware entry, activation, roster loading, admin login, and offline bootstrap caching groundwork.
   - Preserved current single-site behavior for existing self-hosted beta teams.
 - Pilot Readiness Package v0.5.
   - Added outside-team pilot handoff guide.

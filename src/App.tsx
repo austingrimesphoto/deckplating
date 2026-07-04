@@ -18,6 +18,7 @@ import type {
   UnitType,
   CoverageDetail,
   VisitIndicatorState,
+  WorkspaceContext,
 } from './types';
 import {
   countBlockingPendingBatches,
@@ -72,6 +73,24 @@ const locationMappingNotice =
   'Map only publicly identifiable buildings or general areas. Do not pin SCIFs, sensitive operational spaces, deployed-unit locations, homes, or any location that should not be broadly shared. When uncertain, leave the location unmapped and use manual check-in.';
 
 const identityKey = 'deckplate.identity';
+const workspaceKey = 'deckplate.workspace';
+
+const defaultWorkspace: WorkspaceContext = {
+  id: '00000000-0000-4000-8000-000000000001',
+  slug: 'default',
+  name: 'Default Workspace',
+};
+
+const workspaceParam = () => {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('workspace') || params.get('org') || params.get('organization');
+};
+
+const looksLikeUuid = (value: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+const workspaceQuery = (workspace: WorkspaceContext | null) =>
+  workspace?.id ? `?organizationId=${encodeURIComponent(workspace.id)}` : '';
 
 async function api<T>(path: string, options: RequestInit & { timeoutMs?: number } = {}) {
   const { timeoutMs = 10000, ...requestOptions } = options;
@@ -313,9 +332,13 @@ function circlePolygon(longitude: number, latitude: number, radiusMeters: number
 
 function IdentitySetup({
   members,
+  workspace,
+  onWorkspaceChange,
   onRegistered,
 }: {
   members: TeamMember[];
+  workspace: WorkspaceContext | null;
+  onWorkspaceChange: () => void;
   onRegistered: (identity: Identity) => void;
 }) {
   const [teamMemberId, setTeamMemberId] = useState(members[0]?.id ?? '');
@@ -329,17 +352,19 @@ function IdentitySetup({
     if (!member) return;
     const deviceToken = newToken();
     try {
-      const result = await api<{ deviceId: string; sessionToken: string; organizationId?: string | null }>('/api/device/register', {
+      const result = await api<{ deviceId: string; sessionToken: string; organizationId?: string | null; organization?: WorkspaceContext | null }>('/api/device/register', {
         method: 'POST',
         body: JSON.stringify({
           teamMemberId,
           pin,
           deviceToken,
           deviceLabel: navigator.userAgent.slice(0, 120),
+          organizationId: workspace?.id ?? null,
         }),
       });
       const identity = {
         organizationId: result.organizationId ?? null,
+        organization: result.organization ?? workspace ?? null,
         teamMemberId,
         teamMemberName: member.name,
         deviceToken,
@@ -358,6 +383,7 @@ function IdentitySetup({
       <section className="panel">
         <p className="eyebrow">Deckplating</p>
         <h1>Select your name</h1>
+        <p className="muted">Workspace: {workspace?.name ?? 'Default Workspace'}</p>
         <p className="safe-summary">{safeUseSummary}</p>
         <form onSubmit={submit} className="stack">
           <label>
@@ -385,7 +411,162 @@ function IdentitySetup({
           <button className="primary" type="submit">
             Continue
           </button>
+          <button className="secondary" type="button" onClick={onWorkspaceChange}>
+            Change or activate workspace
+          </button>
         </form>
+      </section>
+    </main>
+  );
+}
+
+function WorkspaceEntry({
+  workspace,
+  teamMembers,
+  onBack,
+  onWorkspace,
+  onAdminToken,
+}: {
+  workspace: WorkspaceContext | null;
+  teamMembers: TeamMember[];
+  onBack: () => void;
+  onWorkspace: (workspace: WorkspaceContext | null) => void;
+  onAdminToken: (token: string) => void;
+}) {
+  const [mode, setMode] = useState<'choose' | 'activate'>('choose');
+  const [workspaceSlug, setWorkspaceSlug] = useState('');
+  const [setupCode, setSetupCode] = useState('');
+  const [organizationName, setOrganizationName] = useState(workspace?.name ?? '');
+  const [leadLabel, setLeadLabel] = useState('');
+  const [adminPassphrase, setAdminPassphrase] = useState('');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  async function useDefaultWorkspace() {
+    localStorage.removeItem(workspaceKey);
+    onWorkspace(defaultWorkspace);
+  }
+
+  async function resolveWorkspace(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    try {
+      const result = await api<{ organization: WorkspaceContext | null }>(`/api/workspaces/resolve?slug=${encodeURIComponent(workspaceSlug)}`);
+      const next = result.organization ?? defaultWorkspace;
+      localStorage.setItem(workspaceKey, JSON.stringify(next));
+      onWorkspace(next);
+      setMessage(`Workspace set to ${next.name}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Workspace was not found.');
+    }
+  }
+
+  async function activateWorkspace(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    try {
+      const result = await api<{ token: string; organizationId: string; organization: WorkspaceContext | null }>('/api/workspaces/activate', {
+        method: 'POST',
+        body: JSON.stringify({
+          setupCode,
+          adminPassphrase,
+          organizationName,
+          leadLabel,
+        }),
+      });
+      const next = result.organization ?? {
+        id: result.organizationId,
+        slug: '',
+        name: organizationName.trim() || 'Activated Workspace',
+      };
+      onWorkspace(next);
+      sessionStorage.setItem('deckplate.admin', result.token);
+      onAdminToken(result.token);
+      setSetupCode('');
+      setAdminPassphrase('');
+      setMessage('Workspace activated. Open Admin Setup to build the roster, areas, locations, and units.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Workspace activation failed.');
+    }
+  }
+
+  return (
+    <main className="center-shell">
+      <section className="panel">
+        <p className="eyebrow">Deckplating</p>
+        <h1>Workspace setup</h1>
+        <p className="muted">Current workspace: {workspace?.name ?? 'Default Workspace'}</p>
+        <p className="safe-summary">{safeUseSummary}</p>
+        {teamMembers.length > 0 && (
+          <p className="notice">
+            This workspace already has a roster. Go back and select your name, or change workspaces below.
+          </p>
+        )}
+        {teamMembers.length > 0 && (
+          <button className="secondary" type="button" onClick={onBack}>
+            Back to names
+          </button>
+        )}
+        <div className="tab-row">
+          <button className={mode === 'choose' ? 'active' : ''} onClick={() => setMode('choose')}>
+            Select workspace
+          </button>
+          <button className={mode === 'activate' ? 'active' : ''} onClick={() => setMode('activate')}>
+            Activate workspace
+          </button>
+        </div>
+        {mode === 'choose' ? (
+          <form className="stack" onSubmit={resolveWorkspace}>
+            <label>
+              Workspace slug
+              <input
+                value={workspaceSlug}
+                placeholder="example-rmt"
+                autoCapitalize="none"
+                onChange={(event) => setWorkspaceSlug(event.target.value)}
+              />
+            </label>
+            <button className="primary">Use workspace</button>
+            <button className="secondary" type="button" onClick={useDefaultWorkspace}>
+              Use default workspace
+            </button>
+          </form>
+        ) : (
+          <form className="stack" onSubmit={activateWorkspace}>
+            <label>
+              Setup code
+              <input
+                value={setupCode}
+                autoCapitalize="characters"
+                onChange={(event) => setSetupCode(event.target.value.toUpperCase())}
+                required
+              />
+            </label>
+            <label>
+              Workspace display name
+              <input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} placeholder="Example RMT" />
+            </label>
+            <label>
+              Lead label
+              <input value={leadLabel} onChange={(event) => setLeadLabel(event.target.value)} placeholder="Optional" />
+            </label>
+            <label>
+              Local admin passphrase
+              <input
+                type="password"
+                minLength={8}
+                value={adminPassphrase}
+                onChange={(event) => setAdminPassphrase(event.target.value)}
+                required
+              />
+            </label>
+            <button className="primary">Activate workspace</button>
+          </form>
+        )}
+        {message && <p className="notice">{message}</p>}
+        {error && <p className="error">{error}</p>}
       </section>
     </main>
   );
@@ -1869,10 +2050,12 @@ function AdminScreen({
   refresh,
   mapDefaultLatitude,
   mapDefaultLongitude,
+  workspace,
 }: {
   refresh: () => void;
   mapDefaultLatitude: number;
   mapDefaultLongitude: number;
+  workspace: WorkspaceContext | null;
 }) {
   const [token, setToken] = useState(sessionStorage.getItem('deckplate.admin') ?? '');
   const [passphrase, setPassphrase] = useState('');
@@ -1906,8 +2089,14 @@ function AdminScreen({
 
   async function login(event: FormEvent) {
     event.preventDefault();
-    const result = await api<{ token: string; authMethod?: string }>('/api/admin/login', { method: 'POST', body: JSON.stringify({ passphrase }) });
+    const result = await api<{ token: string; authMethod?: string; organization?: WorkspaceContext | null }>('/api/admin/login', {
+      method: 'POST',
+      body: JSON.stringify({ passphrase, organizationId: workspace?.id ?? null }),
+    });
     sessionStorage.setItem('deckplate.admin', result.token);
+    if (result.organization) {
+      localStorage.setItem(workspaceKey, JSON.stringify(result.organization));
+    }
     setToken(result.token);
     setAdminAuthMethod(result.authMethod ?? '');
   }
@@ -2052,6 +2241,7 @@ function AdminScreen({
       <main className="center-shell">
         <section className="panel">
           <h1>Admin</h1>
+          <p className="muted">Workspace: {workspace?.name ?? 'Default Workspace'}</p>
           <form onSubmit={login} className="stack">
             <label>
               Shared passphrase
@@ -2448,6 +2638,17 @@ export default function App() {
   const [cachedAt, setCachedAt] = useState<string | null>(null);
   const [cachedMode, setCachedMode] = useState(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [workspace, setWorkspace] = useState<WorkspaceContext | null>(() => {
+    const stored = localStorage.getItem(workspaceKey);
+    if (!stored) return defaultWorkspace;
+    try {
+      return JSON.parse(stored) as WorkspaceContext;
+    } catch {
+      return defaultWorkspace;
+    }
+  });
+  const [showWorkspaceEntry, setShowWorkspaceEntry] = useState(false);
+  const [showAdminSetup, setShowAdminSetup] = useState(() => Boolean(sessionStorage.getItem('deckplate.admin')));
   const [identity, setIdentity] = useState<Identity | null>(() => {
     const stored = localStorage.getItem(identityKey);
     if (!stored) return null;
@@ -2463,10 +2664,57 @@ export default function App() {
   const [updateReady, setUpdateReady] = useState(false);
   const [applyUpdate, setApplyUpdate] = useState<(() => Promise<void>) | null>(null);
 
-  async function loadTeamMembers() {
+  function setActiveWorkspace(nextWorkspace: WorkspaceContext | null) {
+    const normalized = nextWorkspace ?? defaultWorkspace;
+    localStorage.setItem(workspaceKey, JSON.stringify(normalized));
+    setWorkspace(normalized);
+    setShowWorkspaceEntry(false);
+    setTeamMembers([]);
+    setBootstrap(null);
+    setCachedAt(null);
+    setCachedMode(false);
+    const currentIdentity = localStorage.getItem(identityKey);
+    if (currentIdentity) {
+      try {
+        const parsed = JSON.parse(currentIdentity) as Identity;
+        if ((parsed.organizationId ?? defaultWorkspace.id) !== normalized.id) {
+          localStorage.removeItem(identityKey);
+          setIdentity(null);
+        } else {
+          setIdentity(parsed);
+          void load(parsed);
+        }
+      } catch {
+        localStorage.removeItem(identityKey);
+        setIdentity(null);
+      }
+    }
+    sessionStorage.removeItem('deckplate.admin');
+    setShowAdminSetup(false);
+    void loadTeamMembers(normalized);
+  }
+
+  async function loadWorkspaceFromUrl() {
+    const requested = workspaceParam();
+    if (!requested) return;
     try {
-      const result = await api<{ teamMembers: TeamMember[] }>('/api/team-members');
+      const query = looksLikeUuid(requested) ? `organizationId=${encodeURIComponent(requested)}` : `slug=${encodeURIComponent(requested)}`;
+      const result = await api<{ organization: WorkspaceContext | null }>(`/api/workspaces/resolve?${query}`);
+      if (result.organization) setActiveWorkspace(result.organization);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Workspace link could not be opened.');
+    }
+  }
+
+  async function loadTeamMembers(currentWorkspace = workspace) {
+    try {
+      const result = await api<{ teamMembers: TeamMember[]; organization?: WorkspaceContext | null }>(`/api/team-members${workspaceQuery(currentWorkspace)}`);
+      if (result.organization) {
+        localStorage.setItem(workspaceKey, JSON.stringify(result.organization));
+        setWorkspace(result.organization);
+      }
       setTeamMembers(result.teamMembers);
+      setShowWorkspaceEntry(result.teamMembers.length === 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load team members.');
     }
@@ -2474,7 +2722,7 @@ export default function App() {
 
   async function load(currentIdentity = identity) {
     if (!currentIdentity) return;
-    const cached = await getBootstrapSnapshot();
+    const cached = await getBootstrapSnapshot(currentIdentity.organizationId);
     if (cached) {
       setBootstrap(cached);
       setTeamMembers(cached.teamMembers);
@@ -2490,6 +2738,10 @@ export default function App() {
       setError('');
       const nextBootstrap = await api<Bootstrap>('/api/bootstrap', { headers: authHeaders(currentIdentity), timeoutMs: cached ? 3500 : 10000 });
       setBootstrap(nextBootstrap);
+      if (nextBootstrap.organization) {
+        localStorage.setItem(workspaceKey, JSON.stringify(nextBootstrap.organization));
+        setWorkspace(nextBootstrap.organization);
+      }
       setCachedMode(false);
       setCachedAt(null);
       await saveBootstrapSnapshot(nextBootstrap);
@@ -2622,9 +2874,15 @@ export default function App() {
           pin: refreshPin,
           deviceToken: identity.deviceToken,
           deviceLabel: navigator.userAgent.slice(0, 120),
+          organizationId: identity.organizationId ?? workspace?.id ?? null,
         }),
       });
-      const next = { ...identity, organizationId: result.organizationId ?? identity.organizationId ?? null, deviceId: result.deviceId, sessionToken: result.sessionToken };
+      const next = {
+        ...identity,
+        organizationId: result.organizationId ?? identity.organizationId ?? null,
+        deviceId: result.deviceId,
+        sessionToken: result.sessionToken,
+      };
       localStorage.setItem(identityKey, JSON.stringify(next));
       setIdentity(next);
       setRefreshPin('');
@@ -2637,15 +2895,24 @@ export default function App() {
 
   function handleIdentity(nextIdentity: Identity) {
     setIdentity(nextIdentity);
+    if (nextIdentity.organization) {
+      localStorage.setItem(workspaceKey, JSON.stringify(nextIdentity.organization));
+      setWorkspace(nextIdentity.organization);
+    }
     void load(nextIdentity);
   }
 
   useEffect(() => {
+    const requestedWorkspace = workspaceParam();
+    if (requestedWorkspace) {
+      void loadWorkspaceFromUrl();
+      return;
+    }
     if (identity) {
       void load(identity);
       void refreshPendingCount(identity);
     } else {
-      void loadTeamMembers();
+      void loadTeamMembers(workspace);
     }
   }, []);
 
@@ -2679,8 +2946,49 @@ export default function App() {
 
   if (error) return <main className="center-shell"><p className="error">{error}</p></main>;
   if (!identity) {
+    if (showAdminSetup) {
+      return (
+        <>
+          <AdminScreen
+            refresh={() => void loadTeamMembers(workspace)}
+            mapDefaultLatitude={24.57}
+            mapDefaultLongitude={-81.78}
+            workspace={workspace}
+          />
+          <nav className="bottom-nav">
+            <button className="active">Admin</button>
+            <button onClick={() => {
+              setShowAdminSetup(false);
+              void loadTeamMembers(workspace);
+            }}>
+              Sign In
+            </button>
+          </nav>
+        </>
+      );
+    }
+    if (showWorkspaceEntry) {
+      return (
+        <WorkspaceEntry
+          workspace={workspace}
+          teamMembers={teamMembers}
+          onBack={() => setShowWorkspaceEntry(false)}
+          onWorkspace={setActiveWorkspace}
+          onAdminToken={() => {
+            setShowAdminSetup(true);
+          }}
+        />
+      );
+    }
     if (!teamMembers.length) return <main className="center-shell"><p>Loading Deckplating...</p></main>;
-    return <IdentitySetup members={teamMembers} onRegistered={handleIdentity} />;
+    return (
+      <IdentitySetup
+        members={teamMembers}
+        workspace={workspace}
+        onWorkspaceChange={() => setShowWorkspaceEntry(true)}
+        onRegistered={handleIdentity}
+      />
+    );
   }
   if (!bootstrap) return <main className="center-shell"><p>Loading Deckplating...</p></main>;
 
@@ -2748,6 +3056,7 @@ export default function App() {
           refresh={load}
           mapDefaultLatitude={bootstrap.mapDefaultLatitude}
           mapDefaultLongitude={bootstrap.mapDefaultLongitude}
+          workspace={workspace}
         />
       )}
       {screen === 'scoreboard' && (

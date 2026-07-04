@@ -48,6 +48,7 @@ export type LocationSummary = {
 
 export type Bootstrap = {
   organizationId?: string | null;
+  organization?: WorkspaceContext | null;
   areas: Area[];
   teamMembers: TeamMember[];
   units: UnitSummary[];
@@ -58,8 +59,15 @@ export type Bootstrap = {
   gamificationTone: GamificationTone;
 };
 
+export type WorkspaceContext = {
+  id: string;
+  slug: string;
+  name: string;
+};
+
 export type Identity = {
   organizationId?: string | null;
+  organization?: WorkspaceContext | null;
   teamMemberId: string;
   teamMemberName: string;
   deviceToken: string;
