@@ -273,3 +273,5 @@ Create one closeout note with:
 - safe-use concerns,
 - go / no-go decision,
 - recommended next release items.
+
+Use [PILOT_CLOSEOUT_TEMPLATE.md](PILOT_CLOSEOUT_TEMPLATE.md) for the closeout and record the final decision in [PILOT_DECISION_LOG.md](PILOT_DECISION_LOG.md).

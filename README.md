@@ -50,6 +50,14 @@ Pilot support playbook:
 
 [docs/PILOT_SUPPORT_PLAYBOOK.md](docs/PILOT_SUPPORT_PLAYBOOK.md)
 
+Pilot closeout template:
+
+[docs/PILOT_CLOSEOUT_TEMPLATE.md](docs/PILOT_CLOSEOUT_TEMPLATE.md)
+
+Pilot decision log:
+
+[docs/PILOT_DECISION_LOG.md](docs/PILOT_DECISION_LOG.md)
+
 Pilot packet:
 
 [docs/PILOT_PACKET.md](docs/PILOT_PACKET.md)

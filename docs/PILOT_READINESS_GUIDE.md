@@ -39,6 +39,8 @@ Send one message with these links:
 - Repository: `https://github.com/austingrimesphoto/deckplating`
 - Pilot packet: `docs/PILOT_PACKET.md`
 - Pilot support playbook: `docs/PILOT_SUPPORT_PLAYBOOK.md`
+- Pilot closeout template: `docs/PILOT_CLOSEOUT_TEMPLATE.md`
+- Pilot decision log: `docs/PILOT_DECISION_LOG.md`
 - Setup guide: `docs/SETUP_GUIDE.md`
 - Safe-use policy: `docs/SAFE_USE.md`
 - Offline test checklist: `docs/OFFLINE_TEST_CHECKLIST.md`
