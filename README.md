@@ -50,6 +50,10 @@ Pilot dry-run checklist:
 
 [docs/PILOT_DRY_RUN_CHECKLIST.md](docs/PILOT_DRY_RUN_CHECKLIST.md)
 
+Latest dry-run results:
+
+[docs/PILOT_DRY_RUN_RESULTS_2026-07-04.md](docs/PILOT_DRY_RUN_RESULTS_2026-07-04.md)
+
 Pilot feedback template:
 
 [docs/PILOT_FEEDBACK_TEMPLATE.md](docs/PILOT_FEEDBACK_TEMPLATE.md)
