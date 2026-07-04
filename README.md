@@ -8,9 +8,13 @@ It is designed to be copied by each RMT. Every team should run its own Netlify s
 
 Preferred beta distribution path:
 
-1. Send users to the public setup site.
+1. Send users to the public setup site: <https://deckplatingsetup.netlify.app>
 2. They create their own app copy from the public template.
 3. They follow the hosted setup wizard.
+
+Hosted setup site:
+
+<https://deckplatingsetup.netlify.app>
 
 The setup site source lives in:
 
@@ -38,6 +42,14 @@ Pilot feedback template:
 
 [docs/PILOT_FEEDBACK_TEMPLATE.md](docs/PILOT_FEEDBACK_TEMPLATE.md)
 
+Pilot invitation message:
+
+[docs/PILOT_INVITATION_MESSAGE.md](docs/PILOT_INVITATION_MESSAGE.md)
+
+Current beta release notes draft:
+
+[docs/BETA_RELEASE_NOTES_CURRENT.md](docs/BETA_RELEASE_NOTES_CURRENT.md)
+
 Safe-use policy:
 
 [docs/SAFE_USE.md](docs/SAFE_USE.md)
@@ -48,16 +60,16 @@ The beta browser helper is here:
 
 ## Share This With Another RMT
 
-Send them the GitHub repository link and tell them to start with this README.
+Send them the hosted setup site first. Use the GitHub repository as the source of truth and backup reference.
 
 Recommended message:
 
 ```text
 Deckplate Coverage setup starts here:
-https://github.com/austingrimesphoto/deckplate-coverage
+https://deckplatingsetup.netlify.app
 
-Open the README and follow docs/SETUP_GUIDE.md.
-Click "Use this template" to create your own copy.
+If you need the full source or backup instructions:
+https://github.com/austingrimesphoto/deckplate-coverage
 ```
 
 The owner of this repository should enable GitHub's template setting:

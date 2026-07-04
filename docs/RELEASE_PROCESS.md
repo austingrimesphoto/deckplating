@@ -32,6 +32,7 @@ Check:
 - `README.md` is current.
 - `docs/SETUP_GUIDE.md` is current.
 - `docs/PILOT_READINESS_GUIDE.md` and `docs/PILOT_FEEDBACK_TEMPLATE.md` are current before outside-team pilots.
+- `docs/PILOT_INVITATION_MESSAGE.md` and `docs/BETA_RELEASE_NOTES_CURRENT.md` are current before sending a beta handoff.
 - `docs/OFFLINE_TEST_CHECKLIST.md` and `docs/MISSION_BOARD_TEST_CHECKLIST.md` were reviewed for relevant changes.
 - `setup-site/` is current if setup instructions changed.
 - Any database changes are documented.

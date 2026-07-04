@@ -4,6 +4,10 @@ This is the beta setup path for a chapel team that wants its own copy of Deckpla
 
 The goal is simple: each RMT gets its own app, its own database, and its own data. Nobody has to share one giant fleet-wide database.
 
+Hosted setup site:
+
+<https://deckplatingsetup.netlify.app>
+
 Before using the app, read the safe-use policy:
 
 [SAFE_USE.md](SAFE_USE.md)
@@ -26,6 +30,10 @@ If you are helping another RMT test the beta, use this setup guide together with
 ## Best Beta Path
 
 Use this path if you do not want to touch Terminal. If the project owner has given you a public setup-site URL, start there and use this guide as the backup reference.
+
+Recommended starting point:
+
+<https://deckplatingsetup.netlify.app>
 
 1. Make your own GitHub copy.
 2. Create a Supabase database.
@@ -118,7 +126,11 @@ The `service_role` key is a server secret. Put it only in Netlify environment va
 
 ## Step 5: Use The Setup Wizard
 
-Open the setup wizard file from this repository:
+Preferred option: open the hosted setup site:
+
+<https://deckplatingsetup.netlify.app>
+
+Backup option: open the setup wizard file from this repository:
 
 [setup-wizard.html](setup-wizard.html)
 
