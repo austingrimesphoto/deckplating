@@ -36,7 +36,7 @@ Send one message with these links:
 - Hosted setup site: `https://deckplatingsetup.netlify.app`
 - Hosted user guide: `https://deckplatingsetup.netlify.app/user-guide.html`
 - Hosted pilot feedback form: `https://deckplatingsetup.netlify.app/#feedback`
-- Repository: `https://github.com/austingrimesphoto/deckplate-coverage`
+- Repository: `https://github.com/austingrimesphoto/deckplating`
 - Setup guide: `docs/SETUP_GUIDE.md`
 - Safe-use policy: `docs/SAFE_USE.md`
 - Offline test checklist: `docs/OFFLINE_TEST_CHECKLIST.md`
@@ -54,7 +54,7 @@ User guide:
 https://deckplatingsetup.netlify.app/user-guide.html
 
 If you need the source repository or backup reference:
-https://github.com/austingrimesphoto/deckplate-coverage
+https://github.com/austingrimesphoto/deckplating
 
 Please read docs/SAFE_USE.md first, then follow docs/SETUP_GUIDE.md as needed.
 After setup, use the app for normal deckplating for 2-4 weeks and capture feedback with docs/PILOT_FEEDBACK_TEMPLATE.md.

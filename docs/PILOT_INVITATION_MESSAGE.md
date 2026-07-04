@@ -23,7 +23,7 @@ Start here:
 https://deckplatingsetup.netlify.app
 
 Source repository:
-https://github.com/austingrimesphoto/deckplate-coverage
+https://github.com/austingrimesphoto/deckplating
 
 Please use these documents in order:
 1. docs/SAFE_USE.md

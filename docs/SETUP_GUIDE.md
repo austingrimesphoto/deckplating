@@ -65,7 +65,7 @@ Recommended starting point:
 ## Step 1: Make Your Own App Copy
 
 1. Go to the Deckplating template:
-   <https://github.com/austingrimesphoto/deckplate-coverage/generate>
+   <https://github.com/austingrimesphoto/deckplating/generate>
 2. If GitHub asks you to sign in, sign in.
 3. Under **Owner**, choose your command/team account if available.
 4. Name the repository something like `deckplating`.

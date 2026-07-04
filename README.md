@@ -80,7 +80,7 @@ How to use the app after setup:
 https://deckplatingsetup.netlify.app/user-guide.html
 
 If you need the full source or backup instructions:
-https://github.com/austingrimesphoto/deckplate-coverage
+https://github.com/austingrimesphoto/deckplating
 ```
 
 The owner of this repository should enable GitHub's template setting:
