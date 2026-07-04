@@ -40,6 +40,7 @@ Send one message with these links:
 - Setup guide: `docs/SETUP_GUIDE.md`
 - Safe-use policy: `docs/SAFE_USE.md`
 - Offline test checklist: `docs/OFFLINE_TEST_CHECKLIST.md`
+- Pilot dry run checklist: `docs/PILOT_DRY_RUN_CHECKLIST.md`
 - Pilot feedback template: `docs/PILOT_FEEDBACK_TEMPLATE.md`
 
 Suggested message:

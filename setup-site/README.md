@@ -56,7 +56,7 @@ To host this as the public setup path, provide:
 - A public Netlify site for this folder.
 - The GitHub template repository URL.
 - A support email or contact method.
-- Optional: a custom domain such as `setup.deckplatecoverage.org`.
+- Optional: a custom domain owned by the project, such as `setup.your-domain.example`.
 
 ## Deploy
 

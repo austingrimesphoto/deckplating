@@ -46,6 +46,10 @@ Pilot readiness guide:
 
 [docs/PILOT_READINESS_GUIDE.md](docs/PILOT_READINESS_GUIDE.md)
 
+Pilot dry-run checklist:
+
+[docs/PILOT_DRY_RUN_CHECKLIST.md](docs/PILOT_DRY_RUN_CHECKLIST.md)
+
 Pilot feedback template:
 
 [docs/PILOT_FEEDBACK_TEMPLATE.md](docs/PILOT_FEEDBACK_TEMPLATE.md)
