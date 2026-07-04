@@ -1,4 +1,4 @@
-# Deckplate Coverage User Guide
+# Deckplating User Guide
 
 Hosted guide:
 
@@ -21,7 +21,7 @@ Use this guide to teach a new Religious Ministry Team how to use the app after s
 
 ## App Philosophy
 
-Deckplate Coverage is a lightweight coverage-awareness tool.
+Deckplating is a lightweight coverage-awareness tool.
 
 It is built to answer practical questions:
 
@@ -34,7 +34,7 @@ It is not a counseling record, case-management tool, official system of record, 
 
 ## Safe Use
 
-- Use Deckplate Coverage only for unclassified, non-sensitive coverage tracking.
+- Use Deckplating only for unclassified, non-sensitive coverage tracking.
 - Do not enter CUI, classified information, counseling notes, medical details, home addresses, or sensitive operational locations.
 - Map only publicly identifiable buildings or general areas.
 - If a location should not be broadly shared, leave it unmapped and use manual check-in.

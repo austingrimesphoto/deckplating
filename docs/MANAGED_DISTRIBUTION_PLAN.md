@@ -1,6 +1,6 @@
 # Managed Distribution Plan
 
-Deckplate Coverage should keep the current React/Vite frontend, Netlify Functions API, Supabase database, and PWA/offline architecture for the next managed-distribution phase. The future target is one centrally hosted multi-organization service, not a platform port before pilot validation.
+Deckplating should keep the current React/Vite frontend, Netlify Functions API, Supabase database, and PWA/offline architecture for the next managed-distribution phase. The future target is one centrally hosted multi-organization service, not a platform port before pilot validation.
 
 ## Recommendation
 
@@ -69,7 +69,7 @@ Central hosting creates real operational responsibilities:
 
 ## Explicit Exclusions
 
-Managed Deckplate Coverage must remain outside these use cases:
+Managed Deckplating must remain outside these use cases:
 
 - no CUI
 - no classified data

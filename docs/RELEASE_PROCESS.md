@@ -1,6 +1,6 @@
 # Release Process
 
-Use this when publishing a new Deckplate Coverage version for other RMTs.
+Use this when publishing a new Deckplating version for other RMTs.
 
 ## Version Names
 
@@ -85,7 +85,7 @@ Check:
 Use plain language:
 
 ```text
-A new Deckplate Coverage version is available:
+A new Deckplating version is available:
 https://github.com/YOUR-ORG/YOUR-REPO/releases
 
 Read the release notes before updating. If your current copy is working, you do not need to update immediately.

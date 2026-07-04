@@ -5,9 +5,9 @@ Use this as the message you send to an outside RMT lead.
 ## Email Or Teams Draft
 
 ```text
-Subject: Deckplate Coverage beta pilot
+Subject: Deckplating beta pilot
 
-Deckplate Coverage is a mobile web app for unclassified, non-sensitive ministry coverage awareness.
+Deckplating is a mobile web app for unclassified, non-sensitive ministry coverage awareness.
 
 It helps an RMT:
 - map public buildings or general areas,
@@ -38,7 +38,7 @@ Suggested pilot use:
 - 2 to 4 weeks
 - one RMT lead handles setup
 - at least one chaplain or RP uses it on a phone
-- normal deckplate coverage only
+- normal deckplating only
 - start with GitHub first, then use GitHub login for Supabase and Netlify when available
 
 Please capture setup friction, offline behavior, map/GPS issues, Mission Board usefulness, and anything that would stop another team from adopting it.

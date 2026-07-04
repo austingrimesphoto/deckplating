@@ -1,10 +1,10 @@
 # Pilot Readiness Guide
 
-Use this guide before handing Deckplate Coverage to an outside RMT.
+Use this guide before handing Deckplating to an outside RMT.
 
 ## Pilot Goal
 
-Confirm that a normal RMT can use Deckplate Coverage for unclassified, non-sensitive coverage awareness without developer help.
+Confirm that a normal RMT can use Deckplating for unclassified, non-sensitive coverage awareness without developer help.
 
 The pilot is successful only if the team can:
 
@@ -45,7 +45,7 @@ Send one message with these links:
 Suggested message:
 
 ```text
-Deckplate Coverage is a beta tool for unclassified, non-sensitive ministry coverage awareness.
+Deckplating is a beta tool for unclassified, non-sensitive ministry coverage awareness.
 
 Start here:
 https://deckplatingsetup.netlify.app
@@ -57,7 +57,7 @@ If you need the source repository or backup reference:
 https://github.com/austingrimesphoto/deckplate-coverage
 
 Please read docs/SAFE_USE.md first, then follow docs/SETUP_GUIDE.md as needed.
-After setup, use the app for normal deckplate coverage for 2-4 weeks and capture feedback with docs/PILOT_FEEDBACK_TEMPLATE.md.
+After setup, use the app for normal deckplating for 2-4 weeks and capture feedback with docs/PILOT_FEEDBACK_TEMPLATE.md.
 ```
 
 Tell pilot teams to start with GitHub first, then use GitHub sign-in for Supabase and Netlify when those sites offer it.
@@ -77,7 +77,7 @@ Tell pilot teams to start with GitHub first, then use GitHub sign-in for Supabas
 
 ## Pilot Boundaries
 
-Do not use Deckplate Coverage for:
+Do not use Deckplating for:
 
 - CUI,
 - classified information,
@@ -94,7 +94,7 @@ If a location should not be broadly shared, leave it unmapped and use manual che
 
 When a tester reports a problem, capture:
 
-- phone type and browser or PWA mode,
+- phone type and whether the app was opened in a browser or from the phone home screen,
 - whether the app was online or offline,
 - what screen they were on,
 - exact error text,

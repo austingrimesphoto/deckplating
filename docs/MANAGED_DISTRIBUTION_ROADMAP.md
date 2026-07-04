@@ -51,7 +51,7 @@ Exit criteria:
 
 ## Stage 3 - Managed Multi-Organization Service
 
-Objective: build one centrally hosted Deckplate Coverage service with controlled organization onboarding.
+Objective: build one centrally hosted Deckplating service with controlled organization onboarding.
 
 Scope:
 

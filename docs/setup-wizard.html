@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Deckplate Coverage Setup Wizard</title>
+    <title>Deckplating Setup Wizard</title>
     <style>
       :root {
         color-scheme: light;
@@ -98,7 +98,7 @@
   </head>
   <body>
     <main>
-      <h1>Deckplate Coverage Setup Wizard</h1>
+      <h1>Deckplating Setup Wizard</h1>
       <p class="muted">
         This page runs only in your browser. It creates the environment variables Netlify needs.
         It does not send these values anywhere.
@@ -230,7 +230,6 @@
             q: installationName,
             format: 'jsonv2',
             limit: '1',
-            countrycodes: 'us',
           });
           const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
             headers: { accept: 'application/json' },

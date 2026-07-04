@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Deckplate Coverage Setup</title>
+    <title>Deckplating Setup</title>
     <style>
       :root {
         --bg: #eef2f5;
@@ -317,7 +317,7 @@
         <div class="brand">
           <img src="assets/deckplate-coverage-app-icon-192.png" alt="" />
           <div>
-            <strong>Deckplate Coverage</strong>
+            <strong>Deckplating</strong>
             <span>Setup Wizard</span>
           </div>
         </div>
@@ -329,6 +329,7 @@
           <a class="step-link" href="#deploy"><span>5</span>Deploy</a>
           <a class="step-link" href="#launch"><span>6</span>Launch</a>
           <a class="step-link" href="#feedback"><span>7</span>Feedback</a>
+          <a class="step-link" href="user-guide.html"><span>?</span>User Guide</a>
         </nav>
       </aside>
 
@@ -337,9 +338,9 @@
           <p class="eyebrow">Self-hosted RMT setup</p>
           <h1>Start here. Do these steps in order.</h1>
           <p class="muted">
-            This page walks you through making your own Deckplate Coverage app. Keep this tab open. Open each button in a new tab, finish that task, then come back here for the next step.
+            This page walks you through making your own Deckplating app. Keep this tab open. Open each button in a new tab, finish that task, then come back here for the next step.
           </p>
-        <div class="warning">
+          <div class="warning">
             Do not skip ahead. You need accounts first, then your app copy, then the database, then Netlify.
           </div>
           <div class="actions">
@@ -355,6 +356,9 @@
           <p>
             Start by creating or opening your GitHub account. Then use GitHub sign-in when Supabase and Netlify offer it. That keeps the setup simpler and makes turnover easier.
           </p>
+          <div class="warning">
+            Use the name <strong>Deckplating</strong> everywhere normal users will see it. Recommended project names: GitHub repository <strong>deckplating</strong>, Supabase project <strong>deckplating</strong>, and Netlify site <strong>deckplating</strong> or <strong>deckplating-your-command</strong>.
+          </div>
           <div class="grid-two">
             <a class="button secondary" href="https://github.com/signup" target="_blank" rel="noreferrer">Create GitHub Account</a>
             <a class="button secondary" href="https://github.com/login" target="_blank" rel="noreferrer">Open GitHub Login</a>
@@ -381,7 +385,7 @@
           <div class="checklist">
             <label><input type="checkbox" /> GitHub opened the template page</label>
             <label><input type="checkbox" /> I chose the correct owner or command account</label>
-            <label><input type="checkbox" /> I named the repository `deckplate-coverage`</label>
+            <label><input type="checkbox" /> I named the repository `deckplating`</label>
             <label><input type="checkbox" /> I selected Private</label>
             <label><input type="checkbox" /> I clicked Create repository</label>
           </div>
@@ -399,7 +403,7 @@
           <a class="button secondary" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Supabase Projects</a>
           <div class="checklist">
             <label><input type="checkbox" /> I clicked New project in Supabase</label>
-            <label><input type="checkbox" /> I named the project `deckplate-coverage`</label>
+            <label><input type="checkbox" /> I named the project `deckplating`</label>
             <label><input type="checkbox" /> I saved the database password somewhere approved</label>
             <label><input type="checkbox" /> I waited for Supabase to finish creating the project</label>
             <label><input type="checkbox" /> I opened SQL Editor</label>
@@ -491,7 +495,7 @@
           <div class="checklist">
             <label><input type="checkbox" /> I chose Import an existing project</label>
             <label><input type="checkbox" /> I selected GitHub</label>
-            <label><input type="checkbox" /> I selected my Deckplate Coverage repository</label>
+            <label><input type="checkbox" /> I selected my Deckplating repository</label>
             <label><input type="checkbox" /> I added all environment variables from Step 4</label>
             <label><input type="checkbox" /> Build command is `npm run build`</label>
             <label><input type="checkbox" /> Publish directory is `dist`</label>
@@ -606,7 +610,7 @@
                   <option>Supabase</option>
                   <option>Netlify</option>
                   <option>SQL steps</option>
-                  <option>Phone/PWA setup</option>
+                  <option>Phone home-screen app setup</option>
                   <option>Admin setup</option>
                 </select>
               </label>

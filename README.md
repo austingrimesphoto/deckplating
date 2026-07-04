@@ -1,6 +1,6 @@
-# Deckplate Coverage
+# Deckplating
 
-Deckplate Coverage is a mobile web app for installation Religious Ministry Teams to track command coverage, map unit locations, log visits, and see which departments, divisions, or tenant commands need attention.
+Deckplating is a mobile web app for installation Religious Ministry Teams to track command coverage, map unit locations, log visits, and see which departments, divisions, or tenant commands need attention.
 
 It is designed to be copied by each RMT. Every team should run its own Netlify site and its own Supabase database, so no one has to manage one giant fleet-wide database.
 
@@ -73,7 +73,7 @@ Send them the hosted setup site first. Use the GitHub repository as the source o
 Recommended message:
 
 ```text
-Deckplate Coverage setup starts here:
+Deckplating setup starts here:
 https://deckplatingsetup.netlify.app
 
 How to use the app after setup:
@@ -201,9 +201,9 @@ After deployment, open the site on a phone and use **Add to Home Screen**.
 
 ## Offline Mode
 
-Deckplate Coverage needs one successful online launch before offline use. That first launch installs the app shell and caches recent coverage data on the device.
+Deckplating needs one successful online launch before offline use. That first launch installs the app shell and caches recent coverage data on the device.
 
-The app queues visits offline and syncs automatically when it is open and can reach Deckplate Coverage again. Background upload while the app is closed is not guaranteed on every phone.
+The app queues visits offline and syncs automatically when it is open and can reach Deckplating again. Background upload while the app is closed is not guaranteed on every phone.
 
 The sync bar shows:
 
@@ -233,7 +233,7 @@ src/                         React mobile web app
 netlify/functions/api.ts     API router for /api/* routes
 supabase/migrations/         Database schema
 supabase/seed.sql            Starter areas, units, and team roster
-public/                      PWA icons, manifest, background assets
+public/                      Installable app icons, manifest, background assets
 scripts/setup.mjs            Local setup helper
 docs/SETUP_GUIDE.md          Non-technical deployment guide
 docs/PILOT_READINESS_GUIDE.md Outside-team pilot handoff guide
@@ -278,7 +278,7 @@ Admin-session protected:
 ## Test Checklist
 
 - First launch shows active team member roster.
-- First online launch installs the PWA/service worker and caches the app shell.
+- First online launch installs the phone app/service worker and caches the app shell.
 - Selecting a name with a 4-digit PIN registers a device and stores identity locally.
 - Returning to the app skips name selection when the saved session is valid.
 - Protected API routes return `403` without a signed user session.

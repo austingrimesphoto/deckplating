@@ -8,7 +8,7 @@ Use one copy of this template per pilot team.
 - Pilot dates:
 - Number of users:
 - Phone types used:
-- Browser/PWA used:
+- How the app was opened: browser or phone home-screen app:
 
 ## Setup
 

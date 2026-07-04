@@ -1,8 +1,8 @@
-# Deckplate Coverage Setup Site
+# Deckplating Setup Site
 
 This folder is a separate static onboarding site for beta distribution.
 
-It can be deployed as a public Netlify site that points users to the public Deckplate Coverage template.
+It can be deployed as a public Netlify site that points users to the public Deckplating template.
 
 ## What It Does
 
@@ -14,6 +14,15 @@ It can be deployed as a public Netlify site that points users to the public Deck
 - Gives a deployment and launch checklist.
 - Includes a hosted pilot feedback form captured by Netlify Forms.
 - Includes a hosted end-user guide for actual app use after setup.
+
+## Naming Standard
+
+Use **Deckplating** as the public product name.
+
+- GitHub template repository: `deckplating`
+- Supabase project: `deckplating`
+- Netlify app site: `deckplating` or `deckplating-your-command`
+- Setup site: `deckplatingsetup.netlify.app`
 
 ## What It Does Not Do Yet
 
@@ -66,7 +75,7 @@ The entry point is `index.html`.
 Use a simple URL such as:
 
 ```text
-https://deckplate-coverage-setup.netlify.app
+https://deckplatingsetup.netlify.app
 ```
 
 Send users there first. They can create their own app copy from the public GitHub template.

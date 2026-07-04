@@ -55,17 +55,17 @@ type CheckinConfirmation = {
 type SyncState = 'synced' | 'offline' | 'pending' | 'auth' | 'failed';
 
 const safeUseSummary =
-  'Use Deckplate Coverage only for unclassified, non-sensitive coverage tracking. Do not enter CUI, classified information, sensitive personal information, home addresses, counseling or medical details, or sensitive operational locations.';
+  'Use Deckplating only for unclassified, non-sensitive coverage tracking. Do not enter CUI, classified information, sensitive personal information, home addresses, counseling or medical details, or sensitive operational locations.';
 
 const safeUseItems = [
-  'Deckplate Coverage is not approved for CUI, classified information, or sensitive operational data.',
+  'Deckplating is not approved for CUI, classified information, or sensitive operational data.',
   'Store only the minimum information needed to track ministry presence.',
   'Do not enter counseling notes, medical information, incident details, family information, addresses, phone numbers, email addresses, dates of birth, or other sensitive PII.',
   'Team display names should be limited to practical operational identity, such as rank and last name.',
   'Map only publicly identifiable facilities, buildings, or general areas.',
   'Do not map SCIFs, restricted spaces, operational locations in theater, residences, or other sensitive locations.',
   'When uncertain, do not map the location. Use manual check-in.',
-  'Deckplate Coverage is a coverage-awareness tool, not a counseling record, case-management system, or official system of record.',
+  'Deckplating is a coverage-awareness tool, not a counseling record, case-management system, or official system of record.',
 ];
 
 const locationMappingNotice =
@@ -219,7 +219,7 @@ const missionBriefMessages: Record<GamificationTone, Record<MissionBriefContext,
       'Excellent day to turn gray boxes into actual ministry presence.',
     ],
     red: [
-      'I feel the need-the need for deckplate coverage.',
+      'I feel the need-the need for deckplating.',
       'Talk to me, Goose: which red unit are we visiting?',
       'The board has entered the danger zone. Time for a visit.',
       "I'm going to need a bigger coverage plan.",
@@ -227,7 +227,7 @@ const missionBriefMessages: Record<GamificationTone, Record<MissionBriefContext,
       "You can't handle the red-unless you go visit it.",
       'There is no try. There is only getting out of the office.',
       "What we've got here is a failure to communicate-perhaps with that overdue unit.",
-      'Nobody puts deckplate coverage in a corner.',
+      'Nobody puts deckplating in a corner.',
       'Keep your friends close and your overdue units closer.',
       'The red units are not going to visit themselves.',
     ],
@@ -349,7 +349,7 @@ function IdentitySetup({
   return (
     <main className="center-shell">
       <section className="panel">
-        <p className="eyebrow">Deckplate Coverage</p>
+        <p className="eyebrow">Deckplating</p>
         <h1>Select your name</h1>
         <p className="safe-summary">{safeUseSummary}</p>
         <form onSubmit={submit} className="stack">
@@ -2468,7 +2468,7 @@ export default function App() {
         setSyncState('offline');
         setSyncMessage('Offline - cached data.');
       } else {
-        setError('Deckplate Coverage needs one online launch before offline use.');
+        setError('Deckplating needs one online launch before offline use.');
       }
     }
   }
@@ -2622,10 +2622,10 @@ export default function App() {
 
   if (error) return <main className="center-shell"><p className="error">{error}</p></main>;
   if (!identity) {
-    if (!teamMembers.length) return <main className="center-shell"><p>Loading Deckplate Coverage...</p></main>;
+    if (!teamMembers.length) return <main className="center-shell"><p>Loading Deckplating...</p></main>;
     return <IdentitySetup members={teamMembers} onRegistered={handleIdentity} />;
   }
-  if (!bootstrap) return <main className="center-shell"><p>Loading Deckplate Coverage...</p></main>;
+  if (!bootstrap) return <main className="center-shell"><p>Loading Deckplating...</p></main>;
 
   return (
     <>

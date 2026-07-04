@@ -1,6 +1,6 @@
-# Deckplate Coverage Setup Guide
+# Deckplating Setup Guide
 
-This is the beta setup path for a chapel team that wants its own copy of Deckplate Coverage.
+This is the beta setup path for a chapel team that wants its own copy of Deckplating.
 
 The goal is simple: each RMT gets its own app, its own database, and its own data. Nobody has to share one giant fleet-wide database.
 
@@ -28,6 +28,19 @@ Create or open these accounts:
 
 Use a command email or shared team account if your local policy allows it. Do not tie the whole app to one person who will PCS.
 
+## Naming Standard
+
+Use **Deckplating** as the app name everywhere users will see it.
+
+Recommended account/project names:
+
+- GitHub repository: `deckplating`
+- Supabase project: `deckplating`
+- Netlify site: `deckplating` or `deckplating-your-command`
+- Hosted setup site: `deckplatingsetup.netlify.app`
+
+Do not use `Deckplate Coverage` for new pages, sites, docs, or pilot messages. Some internal asset filenames may still include `deckplate-coverage`; those are technical file paths and do not need to be renamed for normal users.
+
 If you are helping another RMT test the beta, use this setup guide together with:
 
 - [PILOT_READINESS_GUIDE.md](PILOT_READINESS_GUIDE.md)
@@ -51,11 +64,11 @@ Recommended starting point:
 
 ## Step 1: Make Your Own App Copy
 
-1. Go to the Deckplate Coverage template:
+1. Go to the Deckplating template:
    <https://github.com/austingrimesphoto/deckplate-coverage/generate>
 2. If GitHub asks you to sign in, sign in.
 3. Under **Owner**, choose your command/team account if available.
-4. Name the repository something like `deckplate-coverage`.
+4. Name the repository something like `deckplating`.
 5. Choose **Private** unless your command intentionally wants the copy public.
 6. Click **Create repository**.
 
@@ -68,7 +81,7 @@ Important: your copy will not automatically receive future updates. That keeps y
 2. If Supabase offers **Continue with GitHub**, use that sign-in if it matches your command-owned GitHub account.
 3. Click **New project**.
 4. Pick your organization.
-5. Project name: `deckplate-coverage`
+5. Project name: `deckplating`
 6. Create a strong database password and save it somewhere approved.
 7. Pick the closest region.
 8. Click **Create new project**.
@@ -168,7 +181,7 @@ Keep this copied text ready. You will paste it into Netlify.
 2. If Netlify offers **Sign in with GitHub**, use that if it matches your command-owned GitHub account.
 3. Click **Import an existing project**.
 4. Choose **GitHub**.
-5. Pick your Deckplate Coverage repository.
+5. Pick your Deckplating repository.
 6. Netlify should read the settings from `netlify.toml`.
 
 Confirm these settings if Netlify asks:
@@ -220,7 +233,7 @@ On Android:
 
 Open the app once while online before relying on offline mode. That first successful launch caches the app shell and recent coverage data.
 
-The app queues visits offline and syncs automatically when it is open and can reach Deckplate Coverage again. Background upload while the app is closed is not guaranteed on every phone.
+The app queues visits offline and syncs automatically when it is open and can reach Deckplating again. Background upload while the app is closed is not guaranteed on every phone.
 
 Look at the sync bar:
 
