@@ -8,6 +8,10 @@ Hosted setup site:
 
 <https://deckplatingsetup.netlify.app>
 
+Hosted user guide for daily app use:
+
+<https://deckplatingsetup.netlify.app/user-guide.html>
+
 Before using the app, read the safe-use policy:
 
 [SAFE_USE.md](SAFE_USE.md)
@@ -28,6 +32,7 @@ If you are helping another RMT test the beta, use this setup guide together with
 
 - [PILOT_READINESS_GUIDE.md](PILOT_READINESS_GUIDE.md)
 - [PILOT_FEEDBACK_TEMPLATE.md](PILOT_FEEDBACK_TEMPLATE.md)
+- [USER_GUIDE.md](USER_GUIDE.md)
 
 ## Best Beta Path
 

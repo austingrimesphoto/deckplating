@@ -24,6 +24,14 @@ For a plain-English, button-by-button setup walkthrough, use:
 
 [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)
 
+For the actual end-user guide after setup, use:
+
+[docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+
+Hosted version:
+
+<https://deckplatingsetup.netlify.app/user-guide.html>
+
 That guide is the one to hand to a chaplain, RP, or command teammate who just needs to get the tool running. It is written around a no-terminal beta setup path.
 
 Offline release validation checklist:
@@ -67,6 +75,9 @@ Recommended message:
 ```text
 Deckplate Coverage setup starts here:
 https://deckplatingsetup.netlify.app
+
+How to use the app after setup:
+https://deckplatingsetup.netlify.app/user-guide.html
 
 If you need the full source or backup instructions:
 https://github.com/austingrimesphoto/deckplate-coverage

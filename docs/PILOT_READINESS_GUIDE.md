@@ -34,6 +34,7 @@ Prefer teams that have:
 Send one message with these links:
 
 - Hosted setup site: `https://deckplatingsetup.netlify.app`
+- Hosted user guide: `https://deckplatingsetup.netlify.app/user-guide.html`
 - Hosted pilot feedback form: `https://deckplatingsetup.netlify.app/#feedback`
 - Repository: `https://github.com/austingrimesphoto/deckplate-coverage`
 - Setup guide: `docs/SETUP_GUIDE.md`
@@ -48,6 +49,9 @@ Deckplate Coverage is a beta tool for unclassified, non-sensitive ministry cover
 
 Start here:
 https://deckplatingsetup.netlify.app
+
+User guide:
+https://deckplatingsetup.netlify.app/user-guide.html
 
 If you need the source repository or backup reference:
 https://github.com/austingrimesphoto/deckplate-coverage

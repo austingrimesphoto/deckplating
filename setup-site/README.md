@@ -13,6 +13,7 @@ It can be deployed as a public Netlify site that points users to the public Deck
 - Looks up an installation/unit map center and includes it in generated variables.
 - Gives a deployment and launch checklist.
 - Includes a hosted pilot feedback form captured by Netlify Forms.
+- Includes a hosted end-user guide for actual app use after setup.
 
 ## What It Does Not Do Yet
 
@@ -33,6 +34,11 @@ The setup site can also host a pilot feedback form.
 - Submission storage: Netlify Forms for the setup-site deployment
 
 To review submissions, open the Netlify site dashboard for the setup site and check the **Forms** section.
+
+## Hosted User Guide
+
+- User guide URL: `https://deckplatingsetup.netlify.app/user-guide.html`
+- Purpose: explain actual app use after setup, including quick start, coverage workflow, map behavior, Mission Board, and admin correction paths
 
 ## What The App Owner Needs To Provide
 
