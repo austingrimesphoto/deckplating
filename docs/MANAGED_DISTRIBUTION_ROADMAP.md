@@ -34,6 +34,7 @@ Scope:
 - at least two outside RMTs use the current app for 2-4 weeks
 - collect setup friction, offline behavior, check-in reliability, admin workflow, and reporting feedback
 - validate the default-organization foundation before adding workspace onboarding
+- validate organization-scoped admin credential groundwork
 - verify safe-use language is understood and followed
 
 Exclusions:
@@ -57,7 +58,7 @@ Scope:
 
 - organization/workspace onboarding beyond the default-organization foundation
 - complete organization-scoped authorization for managed hosting
-- invitation/setup-code onboarding
+- invitation/setup-code onboarding UI and central admin tooling
 - organization admin model
 - tenant-isolation tests
 - migration strategy from current single-organization schema

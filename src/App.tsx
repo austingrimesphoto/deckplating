@@ -1900,19 +1900,23 @@ function AdminScreen({
   });
   const [actingTeamMemberId, setActingTeamMemberId] = useState('');
   const [gamificationTone, setGamificationTone] = useState<GamificationTone>('professional');
+  const [adminAuthMethod, setAdminAuthMethod] = useState('');
+  const [organizationAdminAvailable, setOrganizationAdminAvailable] = useState(false);
+  const [organizationAdminPassphrase, setOrganizationAdminPassphrase] = useState('');
 
   async function login(event: FormEvent) {
     event.preventDefault();
-    const result = await api<{ token: string }>('/api/admin/login', { method: 'POST', body: JSON.stringify({ passphrase }) });
+    const result = await api<{ token: string; authMethod?: string }>('/api/admin/login', { method: 'POST', body: JSON.stringify({ passphrase }) });
     sessionStorage.setItem('deckplate.admin', result.token);
     setToken(result.token);
+    setAdminAuthMethod(result.authMethod ?? '');
   }
 
   async function loadAdminSettings() {
     try {
-      return await api<{ gamificationTone: GamificationTone }>('/api/admin/settings', { headers: { authorization: `Bearer ${token}` } });
+      return await api<{ gamificationTone: GamificationTone; adminAuthMethod?: string; organizationAdminAvailable?: boolean }>('/api/admin/settings', { headers: { authorization: `Bearer ${token}` } });
     } catch {
-      return { gamificationTone: 'professional' as GamificationTone };
+      return { gamificationTone: 'professional' as GamificationTone, adminAuthMethod: '', organizationAdminAvailable: false };
     }
   }
 
@@ -1923,6 +1927,8 @@ function AdminScreen({
     ]);
     setData(result);
     setGamificationTone(settings.gamificationTone);
+    setAdminAuthMethod(settings.adminAuthMethod ?? adminAuthMethod);
+    setOrganizationAdminAvailable(Boolean(settings.organizationAdminAvailable));
     setLocationForm((current) => ({ ...current, area_id: result.areas[0]?.id ?? current.area_id }));
     setActingTeamMemberId((current) => current || result.teamMembers[0]?.id || '');
   }
@@ -1935,6 +1941,21 @@ function AdminScreen({
     });
     setGamificationTone(result.gamificationTone);
     setMessage('Mission Board tone saved. Users will receive it on their next refresh.');
+  }
+
+  async function saveOrganizationAdminPassphrase() {
+    if (organizationAdminPassphrase.length < 8) {
+      setMessage('Organization admin passphrase must be at least 8 characters.');
+      return;
+    }
+    const result = await api<{ authMethod: string }>('/api/admin/organization-admin/passphrase', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ passphrase: organizationAdminPassphrase }),
+    });
+    setAdminAuthMethod(result.authMethod);
+    setOrganizationAdminPassphrase('');
+    setMessage('Organization admin passphrase saved. Future admin logins can use it.');
   }
 
   useEffect(() => {
@@ -2064,26 +2085,53 @@ function AdminScreen({
         </button>
       </div>
       {adminSection === 'settings' && (
-        <section className="panel">
-          <p className="eyebrow">Mission Board</p>
-          <h2>Tone</h2>
-          <p className="muted">Controls curated in-app nudges only. No notifications, live AI text, or public shaming.</p>
-          <label>
-            Nudge tone
-            <select value={gamificationTone} onChange={(event) => setGamificationTone(event.target.value as GamificationTone)}>
-              <option value="professional">Professional</option>
-              <option value="friendly">Friendly</option>
-              <option value="banter">Deckplate Banter</option>
-            </select>
-          </label>
-          <section className="mission-nudge">
-            <p className="eyebrow">Preview</p>
-            <p>{missionNudge(gamificationTone, 'red', 'admin-preview')}</p>
+        <>
+          <section className="panel">
+            <p className="eyebrow">Mission Board</p>
+            <h2>Tone</h2>
+            <p className="muted">Controls curated in-app nudges only. No notifications, live AI text, or public shaming.</p>
+            <label>
+              Nudge tone
+              <select value={gamificationTone} onChange={(event) => setGamificationTone(event.target.value as GamificationTone)}>
+                <option value="professional">Professional</option>
+                <option value="friendly">Friendly</option>
+                <option value="banter">Deckplate Banter</option>
+              </select>
+            </label>
+            <section className="mission-nudge">
+              <p className="eyebrow">Preview</p>
+              <p>{missionNudge(gamificationTone, 'red', 'admin-preview')}</p>
+            </section>
+            <button className="primary" onClick={saveSettings}>
+              Save tone
+            </button>
           </section>
-          <button className="primary" onClick={saveSettings}>
-            Save tone
-          </button>
-        </section>
+          <section className="panel">
+            <p className="eyebrow">Managed hosting foundation</p>
+            <h2>Organization admin passphrase</h2>
+            <p className="muted">
+              Current admin mode: {adminAuthMethod || 'environment passphrase'}. This keeps current beta installs working while preparing for organization-scoped admin access.
+            </p>
+            {organizationAdminAvailable ? (
+              <div className="stack">
+                <label>
+                  New organization admin passphrase
+                  <input
+                    type="password"
+                    value={organizationAdminPassphrase}
+                    minLength={8}
+                    onChange={(event) => setOrganizationAdminPassphrase(event.target.value)}
+                  />
+                </label>
+                <button className="secondary" onClick={saveOrganizationAdminPassphrase}>
+                  Save organization passphrase
+                </button>
+              </div>
+            ) : (
+              <p className="notice">Run migration 006 before using organization-scoped admin passphrases.</p>
+            )}
+          </section>
+        </>
       )}
       {adminSection === 'activity' && data && (
         <>

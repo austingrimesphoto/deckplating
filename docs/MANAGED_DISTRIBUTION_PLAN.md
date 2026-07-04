@@ -33,7 +33,7 @@ Required future schema changes:
 - `organization_id` on `checkins` - foundation added
 - `organization_id` on `checkin_batches` - foundation added
 - `organization_id` on settings - foundation added for `app_settings`
-- `organization_id` on future invitations
+- `organization_id` on setup codes/invitations - foundation added in `006_org_admin_and_invitations.sql`
 
 ## Migration Sequence
 
@@ -42,8 +42,8 @@ Required future schema changes:
 3. Backfill `organization_id` on existing rows. Done in foundation migration.
 4. Add not-null constraints and indexes. Done for current organization-owned tables.
 5. Update every server API route to enforce organization scope. Started for default-organization scope.
-6. Replace environment-wide admin access with organization-scoped admin access.
-7. Introduce invitation/setup flow for controlled onboarding.
+6. Replace environment-wide admin access with organization-scoped admin access. Started in migration `006` and API groundwork.
+7. Introduce invitation/setup flow for controlled onboarding. Started with setup-code schema and activation endpoint; central admin tooling is still future work.
 
 ## Controlled Pilot Onboarding
 
@@ -51,6 +51,13 @@ Required future schema changes:
 - Central admin sends an invitation/setup code to the local RMT lead.
 - Local lead creates roster and local admin access.
 - No unrestricted public workspace creation during pilot.
+
+Current foundation status:
+
+- Setup-code records can exist in the database.
+- `POST /api/workspaces/activate` can consume a valid setup code and establish an organization-scoped admin passphrase.
+- The app still has no unrestricted public self-service signup and no public workspace creation UI.
+- Current self-hosted teams can continue using the environment admin passphrase while optionally setting an organization admin passphrase from Admin Settings.
 
 ## Self-Hosted Support
 

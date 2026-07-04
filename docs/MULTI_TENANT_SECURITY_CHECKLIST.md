@@ -8,7 +8,8 @@ Use this checklist before any managed multi-organization pilot.
 - No cross-workspace UUID lookup can reveal data.
 - Service-role database access stays server-side only.
 - Row level security remains enabled as defense in depth, even though server functions use service role.
-- Organization-scoped admin authentication replaces the single environment-wide admin passphrase.
+- Organization-scoped admin authentication replaces the single environment-wide admin passphrase before managed production.
+- During foundation rollout, the environment admin passphrase may remain only as a self-hosted/default-organization fallback.
 - Device identity is scoped to organization and member.
 - PIN hashing includes organization context.
 - Offline IndexedDB data is scoped and cleared safely when a device changes organizations.
@@ -24,6 +25,15 @@ For every route:
 - Confirm all select/update/insert/delete operations include organization scope.
 - Confirm referenced IDs are validated inside the same organization.
 - Confirm error responses do not reveal whether another organization's UUID exists.
+
+## Admin And Setup-Code Review Requirements
+
+- Organization admin passphrase hashes include organization context.
+- Setup codes are stored only as hashes.
+- Setup codes are single-use or explicitly revocable.
+- Setup-code activation cannot create unrestricted public workspaces.
+- Environment admin fallback is disabled before centrally hosted managed production.
+- Organization admin tokens carry organization scope and never accept client-provided organization scope for data access.
 
 ## Offline Review Requirements
 

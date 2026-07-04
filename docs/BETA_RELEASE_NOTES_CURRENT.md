@@ -12,6 +12,7 @@ Use this as the draft release note for the current beta build.
 - Added Mission Brief nudges, compact badge rewards, and in-confirmation achievement cards.
 - Added pilot handoff, feedback, and Mission Board validation documents.
 - Added the first multi-site foundation migration with a default organization for current single-site installs.
+- Added organization-scoped admin credential and setup-code schema groundwork.
 - Updated the setup-site SQL block so new beta teams get the current schema support through Mission Board settings and multi-site groundwork.
 
 ## Who Should Update
@@ -34,6 +35,7 @@ Use this as the draft release note for the current beta build.
   - `003_offline_batches_outcomes_and_hardening.sql`
   - `004_mission_board_settings.sql`
   - `005_multi_site_foundation.sql`
+  - `006_org_admin_and_invitations.sql`
   - `seed.sql`
 
 ## Environment Variable Changes

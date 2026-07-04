@@ -58,6 +58,10 @@ Pilot decision log:
 
 [docs/PILOT_DECISION_LOG.md](docs/PILOT_DECISION_LOG.md)
 
+Controlled workspace onboarding blueprint:
+
+[docs/CONTROLLED_WORKSPACE_ONBOARDING.md](docs/CONTROLLED_WORKSPACE_ONBOARDING.md)
+
 Pilot packet:
 
 [docs/PILOT_PACKET.md](docs/PILOT_PACKET.md)
@@ -210,7 +214,8 @@ Run these files in Supabase SQL Editor, in order:
 3. `supabase/migrations/003_offline_batches_outcomes_and_hardening.sql`
 4. `supabase/migrations/004_mission_board_settings.sql`
 5. `supabase/migrations/005_multi_site_foundation.sql`
-6. `supabase/seed.sql`
+6. `supabase/migrations/006_org_admin_and_invitations.sql`
+7. `supabase/seed.sql`
 
 The schema enables row level security on all tables. Browser code never talks directly to Supabase. All database access goes through Netlify Functions using the server-side service-role key.
 
@@ -277,6 +282,7 @@ Public:
 
 - `GET /api/team-members`
 - `POST /api/device/register`
+- `POST /api/workspaces/activate`
 
 User-session protected:
 
@@ -303,6 +309,7 @@ Admin-session protected:
 - `PATCH /api/admin/checkins/:id`
 - `GET /api/admin/settings`
 - `PATCH /api/admin/settings`
+- `POST /api/admin/organization-admin/passphrase`
 
 ## Test Checklist
 

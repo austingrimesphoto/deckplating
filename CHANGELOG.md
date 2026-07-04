@@ -6,6 +6,7 @@
   - Added `organizations` and default-organization schema groundwork.
   - Added `organization_id` to current organization-owned records.
   - Scoped API helpers and route queries to the default organization when the new schema is present.
+  - Added organization-scoped admin credential and controlled setup-code groundwork.
   - Preserved current single-site behavior for existing self-hosted beta teams.
 - Pilot Readiness Package v0.5.
   - Added outside-team pilot handoff guide.
