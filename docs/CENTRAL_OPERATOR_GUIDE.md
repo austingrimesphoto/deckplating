@@ -8,6 +8,7 @@ Managed dry run status:
 
 - Verified live on `2026-07-05`
 - Dry-run notes: `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`
+- Managed feedback-loop status: `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`
 
 ## Enable Operator Access
 
@@ -112,6 +113,12 @@ Use this when a code was sent to the wrong recipient, expired operationally, or 
 - Use operator access for workspace lifecycle, setup-code state, activity health, access posture, and support visibility.
 - Do not use operator access to bypass tenant boundaries or expose one command's operational data to another command.
 - Do not use this flow for CUI, classified information, counseling records, case management, or official records.
+
+## Pilot Feedback Loop
+
+The current managed-pilot feedback path is documented in `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`.
+
+Today, feedback collection still uses the hosted Netlify Form on `deckplatingsetup.netlify.app` rather than an in-app entry point on `deckplating.netlify.app`.
 
 ## Failure And Recovery Notes
 

@@ -38,10 +38,11 @@ Completed steps:
   - Ran workspace creation, setup-code issuance, activation, local setup, device registration, bootstrap, and one real check-in on the live hosted app.
   - Fixed and redeployed one setup-code response-shape defect found during the dry run.
   - Revoked the two unused diagnostic setup codes after validation.
+  - Documented the current managed-pilot feedback loop, including the fact that feedback capture still uses the setup-site Netlify Form rather than an in-app hosted-app entry point.
 
 In-progress step: none.
 
-Next exact task: begin **Managed Production Guardrails v1**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/CENTRAL_OPERATOR_GUIDE.md`, `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`, `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`, `netlify/functions/api.ts`, and `src/App.tsx`. Then disable or explicitly gate the environment-wide admin fallback for managed hosted production, add the smallest missing operator-side containment control for pilot support, and tighten the operator/support runbook around passphrase rotation, dry-run cleanup, and live incident recovery.
+Next exact task: begin **Managed Production Guardrails v1**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/CENTRAL_OPERATOR_GUIDE.md`, `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`, `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`, `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`, `netlify/functions/api.ts`, and `src/App.tsx`. Then disable or explicitly gate the environment-wide admin fallback for managed hosted production, add the smallest missing operator-side containment control for pilot support, and tighten the operator/support runbook around passphrase rotation, dry-run cleanup, live incident recovery, and managed feedback collection.
 
 Deferred/out-of-scope items:
 
@@ -324,7 +325,7 @@ Scope:
 
 - Disable or explicitly gate the environment-wide admin fallback for managed hosted production.
 - Add the smallest operator-side lifecycle controls still missing for safe pilot support, starting with workspace deactivate/archive or equivalent containment.
-- Tighten the operator/support runbook around passphrase rotation, dry-run cleanup, and live incident recovery.
+- Tighten the operator/support runbook around passphrase rotation, dry-run cleanup, live incident recovery, and managed-pilot feedback collection.
 - Keep public signup, backup/export/delete workflows, and broad service hardening out of scope for this pass.
 
 Likely files to start with:
@@ -333,6 +334,7 @@ Likely files to start with:
 - `docs/AI/HANDOFF.md`
 - `docs/CENTRAL_OPERATOR_GUIDE.md`
 - `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`
+- `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`
 - `netlify/functions/api.ts`
 - `src/App.tsx`
 

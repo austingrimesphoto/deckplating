@@ -8,6 +8,7 @@ Managed dry run status:
 
 - Verified live on `2026-07-05`
 - Dry-run notes: `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`
+- Feedback-loop status: `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`
 
 ## Current Foundation
 
