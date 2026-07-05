@@ -1,6 +1,6 @@
 # Central Operator Guide
 
-This guide is for future managed Deckplating pilots where one centrally hosted app supports multiple approved RMT workspaces.
+This guide is for managed Deckplating pilots where `deckplating.netlify.app` supports multiple approved command workspaces.
 
 It is not public signup. Do not create workspaces for unapproved teams.
 
@@ -56,7 +56,7 @@ The response includes the plaintext setup code one time. Send it directly to the
 Use a workspace link in this form when possible:
 
 ```text
-https://your-managed-app.example/?workspace=example-rmt
+https://deckplating.netlify.app/?workspace=example-rmt
 ```
 
 The app resolves that slug, stores the workspace on the device, and loads the roster/admin context for that workspace.
@@ -76,7 +76,7 @@ The local lead uses:
 }
 ```
 
-Activation stores only an organization-scoped admin passphrase hash and marks the setup code used. The lead can continue directly into Admin Setup to create the roster, areas, locations, and units before any team member identity exists.
+Activation stores only an organization-scoped admin passphrase hash and marks the setup code used. The lead can continue directly into guided setup to create the roster, areas, locations, units, and local safe-use posture before any team member identity exists.
 
 ### 5. Revoke an Unused Setup Code
 
@@ -91,6 +91,8 @@ Use this when a code was sent to the wrong recipient, expired operationally, or 
 - Send setup codes directly to the intended local RMT lead.
 - Never post setup codes publicly.
 - Never use operator access for routine local administration.
+- Use operator access for workspace lifecycle, setup-code state, activity health, access posture, and support visibility.
+- Do not use operator access to bypass tenant boundaries or expose one command's operational data to another command.
 - Do not use this flow for CUI, classified information, counseling records, case management, or official records.
 
 ## Current Limitations
@@ -98,5 +100,6 @@ Use this when a code was sent to the wrong recipient, expired operationally, or 
 - This is API and app-entry groundwork only; there is no polished operator console yet.
 - The app can remember one selected workspace per device and can resolve workspace links by slug.
 - The app does not yet provide a full public workspace directory or unrestricted self-service signup.
+- Guided workspace setup needs to become the normal first-run flow for local command leads.
 - Environment-wide admin fallback still exists for self-hosted beta compatibility.
-- Tenant-isolation testing must be completed before any broad managed pilot.
+- Static tenant-isolation checks exist; a future live two-workspace integration suite is still recommended before broad managed expansion.

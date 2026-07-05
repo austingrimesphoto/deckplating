@@ -2,7 +2,7 @@
 
 ## Current Milestone
 
-Exact current stopping point: the repository is on `main` with `Stage 2 outside-team pilot validation preparation` implemented and the pilot-execution blocker documented. Internal preparation is complete. Progress on Stage 2 execution now depends on identifying two real outside RMT pilot leads and running the external support cadence. Do not begin a new product feature in this handoff.
+Exact current stopping point: the repository is on `main` with the strategic plan pivot documented. The user wants to accelerate away from each command owning separate GitHub, Supabase, and Netlify accounts and toward one centrally hosted `deckplating.netlify.app` service where each command has an isolated workspace, guided onboarding, and local command setup inside the app. The user will act as system administrator during the small-command test phase.
 
 Completed steps:
 
@@ -27,15 +27,19 @@ Completed steps:
   - Updated `docs/PILOT_READINESS_GUIDE.md` with a readiness gate, evidence to collect, and clearer pre-call ownership questions.
   - Updated `docs/PILOT_FEEDBACK_TEMPLATE.md` to capture setup versus closeout checkpoints, admin/reporting usability, safe-use clarity, and critical blockers.
   - Updated `docs/PILOT_SUPPORT_PLAYBOOK.md` to emphasize bounded support, adoption blockers, evidence capture, and local-owner usability for admin and reports.
+- Pivoted the near-term plan toward centrally hosted managed onboarding:
+  - Normal commands should visit `deckplating.netlify.app`, select or activate their command workspace, complete guided local setup, and use the app without creating GitHub, Supabase, or Netlify accounts.
+  - The system administrator owns central workspace creation/approval, setup-code issuance, overhead visibility, incident response, and platform operations during the small-command test phase.
+  - Local command leads own their roster, areas, locations, units, and local admin passphrase inside their tenant sandbox.
+  - Self-hosted deployment remains an advanced/local-control option, no longer the primary pilot path.
 
-In-progress step: external pilot recruitment and execution are pending. No product feature work is in progress.
+In-progress step: plan preservation and roadmap pivot only. No product feature work is in progress.
 
-Next exact task: begin **Stage 2 outside-team pilot execution and evidence collection**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/PILOT_PACKET.md`, `docs/PILOT_READINESS_GUIDE.md`, `docs/PILOT_INVITATION_MESSAGE.md`, `docs/PILOT_FEEDBACK_TEMPLATE.md`, `docs/PILOT_SUPPORT_PLAYBOOK.md`, `docs/PILOT_DECISION_LOG.md`, and `docs/PILOT_CLOSEOUT_TEMPLATE.md`. Then recruit or line up two outside RMT pilot leads through real external contacts, run the setup/support cadence, collect the setup and closeout feedback artifacts, and log blockers without starting unrelated product work.
+Next exact task: begin **Managed Hosted Onboarding v1**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/MANAGED_DISTRIBUTION_PLAN.md`, `docs/MANAGED_DISTRIBUTION_ROADMAP.md`, `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`, `docs/CENTRAL_OPERATOR_GUIDE.md`, `netlify/functions/api.ts`, `src/App.tsx`, `src/offline.ts`, and `src/types.ts`. Then implement the smallest guided hosted path where a system administrator can create/approve a command workspace, issue or manage a setup code, and a local lead can visit `deckplating.netlify.app`, activate that workspace, create team members/locations/units, and start using the app without GitHub/Supabase/Netlify exposure. Do not build unrestricted public signup.
 
 Deferred/out-of-scope items:
 
 - Do not build unrestricted public signup.
-- Do not build a polished central operator console yet.
 - Do not port to another platform.
 - Do not add enterprise identity, Supabase Auth, SMS, email, browser push notifications, analytics expansion, AI-generated live content, or native app-store packaging.
 - Do not add CUI, classified, counseling case management, official-record, free-text counseling/referral, or sensitive personal-data workflows.
@@ -61,16 +65,17 @@ Relevant constraints that must not be violated:
 
 Deckplating is a mobile-first, offline-capable PWA for Religious Ministry Teams to track unclassified, non-sensitive ministry coverage by location and unit. It is a coverage-awareness tool only. It must not become a counseling record, case-management system, official system of record, or CUI/classified system.
 
-The future normal user experience is:
+The near-term normal user experience is:
 
-1. A command chaplain or RMT leader receives one managed Deckplating link.
-2. A central operator has already approved and created the workspace.
-3. The local lead activates that workspace using a one-time setup code.
-4. The local lead creates roster, areas, locations, units, and local admin access.
-5. Team members open one link, select their name, enter a PIN, and use the app.
-6. Normal users never touch GitHub, Supabase, Netlify, SQL, environment variables, or terminal commands.
+1. A command chaplain or RMT leader goes to `deckplating.netlify.app`.
+2. The command selects an existing approved workspace or enters a centrally issued setup code.
+3. The local lead activates that command workspace and creates the local admin passphrase.
+4. The guided onboarding flow prompts the lead to create roster, areas, locations, units, and initial local settings.
+5. Team members open the same hosted link, choose their command workspace, select their name, enter a PIN, and use the app.
+6. Normal command users never touch GitHub, Supabase, Netlify, SQL, environment variables, or terminal commands.
+7. The system administrator has overhead visibility into workspace status, setup-code state, activity health, and access posture without exposing one command's data to another command.
 
-Self-hosted deployment remains available for teams that require local control, but it should become the advanced path rather than the normal distribution model.
+Self-hosted deployment remains available for teams that require local control, formal handoff, separate infrastructure, or slower update adoption, but it is now the advanced path rather than the normal pilot path.
 
 ## Current Architecture Decisions
 
@@ -78,6 +83,8 @@ Self-hosted deployment remains available for teams that require local control, b
 - Keep Netlify Functions API in `netlify/functions/api.ts`.
 - Keep Supabase database accessed only from Netlify Functions with service-role credentials.
 - Keep name + PIN + registered device-token model for the current beta, while recognizing that this must be hardened before production multi-organization use.
+- Move normal onboarding into the single hosted app at `deckplating.netlify.app`.
+- Treat the user as the central system administrator during the small-command test phase.
 - Keep PWA/offline approach using service worker plus IndexedDB.
 - Keep current check-ins as the source records for coverage, scoring, leaderboard, activity log, reports, and corrections.
 - Keep stored `score_awarded` behavior; do not recompute historical scores casually.
@@ -208,11 +215,11 @@ Verification results:
 - No product code, migrations, deployments, Netlify settings, Supabase settings, or production data were touched.
 - Stage 2 execution remains blocked on external pilot-lead availability; this blocker is recorded in `docs/PILOT_DECISION_LOG.md`.
 
-## Next Task: Stage 2 Outside-Team Pilot Execution And Evidence Collection
+## Superseded Task: Self-Hosted Outside-Team Pilot Execution
 
-Objective: run the first two outside-team pilots, capture real-use evidence, and document blockers clearly enough to decide whether broader self-hosted beta use or more product hardening should come next.
+Objective: this was the previous next step. It is no longer the primary path because the user wants to accelerate away from each site managing separate GitHub, Supabase, and Netlify accounts.
 
-Scope:
+Historical scope:
 
 - Identify two outside RMT leads willing to run a 2-4 week pilot.
 - Send the current pilot packet and confirm account ownership, safe-use understanding, and feedback checkpoints.
@@ -233,6 +240,39 @@ Likely files to start with:
 - `docs/PILOT_DECISION_LOG.md`
 - `docs/PILOT_CLOSEOUT_TEMPLATE.md`
 
+Current status:
+
+- Self-hosted pilot docs remain useful for advanced/local-control deployments.
+- They should not drive the normal managed pilot path.
+- The next implementation work should target the hosted guided onboarding path instead.
+
+## Next Task: Managed Hosted Onboarding v1
+
+Objective: make the centrally hosted Deckplating path usable for a small number of commands without requiring each command to create or manage GitHub, Supabase, or Netlify accounts.
+
+Scope:
+
+- Add or refine a guided first-run/onboarding path for a local command lead after workspace activation.
+- Keep workspace creation/approval under system administrator control during testing.
+- Give the system administrator overhead visibility into workspaces, setup-code state, access posture, and operational activity without cross-tenant data leakage.
+- Let the local command lead configure command display name, roster/team members, areas, locations, units, local admin passphrase, and safe-use acknowledgment from inside the app.
+- Preserve tenant isolation: all command-owned reads/writes remain scoped to server-side session organization context.
+- Keep self-hosted docs as an advanced path, not the normal pilot path.
+- Do not build unrestricted public signup or sensitive-data workflows.
+
+Likely files to start with:
+
+- `docs/AI/DECKPLATING_PLAN.md`
+- `docs/AI/HANDOFF.md`
+- `docs/MANAGED_DISTRIBUTION_PLAN.md`
+- `docs/MANAGED_DISTRIBUTION_ROADMAP.md`
+- `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`
+- `docs/CENTRAL_OPERATOR_GUIDE.md`
+- `netlify/functions/api.ts`
+- `src/App.tsx`
+- `src/offline.ts`
+- `src/types.ts`
+
 ## Managed Distribution Roadmap
 
 Stage 1 - Mission Board and pilot readiness:
@@ -242,19 +282,19 @@ Stage 1 - Mission Board and pilot readiness:
 - Exit criteria: current app remains stable; Mission Board rewards meaningful coverage; non-technical setup docs are usable.
 - Status: substantially complete for current beta.
 
-Stage 2 - outside-team pilot validation:
+Stage 2 - managed hosted small-command pilot:
 
-- Objective: validate real RMT use before full centralized multi-tenancy.
-- Scope: at least two outside RMTs use current app for 2-4 weeks; collect feedback on setup, offline behavior, check-in reliability, admin workflow, and reporting.
-- Exit criteria: two outside teams complete pilot; critical blockers are documented or fixed; evidence supports centralized hosting as the right adoption path.
-- Current next work: execute the first two outside-team pilots and collect evidence.
+- Objective: validate real command use through one centrally hosted app with controlled workspace onboarding.
+- Scope: a small number of approved commands use `deckplating.netlify.app`; the system administrator creates/approves workspaces and monitors workspace health; local command leads complete guided setup and run normal operations inside their tenant sandbox.
+- Exit criteria: at least two commands activate managed workspaces, complete local setup without GitHub/Supabase/Netlify exposure, complete real check-ins, and report whether the hosted flow is viable.
+- Current next work: implement Managed Hosted Onboarding v1.
 
-Stage 3 - managed multi-organization service:
+Stage 3 - managed service hardening and sustainment:
 
-- Objective: centrally hosted Deckplating with controlled organization onboarding.
-- Scope: full organization scoping, invitation/setup flow, organization admin model, central operator console, tenant-isolation tests, migration strategy, controlled rollout.
+- Objective: make the centrally hosted Deckplating service durable enough to hand off to the Navy or operate with a sustainable support model.
+- Scope: stronger operator console, backup/export/delete boundaries, incident response, auditability, support process, tenant-isolation integration tests, migration/rollback process, and documentation for ownership transfer.
 - Exclusions: unrestricted public signup, sensitive data workflows, native port, notifications, broad analytics.
-- Exit criteria: tenant-isolation tests pass, pilot workspaces can be created without developer setup by local users, self-hosted remains available, rollback/incident response plans exist.
+- Exit criteria: hosted workspaces operate reliably under administrator oversight, self-hosted remains available for local-control cases, and the project has a credible Navy handoff or self-sustaining operating model.
 
 ## Known Security Work Still Required
 

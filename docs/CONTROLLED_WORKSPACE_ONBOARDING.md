@@ -1,8 +1,8 @@
 # Controlled Workspace Onboarding
 
-Use this blueprint for future centrally hosted Deckplating pilots.
+Use this blueprint for centrally hosted Deckplating pilots at `deckplating.netlify.app`.
 
-This is not public self-service signup. A central operator must create or approve each workspace before a local RMT lead can activate it.
+This is not public self-service signup. The system administrator creates or approves each command workspace before a local RMT lead can activate it.
 
 ## Current Foundation
 
@@ -22,19 +22,21 @@ The API adds:
 - `POST /api/workspaces/activate`
 - `POST /api/admin/organization-admin/passphrase`
 
-Current self-hosted teams can keep using the environment admin passphrase. Organization admin passphrases are groundwork for managed hosting.
+Current self-hosted teams can keep using the environment admin passphrase. Organization admin passphrases are the normal local admin model for managed hosting.
 
 See `docs/CENTRAL_OPERATOR_GUIDE.md` for the protected operator workflow.
 
 ## Intended Flow
 
-1. Central operator creates an organization.
-2. Central operator creates a one-time setup code for that organization.
-3. Central operator sends the setup link and code to the local RMT lead.
+1. System administrator creates or approves a command workspace.
+2. System administrator creates a one-time setup code for that workspace.
+3. System administrator sends the `deckplating.netlify.app` workspace link and code to the local RMT lead.
 4. Local RMT lead activates the workspace with the code.
 5. Local RMT lead creates the organization admin passphrase.
-6. Local RMT lead creates roster, areas, locations, and units.
-7. Team members open the app, select their name, set a PIN, and use the app.
+6. Guided onboarding prompts the lead to create roster, areas, locations, units, and safe-use acknowledgment.
+7. Team members open `deckplating.netlify.app`, select the command workspace, select their name, set a PIN, and use the app.
+
+The system administrator keeps overhead visibility into workspace status, setup-code state, activity health, and access posture. Command data remains tenant-scoped and must not be visible across workspaces.
 
 Workspace links may include `?workspace=workspace-slug`. The browser stores the selected workspace locally so roster selection, device registration, admin login, and cached bootstrap data stay attached to that workspace.
 
@@ -120,7 +122,7 @@ Behavior:
 - Stores only an organization-scoped admin passphrase hash.
 - Marks the setup code used.
 - Returns an organization-scoped admin token.
-- Lets the local lead continue directly into Admin Setup before any roster identities exist.
+- Lets the local lead continue directly into guided setup before any roster identities exist.
 
 ### Set Organization Admin Passphrase
 
@@ -161,7 +163,7 @@ The setup code table stores:
 - used time,
 - optional used-by label.
 
-## Central Operator Responsibilities
+## System Administrator Responsibilities
 
 - Create only approved pilot workspaces.
 - Send codes directly to the correct local RMT lead.
@@ -169,13 +171,15 @@ The setup code table stores:
 - Revoke unused codes that are no longer needed.
 - Do not post setup codes in public docs, screenshots, group chats, or tickets.
 - Do not allow unrestricted public workspace creation.
+- Monitor workspace activation and basic activity health.
+- Maintain support, backup, migration, and incident-response posture while the service is centrally operated.
 
 ## Future Work
 
-Still needed before managed pilots:
+Still needed before managed hosted pilots:
 
-- organization-aware roster selection before login,
+- guided workspace onboarding after activation,
+- central administrator visibility into workspace status and activity health,
 - organization admin session refresh behavior,
-- tenant-isolation tests,
 - removal or disabling of environment admin fallback in managed production,
 - organization-scoped backup/export/delete operations.

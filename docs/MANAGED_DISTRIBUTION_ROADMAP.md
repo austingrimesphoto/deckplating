@@ -25,45 +25,47 @@ Exit criteria:
 - Mission Board motivates meaningful coverage without rewarding raw volume
 - non-technical setup docs remain usable for beta teams
 
-## Stage 2 - Outside-Team Pilot Validation
+## Stage 2 - Managed Hosted Small-Command Pilot
 
-Objective: validate real RMT use before centralized multi-tenant work begins.
+Objective: validate real command use through one centrally hosted, tenant-isolated Deckplating app before broader rollout.
 
 Scope:
 
-- at least two outside RMTs use the current app for 2-4 weeks
-- collect setup friction, offline behavior, check-in reliability, admin workflow, and reporting feedback
-- validate the default-organization foundation before adding workspace onboarding
-- validate organization-scoped admin credential groundwork
-- validate protected central-operator workspace/setup-code groundwork
-- verify safe-use language is understood and followed
+- a small number of approved commands use `deckplating.netlify.app`
+- system administrator creates or approves each workspace and setup code
+- local command leads activate their workspace and complete guided setup inside the app
+- team members use the same hosted app while remaining inside their command sandbox
+- collect feedback on guided onboarding, offline behavior, check-in reliability, admin workflow, reporting, and safe-use clarity
+- verify central overhead visibility without cross-tenant data exposure
 
 Exclusions:
 
-- managed multi-organization hosting
 - unrestricted onboarding
 - new sensitive data collection
 - app-store/native platform port
+- each command creating GitHub, Supabase, or Netlify accounts as the normal path
 
 Exit criteria:
 
-- two or more outside teams complete a 2-4 week pilot
+- two or more commands activate managed workspaces
+- local leads complete roster, locations, units, and local admin setup without GitHub/Supabase/Netlify exposure
+- real check-ins and admin workflows operate inside tenant boundaries
 - critical workflow blockers are documented or fixed
-- there is clear evidence that centralized hosting would reduce real adoption friction
+- there is clear evidence that the hosted path reduces adoption friction
 
-## Stage 3 - Managed Multi-Organization Service
+## Stage 3 - Managed Service Hardening And Sustainment
 
-Objective: build one centrally hosted Deckplating service with controlled organization onboarding.
+Objective: make centrally hosted Deckplating durable enough for broader use, Navy handoff, or another sustainable operating model.
 
 Scope:
 
-- organization/workspace onboarding beyond the default-organization foundation
-- complete organization-scoped authorization for managed hosting
-- invitation/setup-code onboarding UI and central operator console
-- organization admin model
-- tenant-isolation tests
-- migration strategy from current single-organization schema
-- controlled managed pilot rollout
+- stronger central operator console
+- workspace lifecycle administration
+- backup, export, and deletion boundaries by organization
+- tenant-isolation integration tests with seeded workspaces
+- incident response and rollback process
+- operational documentation for system administrator duties
+- handoff-oriented documentation for future Navy ownership or a self-sustaining support model
 
 Exclusions:
 
@@ -74,6 +76,6 @@ Exclusions:
 Exit criteria:
 
 - automated tenant-isolation tests pass
-- pilot workspaces can be created without developer setup by local users
+- workspaces can be created, activated, monitored, suspended, and supported without developer intervention
 - current self-hosted template remains available as advanced/local-control
-- rollback and incident response plans exist before broader release
+- rollback, incident response, backup, and ownership-transfer plans exist before broader release
