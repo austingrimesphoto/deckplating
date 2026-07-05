@@ -2850,7 +2850,7 @@ function AdminScreen({
       <div className="screen-title">
         <div>
           <p className="eyebrow">Admin</p>
-          <h1>{adminSection === 'setup' ? 'Manage mapping' : adminSection === 'activity' ? 'Activity Log' : 'Settings'}</h1>
+          <h1>{adminSection === 'setup' ? 'Manage mapping' : adminSection === 'activity' ? 'Activity Log' : 'Admin settings'}</h1>
         </div>
       </div>
       {message && <p className="notice">{message}</p>}
@@ -2862,7 +2862,7 @@ function AdminScreen({
           Activity Log
         </button>
         <button className={adminSection === 'settings' ? 'active' : ''} onClick={() => setAdminSection('settings')}>
-          Settings
+          Admin settings
         </button>
       </div>
       {adminSection === 'settings' && (
@@ -3232,7 +3232,7 @@ function Settings({
     <main className="screen">
       <div className="screen-title">
         <div>
-          <p className="eyebrow">Settings</p>
+          <p className="eyebrow">Account</p>
           <h1>{identity.teamMemberName}</h1>
         </div>
       </div>
@@ -3787,7 +3787,7 @@ export default function App() {
           ['map', 'Map'],
           ['scoreboard', 'Scores'],
           ['admin', 'Admin'],
-          ['settings', 'Settings'],
+          ['settings', 'Account'],
         ].map(([id, label]) => (
           <button key={id} className={screen === id ? 'active' : ''} onClick={() => setScreen(id as Screen)}>
             {label}
