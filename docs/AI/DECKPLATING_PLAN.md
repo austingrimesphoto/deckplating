@@ -243,35 +243,53 @@ Likely files to start with:
 Current status:
 
 - Self-hosted pilot docs remain useful for advanced/local-control deployments.
-- They should not drive the normal managed pilot path.
-- The next implementation work should target the hosted guided onboarding path instead.
+- The managed hosted path is now the normal pilot path for approved commands.
+- Managed Hosted Onboarding v1 is complete in app/API form and validated with typecheck/build.
 
-## Next Task: Managed Hosted Onboarding v1
+## Completed: Managed Hosted Onboarding v1
 
-Objective: make the centrally hosted Deckplating path usable for a small number of commands without requiring each command to create or manage GitHub, Supabase, or Netlify accounts.
+Objective achieved: the centrally hosted Deckplating path is now usable for small-command onboarding without requiring each command to manage GitHub, Supabase, or Netlify accounts.
+
+Implementation summary:
+
+- Added a minimal in-app operator console so the system administrator can log in, create approved workspaces, issue setup codes, revoke unused setup codes, and see workspace readiness summaries.
+- Added workspace onboarding summaries on both operator and local admin surfaces so readiness is visible without cross-tenant operational data leakage.
+- Added tenant-scoped admin area creation/editing so a newly activated workspace can fully create areas, then locations, units, and team members from inside the app.
+- Added a guided onboarding checklist in Admin Setup so local leads can finish passphrase, area, location, unit, and roster setup before handing the app to the rest of the command.
+
+Changed files:
+
+- `netlify/functions/api.ts`
+- `src/App.tsx`
+- `docs/AI/DECKPLATING_PLAN.md`
+- `docs/AI/HANDOFF.md`
+
+Validation completed:
+
+- `npm run typecheck`
+- `npm run build`
+- `git diff --check`
+
+## Next Task: Managed Pilot Dry Run and Deployment Readiness
+
+Objective: prove that the new hosted onboarding path works end to end in a real operator-led dry run before widening usage.
 
 Scope:
 
-- Add or refine a guided first-run/onboarding path for a local command lead after workspace activation.
-- Keep workspace creation/approval under system administrator control during testing.
-- Give the system administrator overhead visibility into workspaces, setup-code state, access posture, and operational activity without cross-tenant data leakage.
-- Let the local command lead configure command display name, roster/team members, areas, locations, units, local admin passphrase, and safe-use acknowledgment from inside the app.
-- Preserve tenant isolation: all command-owned reads/writes remain scoped to server-side session organization context.
-- Keep self-hosted docs as an advanced path, not the normal pilot path.
-- Do not build unrestricted public signup or sensitive-data workflows.
+- Run the hosted flow against the real managed stack with operator login, workspace creation, setup-code issuance, workspace activation, local admin setup, and first member sign-in.
+- Fix any defects uncovered by the dry run without widening product scope.
+- Document the exact operator steps, required environment configuration, and failure/recovery points for small-command testing.
+- Confirm the system administrator can monitor readiness and access posture without exposing one command's command data to another.
+- Keep unrestricted public signup, sensitive-data workflows, and broader service hardening out of scope for this pass.
 
 Likely files to start with:
 
 - `docs/AI/DECKPLATING_PLAN.md`
 - `docs/AI/HANDOFF.md`
-- `docs/MANAGED_DISTRIBUTION_PLAN.md`
-- `docs/MANAGED_DISTRIBUTION_ROADMAP.md`
-- `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`
 - `docs/CENTRAL_OPERATOR_GUIDE.md`
+- `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`
 - `netlify/functions/api.ts`
 - `src/App.tsx`
-- `src/offline.ts`
-- `src/types.ts`
 
 ## Managed Distribution Roadmap
 
@@ -287,7 +305,7 @@ Stage 2 - managed hosted small-command pilot:
 - Objective: validate real command use through one centrally hosted app with controlled workspace onboarding.
 - Scope: a small number of approved commands use `deckplating.netlify.app`; the system administrator creates/approves workspaces and monitors workspace health; local command leads complete guided setup and run normal operations inside their tenant sandbox.
 - Exit criteria: at least two commands activate managed workspaces, complete local setup without GitHub/Supabase/Netlify exposure, complete real check-ins, and report whether the hosted flow is viable.
-- Current next work: implement Managed Hosted Onboarding v1.
+- Current next work: run the first managed dry run and close any defects revealed by it.
 
 Stage 3 - managed service hardening and sustainment:
 

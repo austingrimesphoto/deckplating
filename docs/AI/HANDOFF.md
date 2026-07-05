@@ -2,16 +2,16 @@
 
 Branch: `main`
 
-`git status --short` at managed-hosting pivot start: clean.
+`git status --short` at managed hosted onboarding start: clean.
 
 What changed in this handoff session:
 
-- Reworked the plan around a single centrally hosted `deckplating.netlify.app` service.
-- Superseded the self-hosted outside-team pilot as the normal next path; self-hosting remains an advanced/local-control option.
-- Recorded the user as the near-term system administrator for small-command managed testing.
-- Updated managed distribution docs so normal commands activate approved tenant workspaces and complete guided onboarding without GitHub, Supabase, or Netlify exposure.
-- Preserved the requirement for system administrator overhead visibility without cross-tenant data exposure.
-- No product code, migrations, deployments, external service changes, dependency changes, or production-data access occurred.
+- Completed Managed Hosted Onboarding v1 in the app and API.
+- Added a minimal in-app operator console for protected workspace creation, setup-code issuance, setup-code revocation, and readiness visibility.
+- Added workspace onboarding summaries for both the operator view and local admin view.
+- Added tenant-scoped admin area creation/editing so a newly activated workspace can complete areas, locations, units, and team-member setup entirely inside the app.
+- Added a guided onboarding checklist in Admin Setup to show remaining local setup work before wider sign-in.
+- Updated the durable plan to mark this milestone complete and point the next work at a real managed dry run.
 
 Working tree expectation after the handoff commit: clean.
 
@@ -19,18 +19,18 @@ No root `AGENTS.md` file was present when checked.
 
 Changed files in the milestone:
 
+- `netlify/functions/api.ts`
+- `src/App.tsx`
 - `docs/AI/DECKPLATING_PLAN.md`
 - `docs/AI/HANDOFF.md`
-- `docs/MANAGED_DISTRIBUTION_PLAN.md`
-- `docs/MANAGED_DISTRIBUTION_ROADMAP.md`
-- `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`
-- `docs/CENTRAL_OPERATOR_GUIDE.md`
 
 Verification completed before this handoff update:
 
+- `npm run typecheck` passed.
+- `npm run build` passed.
 - `git diff --check` passed.
 
-Smallest relevant verification command for this handoff/docs update:
+Smallest relevant verification command for docs-only follow-up edits:
 
 ```bash
 git diff --check
@@ -38,4 +38,4 @@ git diff --check
 
 Exact next task:
 
-Follow `docs/AI/DECKPLATING_PLAN.md`, section `Next Task: Managed Hosted Onboarding v1`. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/MANAGED_DISTRIBUTION_PLAN.md`, `docs/MANAGED_DISTRIBUTION_ROADMAP.md`, `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`, `docs/CENTRAL_OPERATOR_GUIDE.md`, `netlify/functions/api.ts`, `src/App.tsx`, `src/offline.ts`, and `src/types.ts`. Then implement the smallest guided hosted path where a system administrator can create/approve a command workspace, issue or manage a setup code, and a local lead can visit `deckplating.netlify.app`, activate that workspace, create team members/locations/units, and start using the app without GitHub/Supabase/Netlify exposure. Do not build unrestricted public signup.
+Follow `docs/AI/DECKPLATING_PLAN.md`, section `Next Task: Managed Pilot Dry Run and Deployment Readiness`. Run one real managed dry run through operator login, workspace creation, setup-code issuance, workspace activation, local admin setup, and first member sign-in; fix only the defects uncovered by that dry run; then update the operator/onboarding docs with the exact live procedure and failure-recovery notes.

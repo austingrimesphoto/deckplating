@@ -13,6 +13,14 @@ type AdminContext = {
 type OperatorContext = {
   authMethod: 'central_operator';
 };
+type WorkspaceOnboardingSummary = {
+  areaCount: number;
+  locationCount: number;
+  unitCount: number;
+  teamMemberCount: number;
+  organizationAdminConfigured: boolean;
+  readyForCheckins: boolean;
+};
 
 class RequestValidationError extends Error {
   statusCode: number;
@@ -264,6 +272,38 @@ async function getGamificationTone(organizationId: string | null): Promise<Gamif
   const { data, error } = await scoped(query, organizationId).maybeSingle();
   if (error || !gamificationTones.has(data?.value as GamificationTone)) return 'professional';
   return data!.value as GamificationTone;
+}
+
+async function getWorkspaceOnboardingSummary(organizationId: string | null): Promise<WorkspaceOnboardingSummary> {
+  const [areas, locations, units, teamMembers, adminCredential] = await Promise.all([
+    scoped(supabase.from('areas').select('id', { count: 'exact', head: true }), organizationId),
+    scoped(supabase.from('locations').select('id', { count: 'exact', head: true }), organizationId),
+    scoped(supabase.from('units').select('id', { count: 'exact', head: true }).eq('active', true), organizationId),
+    scoped(supabase.from('team_members').select('id', { count: 'exact', head: true }).eq('active', true), organizationId),
+    organizationId && (await organizationAdminSchemaEnabled())
+      ? supabase
+          .from('organization_admin_credentials')
+          .select('id')
+          .eq('organization_id', organizationId)
+          .eq('active', true)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  const error = areas.error ?? locations.error ?? units.error ?? teamMembers.error ?? adminCredential.error;
+  if (error) throw error;
+  const areaCount = areas.count ?? 0;
+  const locationCount = locations.count ?? 0;
+  const unitCount = units.count ?? 0;
+  const teamMemberCount = teamMembers.count ?? 0;
+  const organizationAdminConfigured = Boolean(adminCredential.data);
+  return {
+    areaCount,
+    locationCount,
+    unitCount,
+    teamMemberCount,
+    organizationAdminConfigured,
+    readyForCheckins: areaCount > 0 && locationCount > 0 && unitCount > 0 && teamMemberCount > 0,
+  };
 }
 
 const createAdminToken = (context: AdminContext) => {
@@ -654,6 +694,12 @@ async function route(event: HandlerEvent) {
     ]);
     if (orgError) return json(500, { error: orgError.message });
     if (codeError) return json(500, { error: codeError.message });
+    const onboardingByOrg = new Map<string, WorkspaceOnboardingSummary>();
+    await Promise.all(
+      (organizations ?? []).map(async (organization: any) => {
+        onboardingByOrg.set(organization.id, await getWorkspaceOnboardingSummary(organization.id));
+      }),
+    );
     const codesByOrg = new Map<string, any[]>();
     for (const code of setupCodes ?? []) {
       const values = codesByOrg.get(code.organization_id) ?? [];
@@ -665,6 +711,7 @@ async function route(event: HandlerEvent) {
         const codes = codesByOrg.get(organization.id) ?? [];
         return {
           ...organization,
+          onboarding: onboardingByOrg.get(organization.id) ?? null,
           setupCodes: codes,
           setupCodeSummary: {
             total: codes.length,
@@ -1436,6 +1483,7 @@ async function route(event: HandlerEvent) {
       adminAuthMethod: adminContext!.authMethod,
       organizationAdminAvailable: await organizationAdminSchemaEnabled(),
       gamificationTone: await getGamificationTone(organizationId),
+      onboarding: await getWorkspaceOnboardingSummary(organizationId),
     });
   }
 
@@ -1464,6 +1512,45 @@ async function route(event: HandlerEvent) {
     const error = areas.error ?? locations.error ?? units.error ?? members.error;
     if (error) return json(500, { error: error.message });
     return json(200, { areas: areas.data, locations: locations.data, units: units.data, teamMembers: members.data });
+  }
+
+  if (method === 'POST' && path === '/admin/areas') {
+    const organizationId = adminContext!.organizationId;
+    const body = readBody<{ name?: string; sort_order?: number }>(event);
+    const name = body.name?.trim();
+    if (!name || name.length < 2) return json(400, { error: 'Area name is required.' });
+    const sortOrder = Number.isFinite(body.sort_order) ? Number(body.sort_order) : 0;
+    const { data, error } = await supabase
+      .from('areas')
+      .insert(withOrganization({ name, sort_order: sortOrder }, organizationId))
+      .select('*')
+      .single();
+    if (error) {
+      if (error.code === '23505') return json(409, { error: 'An area with that name already exists in this workspace.' });
+      return json(500, { error: error.message });
+    }
+    return json(200, { area: data });
+  }
+
+  const areaMatch = path.match(/^\/admin\/areas\/([^/]+)$/);
+  if (method === 'PATCH' && areaMatch) {
+    const organizationId = adminContext!.organizationId;
+    const body = readBody<{ name?: string; sort_order?: number }>(event);
+    const values: Record<string, unknown> = {};
+    if (body.name !== undefined) {
+      const name = body.name.trim();
+      if (!name || name.length < 2) return json(400, { error: 'Area name is required.' });
+      values.name = name;
+    }
+    if (body.sort_order !== undefined) values.sort_order = Number(body.sort_order);
+    const areaUpdate = supabase.from('areas').update(values).eq('id', areaMatch[1]);
+    const { data, error } = await scoped(areaUpdate, organizationId).select('*').maybeSingle();
+    if (error) {
+      if (error.code === '23505') return json(409, { error: 'An area with that name already exists in this workspace.' });
+      return json(500, { error: error.message });
+    }
+    if (!data) return json(404, { error: 'Area not found.' });
+    return json(200, { area: data });
   }
 
   if (method === 'GET' && path === '/admin/checkins') {

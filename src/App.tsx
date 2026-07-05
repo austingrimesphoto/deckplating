@@ -41,6 +41,40 @@ type AdminData = {
   teamMembers: Array<{ id: string; name: string; role: string | null; active: boolean }>;
 };
 
+type OnboardingSummary = {
+  areaCount: number;
+  locationCount: number;
+  unitCount: number;
+  teamMemberCount: number;
+  organizationAdminConfigured: boolean;
+  readyForCheckins: boolean;
+};
+
+type OperatorSetupCode = {
+  id: string;
+  organization_id: string;
+  label: string | null;
+  purpose: string;
+  active: boolean;
+  expires_at: string | null;
+  used_at: string | null;
+  used_by_label: string | null;
+  created_at: string;
+};
+
+type OperatorOrganization = WorkspaceContext & {
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  onboarding: OnboardingSummary | null;
+  setupCodes: OperatorSetupCode[];
+  setupCodeSummary: {
+    total: number;
+    activeUnused: number;
+    used: number;
+  };
+};
+
 type CheckinConfirmation = {
   clientBatchId: string;
   checkinIds: string[];
@@ -74,6 +108,7 @@ const locationMappingNotice =
 
 const identityKey = 'deckplate.identity';
 const workspaceKey = 'deckplate.workspace';
+const operatorKey = 'deckplate.operator';
 
 const defaultWorkspace: WorkspaceContext = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -426,12 +461,14 @@ function WorkspaceEntry({
   onBack,
   onWorkspace,
   onAdminToken,
+  onOperator,
 }: {
   workspace: WorkspaceContext | null;
   teamMembers: TeamMember[];
   onBack: () => void;
   onWorkspace: (workspace: WorkspaceContext | null) => void;
   onAdminToken: (token: string) => void;
+  onOperator: () => void;
 }) {
   const [mode, setMode] = useState<'choose' | 'activate'>('choose');
   const [workspaceSlug, setWorkspaceSlug] = useState('');
@@ -509,6 +546,9 @@ function WorkspaceEntry({
             Back to names
           </button>
         )}
+        <button className="secondary" type="button" onClick={onOperator}>
+          System administrator
+        </button>
         <div className="tab-row">
           <button className={mode === 'choose' ? 'active' : ''} onClick={() => setMode('choose')}>
             Select workspace
@@ -568,6 +608,301 @@ function WorkspaceEntry({
         {message && <p className="notice">{message}</p>}
         {error && <p className="error">{error}</p>}
       </section>
+    </main>
+  );
+}
+
+function OnboardingChecklist({ onboarding }: { onboarding: OnboardingSummary | null }) {
+  const steps = [
+    { label: 'Organization admin passphrase', done: Boolean(onboarding?.organizationAdminConfigured), detail: 'Protect local admin access.' },
+    { label: 'Areas', done: (onboarding?.areaCount ?? 0) > 0, detail: `${onboarding?.areaCount ?? 0} created` },
+    { label: 'Locations', done: (onboarding?.locationCount ?? 0) > 0, detail: `${onboarding?.locationCount ?? 0} created` },
+    { label: 'Units', done: (onboarding?.unitCount ?? 0) > 0, detail: `${onboarding?.unitCount ?? 0} active` },
+    { label: 'Team members', done: (onboarding?.teamMemberCount ?? 0) > 0, detail: `${onboarding?.teamMemberCount ?? 0} active` },
+  ];
+
+  return (
+    <section className="panel">
+      <p className="eyebrow">Guided onboarding</p>
+      <h2>{onboarding?.readyForCheckins ? 'Workspace ready for sign-in' : 'Finish workspace setup'}</h2>
+      <p className="muted">
+        Complete the local roster and mapping here before handing the app to the rest of the command.
+      </p>
+      <div className="activity-list">
+        {steps.map((step) => (
+          <article key={step.label} className="activity-row">
+            <div className="activity-summary">
+              <div>
+                <strong>{step.label}</strong>
+                <small>{step.detail}</small>
+              </div>
+              <span className="status-pill">{step.done ? 'Done' : 'Pending'}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OperatorConsole({ onBack }: { onBack: () => void }) {
+  const [token, setToken] = useState(sessionStorage.getItem(operatorKey) ?? '');
+  const [passphrase, setPassphrase] = useState('');
+  const [organizations, setOrganizations] = useState<OperatorOrganization[]>([]);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [organizationForm, setOrganizationForm] = useState({ name: '', slug: '' });
+  const [setupForms, setSetupForms] = useState<Record<string, { label: string; expiresInDays: string }>>({});
+  const [lastIssuedCode, setLastIssuedCode] = useState<Record<string, { code: string; link: string }>>({});
+
+  async function loadOrganizations(currentToken = token) {
+    const result = await api<{ organizations: OperatorOrganization[] }>('/api/operator/organizations', {
+      headers: { authorization: `Bearer ${currentToken}` },
+    });
+    setOrganizations(result.organizations);
+  }
+
+  async function login(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    try {
+      const result = await api<{ token: string }>('/api/operator/login', {
+        method: 'POST',
+        body: JSON.stringify({ passphrase }),
+      });
+      sessionStorage.setItem(operatorKey, result.token);
+      setToken(result.token);
+      setPassphrase('');
+      await loadOrganizations(result.token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Operator login failed.');
+    }
+  }
+
+  async function createOrganization(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    try {
+      await api('/api/operator/organizations', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify(organizationForm),
+      });
+      setOrganizationForm({ name: '', slug: '' });
+      setMessage('Workspace created.');
+      await loadOrganizations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Workspace creation failed.');
+    }
+  }
+
+  async function createSetupCode(organization: OperatorOrganization) {
+    setError('');
+    setMessage('');
+    const form = setupForms[organization.id] ?? { label: '', expiresInDays: '14' };
+    try {
+      const result = await api<{ code: string }>('/api/operator/organizations/' + organization.id + '/setup-codes', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          label: form.label,
+          expiresInDays: Number(form.expiresInDays || '14'),
+        }),
+      });
+      setLastIssuedCode((current) => ({
+        ...current,
+        [organization.id]: {
+          code: result.code,
+          link: `${window.location.origin}${window.location.pathname}?workspace=${encodeURIComponent(organization.slug)}`,
+        },
+      }));
+      setMessage(`Setup code issued for ${organization.name}.`);
+      await loadOrganizations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Setup code creation failed.');
+    }
+  }
+
+  async function revokeSetupCode(codeId: string) {
+    setError('');
+    setMessage('');
+    try {
+      await api('/api/operator/setup-codes/' + codeId + '/revoke', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      setMessage('Setup code revoked.');
+      await loadOrganizations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Setup code revocation failed.');
+    }
+  }
+
+  useEffect(() => {
+    if (!token) return;
+    void loadOrganizations(token).catch((err) => {
+      setError(err instanceof Error ? err.message : 'Unable to load approved workspaces.');
+    });
+  }, [token]);
+
+  if (!token) {
+    return (
+      <main className="center-shell">
+        <section className="panel">
+          <p className="eyebrow">System administrator</p>
+          <h1>Operator access</h1>
+          <form onSubmit={login} className="stack">
+            <label>
+              Central operator passphrase
+              <input type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} />
+            </label>
+            <button className="primary">Unlock operator console</button>
+            <button className="secondary" type="button" onClick={onBack}>
+              Back
+            </button>
+          </form>
+          {error && <p className="error">{error}</p>}
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="screen">
+      <div className="screen-title">
+        <div>
+          <p className="eyebrow">System administrator</p>
+          <h1>Workspace approvals</h1>
+        </div>
+        <button
+          className="secondary"
+          onClick={() => {
+            sessionStorage.removeItem(operatorKey);
+            setToken('');
+            setOrganizations([]);
+          }}
+        >
+          Lock
+        </button>
+      </div>
+      {message && <p className="notice">{message}</p>}
+      {error && <p className="error">{error}</p>}
+      <section className="panel">
+        <h2>Create approved workspace</h2>
+        <form onSubmit={createOrganization} className="stack">
+          <input
+            placeholder="Workspace name"
+            value={organizationForm.name}
+            onChange={(event) => setOrganizationForm({ ...organizationForm, name: event.target.value })}
+          />
+          <input
+            placeholder="workspace-slug"
+            autoCapitalize="none"
+            value={organizationForm.slug}
+            onChange={(event) => setOrganizationForm({ ...organizationForm, slug: event.target.value })}
+          />
+          <button className="primary">Create workspace</button>
+        </form>
+      </section>
+      <section className="coverage-list">
+        {organizations.map((organization) => {
+          const form = setupForms[organization.id] ?? { label: '', expiresInDays: '14' };
+          const issued = lastIssuedCode[organization.id];
+          return (
+            <article key={organization.id} className="panel">
+              <div className="screen-title inline-title">
+                <div>
+                  <p className="eyebrow">{organization.slug}</p>
+                  <h2>{organization.name}</h2>
+                </div>
+                <span className="status-pill">{organization.onboarding?.readyForCheckins ? 'Ready' : 'Setup in progress'}</span>
+              </div>
+              <dl className="mission-stats">
+                <div>
+                  <dt>Areas</dt>
+                  <dd>{organization.onboarding?.areaCount ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Locations</dt>
+                  <dd>{organization.onboarding?.locationCount ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Units</dt>
+                  <dd>{organization.onboarding?.unitCount ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Team</dt>
+                  <dd>{organization.onboarding?.teamMemberCount ?? 0}</dd>
+                </div>
+              </dl>
+              <p className="muted">
+                Admin passphrase: {organization.onboarding?.organizationAdminConfigured ? 'configured' : 'not configured'}.
+                Setup codes: {organization.setupCodeSummary.activeUnused} active unused, {organization.setupCodeSummary.used} used.
+              </p>
+              <div className="filters">
+                <input
+                  placeholder="Lead or request label"
+                  value={form.label}
+                  onChange={(event) =>
+                    setSetupForms((current) => ({
+                      ...current,
+                      [organization.id]: { ...form, label: event.target.value },
+                    }))
+                  }
+                />
+                <input
+                  inputMode="numeric"
+                  placeholder="14"
+                  value={form.expiresInDays}
+                  onChange={(event) =>
+                    setSetupForms((current) => ({
+                      ...current,
+                      [organization.id]: { ...form, expiresInDays: event.target.value.replace(/\D/g, '').slice(0, 2) || '14' },
+                    }))
+                  }
+                />
+                <button className="secondary" onClick={() => void createSetupCode(organization)}>
+                  Issue setup code
+                </button>
+              </div>
+              {issued && (
+                <div className="notice">
+                  Setup link: {issued.link}
+                  <br />
+                  Setup code: {issued.code}
+                </div>
+              )}
+              <div className="activity-list">
+                {organization.setupCodes.map((code) => (
+                  <article key={code.id} className="activity-row">
+                    <div className="activity-summary">
+                      <div>
+                        <strong>{code.label || 'Setup code'}</strong>
+                        <small>
+                          {code.used_at ? `Used ${niceDateTime(code.used_at)}` : `Expires ${niceDateTime(code.expires_at)}`}
+                        </small>
+                      </div>
+                      {!code.used_at && code.active ? (
+                        <button className="secondary danger-text" onClick={() => void revokeSetupCode(code.id)}>
+                          Revoke
+                        </button>
+                      ) : (
+                        <span className="status-pill">{code.used_at ? 'Used' : 'Inactive'}</span>
+                      )}
+                    </div>
+                  </article>
+                ))}
+                {!organization.setupCodes.length && <p className="notice">No setup codes issued yet.</p>}
+              </div>
+            </article>
+          );
+        })}
+      </section>
+      <nav className="bottom-nav">
+        <button className="active">Operator</button>
+        <button onClick={onBack}>Back to app entry</button>
+      </nav>
     </main>
   );
 }
@@ -2061,6 +2396,7 @@ function AdminScreen({
   const [passphrase, setPassphrase] = useState('');
   const [data, setData] = useState<AdminData | null>(null);
   const [message, setMessage] = useState('');
+  const [areaForm, setAreaForm] = useState({ name: '', sort_order: '0' });
   const [locationForm, setLocationForm] = useState({
     name: '',
     area_id: '',
@@ -2086,6 +2422,7 @@ function AdminScreen({
   const [adminAuthMethod, setAdminAuthMethod] = useState('');
   const [organizationAdminAvailable, setOrganizationAdminAvailable] = useState(false);
   const [organizationAdminPassphrase, setOrganizationAdminPassphrase] = useState('');
+  const [onboardingSummary, setOnboardingSummary] = useState<OnboardingSummary | null>(null);
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -2103,9 +2440,14 @@ function AdminScreen({
 
   async function loadAdminSettings() {
     try {
-      return await api<{ gamificationTone: GamificationTone; adminAuthMethod?: string; organizationAdminAvailable?: boolean }>('/api/admin/settings', { headers: { authorization: `Bearer ${token}` } });
+      return await api<{
+        gamificationTone: GamificationTone;
+        adminAuthMethod?: string;
+        organizationAdminAvailable?: boolean;
+        onboarding?: OnboardingSummary | null;
+      }>('/api/admin/settings', { headers: { authorization: `Bearer ${token}` } });
     } catch {
-      return { gamificationTone: 'professional' as GamificationTone, adminAuthMethod: '', organizationAdminAvailable: false };
+      return { gamificationTone: 'professional' as GamificationTone, adminAuthMethod: '', organizationAdminAvailable: false, onboarding: null };
     }
   }
 
@@ -2118,6 +2460,7 @@ function AdminScreen({
     setGamificationTone(settings.gamificationTone);
     setAdminAuthMethod(settings.adminAuthMethod ?? adminAuthMethod);
     setOrganizationAdminAvailable(Boolean(settings.organizationAdminAvailable));
+    setOnboardingSummary(settings.onboarding ?? null);
     setLocationForm((current) => ({ ...current, area_id: result.areas[0]?.id ?? current.area_id }));
     setActingTeamMemberId((current) => current || result.teamMembers[0]?.id || '');
   }
@@ -2145,6 +2488,7 @@ function AdminScreen({
     setAdminAuthMethod(result.authMethod);
     setOrganizationAdminPassphrase('');
     setMessage('Organization admin passphrase saved. Future admin logins can use it.');
+    await load();
   }
 
   useEffect(() => {
@@ -2167,6 +2511,22 @@ function AdminScreen({
     });
     setMessage('Location saved.');
     setAttachUnitIds([]);
+    refresh();
+    load();
+  }
+
+  async function createArea(event: FormEvent) {
+    event.preventDefault();
+    await api('/api/admin/areas', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name: areaForm.name,
+        sort_order: Number(areaForm.sort_order || '0'),
+      }),
+    });
+    setAreaForm({ name: '', sort_order: '0' });
+    setMessage('Area saved.');
     refresh();
     load();
   }
@@ -2394,6 +2754,22 @@ function AdminScreen({
       )}
       {adminSection === 'setup' && (
         <>
+      <OnboardingChecklist onboarding={onboardingSummary} />
+
+      <section className="panel">
+        <h2>Create area</h2>
+        <form onSubmit={createArea} className="stack">
+          <input placeholder="Area name" value={areaForm.name} onChange={(event) => setAreaForm({ ...areaForm, name: event.target.value })} />
+          <input
+            inputMode="numeric"
+            placeholder="Sort order"
+            value={areaForm.sort_order}
+            onChange={(event) => setAreaForm({ ...areaForm, sort_order: event.target.value.replace(/[^0-9-]/g, '') })}
+          />
+          <button className="primary">Save area</button>
+        </form>
+      </section>
+
       <section className="panel">
         <h2>Create location</h2>
         <p className="warning-notice">{locationMappingNotice}</p>
@@ -2405,6 +2781,7 @@ function AdminScreen({
               </option>
             ))}
           </select>
+          {!data?.areas.length && <p className="notice">Create an area first. Locations are assigned to areas.</p>}
           <input placeholder="Location name" value={locationForm.name} onChange={(event) => setLocationForm({ ...locationForm, name: event.target.value })} />
           <AdminMapPicker
             latitude={Number(locationForm.latitude)}
@@ -2441,7 +2818,9 @@ function AdminScreen({
                 ))}
             </select>
           </label>
-          <button className="primary">Save location</button>
+          <button className="primary" disabled={!data?.areas.length}>
+            Save location
+          </button>
         </form>
       </section>
 
@@ -2477,6 +2856,16 @@ function AdminScreen({
       </section>
 
       <section className="coverage-list">
+        {data?.areas.map((area) => (
+          <article key={area.id} className="admin-row">
+            <input defaultValue={area.name} onBlur={(event) => patch(`/api/admin/areas/${area.id}`, { name: event.target.value })} />
+            <input
+              inputMode="numeric"
+              defaultValue={area.sort_order}
+              onBlur={(event) => patch(`/api/admin/areas/${area.id}`, { sort_order: Number(event.target.value) })}
+            />
+          </article>
+        ))}
         {data?.locations.map((location) => (
           <article key={location.id} className="admin-row">
             <input defaultValue={location.name} onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { name: event.target.value })} />
@@ -2649,6 +3038,9 @@ export default function App() {
   });
   const [showWorkspaceEntry, setShowWorkspaceEntry] = useState(false);
   const [showAdminSetup, setShowAdminSetup] = useState(() => Boolean(sessionStorage.getItem('deckplate.admin')));
+  const [showOperatorConsole, setShowOperatorConsole] = useState(
+    () => Boolean(sessionStorage.getItem(operatorKey)) || new URLSearchParams(window.location.search).get('operator') === '1',
+  );
   const [identity, setIdentity] = useState<Identity | null>(() => {
     const stored = localStorage.getItem(identityKey);
     if (!stored) return null;
@@ -2691,6 +3083,7 @@ export default function App() {
     }
     sessionStorage.removeItem('deckplate.admin');
     setShowAdminSetup(false);
+    setShowOperatorConsole(false);
     void loadTeamMembers(normalized);
   }
 
@@ -2948,6 +3341,9 @@ export default function App() {
 
   if (error) return <main className="center-shell"><p className="error">{error}</p></main>;
   if (!identity) {
+    if (showOperatorConsole) {
+      return <OperatorConsole onBack={() => setShowOperatorConsole(false)} />;
+    }
     if (showAdminSetup) {
       return (
         <>
@@ -2976,6 +3372,7 @@ export default function App() {
           teamMembers={teamMembers}
           onBack={() => setShowWorkspaceEntry(false)}
           onWorkspace={setActiveWorkspace}
+          onOperator={() => setShowOperatorConsole(true)}
           onAdminToken={() => {
             setShowAdminSetup(true);
           }}
