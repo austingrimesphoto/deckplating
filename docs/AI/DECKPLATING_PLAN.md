@@ -2,7 +2,7 @@
 
 ## Current Milestone
 
-Exact current stopping point: the repository is on `main` with the `Tenant-isolation hardening and test harness` milestone implemented and verified. The only remaining work in this session is preserving the updated plan/handoff and committing the milestone. Do not begin a new feature in this handoff.
+Exact current stopping point: the repository is on `main` with `Stage 2 outside-team pilot validation preparation` implemented in the pilot documentation set. The only remaining work in this session is preserving the updated plan/handoff, verifying the docs diff, and committing this documentation milestone. Do not begin a new product feature in this handoff.
 
 Completed steps:
 
@@ -22,10 +22,15 @@ Completed steps:
   - Partitioned offline pending-batch reads, sync replay, indicator updates, and identity-change blocking by organization and team member.
   - Added `scripts/tenant-isolation-check.mjs` and `npm run test:tenant-isolation`.
   - Added `docs/AI/TENANT_ISOLATION_REVIEW.md` with a route-by-route scope review and harness limits.
+- Completed Stage 2 outside-team pilot validation preparation:
+  - Updated `docs/PILOT_PACKET.md` for two outside-team pilots, explicit feedback checkpoints, timeline, and stop conditions tied to adoption blockers.
+  - Updated `docs/PILOT_READINESS_GUIDE.md` with a readiness gate, evidence to collect, and clearer pre-call ownership questions.
+  - Updated `docs/PILOT_FEEDBACK_TEMPLATE.md` to capture setup versus closeout checkpoints, admin/reporting usability, safe-use clarity, and critical blockers.
+  - Updated `docs/PILOT_SUPPORT_PLAYBOOK.md` to emphasize bounded support, adoption blockers, evidence capture, and local-owner usability for admin and reports.
 
 In-progress step: only plan/handoff preservation in `docs/AI` and the milestone commit. No product feature work is in progress.
 
-Next exact task: begin **Stage 2 outside-team pilot validation preparation**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/PILOT_PACKET.md`, `docs/PILOT_READINESS_GUIDE.md`, `docs/PILOT_FEEDBACK_TEMPLATE.md`, and `docs/PILOT_SUPPORT_PLAYBOOK.md`. Then update the pilot packet/checklist only as needed so two outside RMTs can run a 2-4 week validation and report setup, offline behavior, check-in reliability, admin workflow, and reporting feedback. Do not build new product features for this task.
+Next exact task: begin **Stage 2 outside-team pilot execution and evidence collection**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/PILOT_PACKET.md`, `docs/PILOT_READINESS_GUIDE.md`, `docs/PILOT_FEEDBACK_TEMPLATE.md`, `docs/PILOT_SUPPORT_PLAYBOOK.md`, `docs/PILOT_DECISION_LOG.md`, and `docs/PILOT_CLOSEOUT_TEMPLATE.md`. Then recruit or line up two outside RMT pilot leads, run the setup/support cadence, collect the setup and closeout feedback artifacts, and log blockers without starting unrelated product work.
 
 Deferred/out-of-scope items:
 
@@ -177,16 +182,43 @@ Harness limits:
 
 The tenant-isolation harness is a static/contract check. It verifies that the route guards, scoped query/update calls, related-ID validators, setup-code protections, operator hash omissions, schema support for organization-scoped check-in batch idempotency, and offline organization filters are present in the code. It does not replace a future live database integration suite that seeds two organizations and executes HTTP requests against Netlify Functions.
 
-## Next Task: Stage 2 Outside-Team Pilot Validation Preparation
+## Completed Task: Stage 2 Outside-Team Pilot Validation Preparation
 
 Objective: prepare the pilot materials and feedback loop for at least two outside RMTs to validate real use before full centralized multi-tenancy work continues.
 
-Scope:
+Completed scope:
 
 - Review the existing pilot packet, readiness guide, feedback template, support playbook, and this plan.
 - Update only the pilot documentation needed for a 2-4 week outside-team validation.
 - Ensure the packet asks for feedback on setup, offline behavior, check-in reliability, admin workflow, reporting, safe-use clarity, and any critical blockers.
 - Do not build new product features, deploy, alter external services, apply migrations, or access production data as part of this preparation task.
+
+Changed files:
+
+- `docs/PILOT_PACKET.md`
+- `docs/PILOT_READINESS_GUIDE.md`
+- `docs/PILOT_FEEDBACK_TEMPLATE.md`
+- `docs/PILOT_SUPPORT_PLAYBOOK.md`
+- `docs/AI/DECKPLATING_PLAN.md`
+- `docs/AI/HANDOFF.md`
+
+Verification results:
+
+- `git diff --check` passed.
+- No product code, migrations, deployments, Netlify settings, Supabase settings, or production data were touched.
+
+## Next Task: Stage 2 Outside-Team Pilot Execution And Evidence Collection
+
+Objective: run the first two outside-team pilots, capture real-use evidence, and document blockers clearly enough to decide whether broader self-hosted beta use or more product hardening should come next.
+
+Scope:
+
+- Identify two outside RMT leads willing to run a 2-4 week pilot.
+- Send the current pilot packet and confirm account ownership, safe-use understanding, and feedback checkpoints.
+- Run the setup-call and weekly follow-up cadence from the support playbook.
+- Collect at least one setup feedback artifact and one closeout artifact per team.
+- Log blockers, adoption risks, and go/no-go outcomes in the pilot decision workflow.
+- Do not start unrelated feature work during pilot execution unless a true blocker requires a targeted fix and is explicitly approved.
 
 Likely files to start with:
 
@@ -196,6 +228,8 @@ Likely files to start with:
 - `docs/PILOT_READINESS_GUIDE.md`
 - `docs/PILOT_FEEDBACK_TEMPLATE.md`
 - `docs/PILOT_SUPPORT_PLAYBOOK.md`
+- `docs/PILOT_DECISION_LOG.md`
+- `docs/PILOT_CLOSEOUT_TEMPLATE.md`
 
 ## Managed Distribution Roadmap
 
@@ -211,7 +245,7 @@ Stage 2 - outside-team pilot validation:
 - Objective: validate real RMT use before full centralized multi-tenancy.
 - Scope: at least two outside RMTs use current app for 2-4 weeks; collect feedback on setup, offline behavior, check-in reliability, admin workflow, and reporting.
 - Exit criteria: two outside teams complete pilot; critical blockers are documented or fixed; evidence supports centralized hosting as the right adoption path.
-- Current next work: prepare the outside-team pilot packet and feedback/support loop now that tenant-isolation hardening is complete.
+- Current next work: execute the first two outside-team pilots and collect evidence.
 
 Stage 3 - managed multi-organization service:
 

@@ -1,6 +1,6 @@
 # Deckplating Pilot Packet
 
-Use this packet for the first outside-team beta pilot.
+Use this packet for the first two outside-team beta pilots.
 
 ## Who This Is For
 
@@ -11,12 +11,15 @@ Best fit:
 - one command chaplain or RMT leader who can own setup,
 - at least one chaplain or RP who will use the app on a phone,
 - a manageable list of departments, divisions, or tenant commands,
-- permission to use a local beta tool for non-sensitive coverage metadata only.
+- permission to use a local beta tool for non-sensitive coverage metadata only,
+- willingness to submit setup feedback once and usage feedback again after real use.
+
+Do not start the pilot if the team expects centrally hosted onboarding, wants to store sensitive data, or cannot identify durable owners for GitHub, Supabase, and Netlify.
 
 ## Send This Message
 
 ```text
-Subject: Deckplating beta pilot
+Subject: Deckplating outside-team beta pilot
 
 I am testing Deckplating, a mobile web app for unclassified, non-sensitive ministry coverage awareness.
 
@@ -49,7 +52,8 @@ Suggested pilot:
 - at least one chaplain or RP uses it on a phone,
 - use normal deckplating only,
 - do not enter sensitive details,
-- report setup friction, phone issues, GPS/map issues, offline behavior, Mission Board usefulness, and anything that would stop another team from adopting it.
+- submit feedback once after setup and again after real use,
+- report setup friction, phone issues, GPS/map issues, offline behavior, admin workflow, reporting usefulness, safe-use clarity, Mission Board usefulness, and anything that would stop another team from adopting it.
 ```
 
 ## Links To Include
@@ -74,6 +78,8 @@ Suggested pilot:
 - How many phone users will test?
 - What installation or command will they use as the map center?
 - Are they comfortable testing the current self-hosted beta before centralized hosting exists?
+- When will they submit setup feedback?
+- When will they submit 2-4 week usage feedback?
 
 ## First 30 Minutes
 
@@ -96,6 +102,15 @@ Ask the pilot lead to complete this first-session checklist:
 15. Return to Check In and test a normal check-in.
 16. Open Coverage and confirm the unit status changed.
 17. Open Mission Board and confirm the check-in appears.
+18. Open Reports and confirm the generic indicator counts are understandable.
+19. Submit the setup feedback form before ending the session.
+
+## Pilot Timeline
+
+- Day 0: setup call, smoke test, and immediate setup feedback submission.
+- Week 1: at least one real phone check-in during normal work and a short owner follow-up.
+- Week 2: checkpoint on offline behavior, admin workflow, reports, and Mission Board usefulness.
+- Week 3-4: final feedback submission and go/no-go assessment.
 
 ## Pilot Boundaries
 
@@ -134,6 +149,9 @@ Ask them to focus on:
 - GPS precision problems,
 - map-radius problems,
 - offline and sync behavior,
+- admin workflow clarity,
+- reporting usefulness,
+- safe-use clarity,
 - whether manual check-in made sense,
 - whether Coverage and Mission Board helped them decide where to go,
 - what would stop another RMT from adopting it.
@@ -148,6 +166,7 @@ After sending this packet:
 - confirm they can create or access GitHub, Supabase, and Netlify accounts,
 - schedule a 30-minute setup support window,
 - ask them to submit the feedback form after setup,
+- schedule one midpoint check-in and one final closeout check-in,
 - check Netlify Forms for their feedback submission,
 - capture any blockers in the project roadmap.
 
@@ -160,4 +179,5 @@ Pause the pilot if:
 - setup cannot be completed without you doing every step for them,
 - phone use is too slow or unreliable for normal check-ins,
 - offline sync fails in a way that could lose real work,
+- admin workflow or reports are too confusing for normal local ownership,
 - feedback indicates the safe-use boundary is not understood.

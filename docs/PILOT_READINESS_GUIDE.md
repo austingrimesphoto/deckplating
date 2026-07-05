@@ -15,7 +15,19 @@ The pilot is successful only if the team can:
 - sync queued visits,
 - understand safe-use limits,
 - read coverage status and Mission Board progress,
+- use admin and reports without developer interpretation,
 - report issues clearly.
+
+## Readiness Gate
+
+Do not start an outside-team pilot until all of these are true:
+
+- the tenant-isolation hardening milestone is complete and documented,
+- `docs/PILOT_PACKET.md` reflects the current hosted links and support expectations,
+- the pilot lead understands this is a self-hosted beta,
+- the team can identify durable owners for GitHub, Supabase, and Netlify,
+- there is a scheduled setup support window and a named follow-up owner,
+- the team agrees to submit feedback after setup and again after 2-4 weeks.
 
 ## Who To Recruit
 
@@ -69,6 +81,13 @@ After setup, use the app for normal deckplating for 2-4 weeks and capture feedba
 
 Tell pilot teams to start with GitHub first, then use GitHub sign-in for Supabase and Netlify when those sites offer it.
 
+Ask for these answers before the setup call:
+
+- who owns GitHub, Supabase, and Netlify,
+- how many phone users will test,
+- which installation or command will be used for map center lookup,
+- whether they can commit to one setup feedback submission and one closeout feedback submission.
+
 ## First 30 Minutes
 
 1. Read the safe-use policy.
@@ -81,6 +100,8 @@ Tell pilot teams to start with GitHub first, then use GitHub sign-in for Supabas
 8. Return to Check In and test a normal check-in.
 9. Open Coverage and confirm the unit status changed.
 10. Open Mission Board and confirm the check-in appears.
+11. Open Reports and confirm the generic indicator counts make sense.
+12. Submit setup feedback before the session ends.
 
 ## Pilot Boundaries
 
@@ -106,7 +127,8 @@ When a tester reports a problem, capture:
 - what screen they were on,
 - exact error text,
 - whether a visit was pending sync,
-- whether the issue repeated after closing and reopening the app.
+- whether the issue repeated after closing and reopening the app,
+- whether the issue blocks local ownership or only convenience.
 
 Do not ask testers to send screenshots that expose sensitive locations or personal details.
 
@@ -118,3 +140,15 @@ Pilot web-form submissions should be collected through the hosted setup site:
 - Storage location: Netlify Forms on the `deckplatingsetup.netlify.app` site
 
 That keeps feedback centralized without asking pilot teams to paste notes back manually.
+
+## Evidence To Collect
+
+By the end of each pilot, collect:
+
+- one setup feedback submission,
+- one 2-4 week usage feedback submission,
+- confirmation that at least one phone user completed a real check-in,
+- confirmation that offline open and queued-sync behavior were tested,
+- confirmation that the pilot lead used admin screens without developer intervention,
+- confirmation that reports and generic indicators were understandable,
+- a list of top blockers that would stop another RMT from adopting the app.

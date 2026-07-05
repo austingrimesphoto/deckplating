@@ -17,6 +17,8 @@ Success means:
 - Coverage and Mission Board help the team decide where to go next,
 - feedback is specific enough to drive the next release.
 
+The support goal is not to make the pilot feel effortless. The support goal is to learn whether a normal team can own setup, administration, phone use, and reporting with only bounded help.
+
 ## Roles
 
 - `Project owner`: owns the template, setup site, release decisions, and feedback review.
@@ -43,7 +45,9 @@ Confirm:
 - they understand this is a self-hosted beta,
 - they will not enter CUI, counseling notes, medical details, PII, or sensitive operational locations,
 - they have one installation or command name for map center lookup,
-- they have 30-60 minutes available for first setup.
+- they have 30-60 minutes available for first setup,
+- they agree to submit setup feedback before the first call ends,
+- they agree to submit closeout feedback after 2-4 weeks.
 
 ## Setup-Call Script
 
@@ -107,6 +111,7 @@ On the phone:
 9. Test **Manual unit lookup**.
 10. Submit one check-in.
 11. Confirm Coverage and Mission Board update.
+12. Open Reports and confirm the generic indicator counts make sense.
 
 ### 5. Immediate Feedback
 
@@ -115,6 +120,13 @@ Before ending the call, have the pilot lead submit the feedback form:
 <https://deckplatingsetup.netlify.app/#feedback>
 
 Tell them to submit again after 2-4 weeks of actual use.
+
+Record before the call ends:
+
+- whether the pilot lead could complete each major step without takeover,
+- whether at least one phone user can proceed past first sign-in,
+- whether reports and generic indicators made sense,
+- whether any `P0` or `P1` blocker is already present.
 
 ## Issue Triage Flow
 
@@ -138,6 +150,8 @@ Then classify the issue:
 4. Is it polish, wording, or a nice-to-have? Mark `P3`.
 
 Log the issue in [PILOT_FEEDBACK_REVIEW.md](PILOT_FEEDBACK_REVIEW.md).
+
+If the issue means another RMT could not reasonably adopt the app, mark it as an adoption blocker even if the local team found a workaround.
 
 ## Fast Support Responses
 
@@ -200,6 +214,7 @@ Run this rhythm for each pilot team.
 
 - Confirm whether the team would keep using it without you present.
 - Ask what would stop another RMT from adopting it.
+- Ask whether admin screens and reports are usable without developer interpretation.
 - Review Netlify Forms feedback.
 - Update the pilot feedback review table.
 
@@ -219,6 +234,7 @@ Mark the pilot `Go` only if:
 - no duplicate check-ins or points were observed,
 - safe-use boundaries were understood,
 - the local lead can administer roster, locations, and units,
+- the local lead can understand the generic reports,
 - feedback was submitted through the hosted form.
 
 Mark `Go with fixes` if:
@@ -258,6 +274,7 @@ Ask the pilot lead:
 7. Did offline mode work well enough for your buildings?
 8. What would stop another RMT from adopting this?
 9. Would centralized hosting materially change your willingness to use it?
+10. Could your local lead manage the app and understand reports without developer help?
 
 ## Output After Each Pilot
 
