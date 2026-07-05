@@ -690,7 +690,13 @@ function WorkspaceEntry({
   );
 }
 
-function OnboardingChecklist({ onboarding }: { onboarding: OnboardingSummary | null }) {
+function OnboardingChecklist({
+  onboarding,
+  onComplete,
+}: {
+  onboarding: OnboardingSummary | null;
+  onComplete: () => void;
+}) {
   const steps = [
     { label: 'Organization admin passphrase', done: Boolean(onboarding?.organizationAdminConfigured), detail: 'Protect local admin access.' },
     { label: 'Areas', done: (onboarding?.areaCount ?? 0) > 0, detail: `${onboarding?.areaCount ?? 0} created` },
@@ -719,6 +725,9 @@ function OnboardingChecklist({ onboarding }: { onboarding: OnboardingSummary | n
           </article>
         ))}
       </div>
+      <button className="secondary" type="button" onClick={onComplete}>
+        {onboarding?.readyForCheckins ? 'Complete onboarding' : 'Hide checklist'}
+      </button>
     </section>
   );
 }
@@ -2640,6 +2649,7 @@ function AdminScreen({
   const [organizationAdminAvailable, setOrganizationAdminAvailable] = useState(false);
   const [organizationAdminPassphrase, setOrganizationAdminPassphrase] = useState('');
   const [onboardingSummary, setOnboardingSummary] = useState<OnboardingSummary | null>(null);
+  const [showOnboardingChecklist, setShowOnboardingChecklist] = useState(true);
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -2678,6 +2688,9 @@ function AdminScreen({
     setAdminAuthMethod(settings.adminAuthMethod ?? adminAuthMethod);
     setOrganizationAdminAvailable(Boolean(settings.organizationAdminAvailable));
     setOnboardingSummary(settings.onboarding ?? null);
+    if (!settings.onboarding?.readyForCheckins) {
+      setShowOnboardingChecklist(true);
+    }
     setLocationForm((current) => ({ ...current, area_id: result.areas[0]?.id ?? current.area_id }));
     setActingTeamMemberId((current) => current || result.teamMembers[0]?.id || '');
   }
@@ -2985,183 +2998,184 @@ function AdminScreen({
       )}
       {adminSection === 'setup' && (
         <>
-      <OnboardingChecklist onboarding={onboardingSummary} />
-
-      <section className="panel">
-        <h2>Create area</h2>
-        <form onSubmit={createArea} className="stack">
-          <input placeholder="Area name" value={areaForm.name} onChange={(event) => setAreaForm({ ...areaForm, name: event.target.value })} />
-          <input
-            inputMode="numeric"
-            placeholder="Sort order"
-            value={areaForm.sort_order}
-            onChange={(event) => setAreaForm({ ...areaForm, sort_order: event.target.value.replace(/[^0-9-]/g, '') })}
-          />
-          <button className="primary">Save area</button>
-        </form>
-      </section>
-
-      <section className="panel">
-        <h2>Create location</h2>
-        <p className="warning-notice">{locationMappingNotice}</p>
-        <form onSubmit={createLocation} className="stack">
-          <select value={locationForm.area_id} onChange={(event) => setLocationForm({ ...locationForm, area_id: event.target.value })}>
-            {data?.areas.map((area) => (
-              <option key={area.id} value={area.id}>
-                {area.name}
-              </option>
-            ))}
-          </select>
-          {!data?.areas.length && <p className="notice">Create an area first. Locations are assigned to areas.</p>}
-          <input placeholder="Location name" value={locationForm.name} onChange={(event) => setLocationForm({ ...locationForm, name: event.target.value })} />
-          <AdminMapPicker
-            latitude={Number(locationForm.latitude)}
-            longitude={Number(locationForm.longitude)}
-            onChange={(coords) =>
-              setLocationForm({
-                ...locationForm,
-                latitude: coords.latitude.toFixed(6),
-                longitude: coords.longitude.toFixed(6),
-              })
-            }
-          />
-          <div className="grid-two">
-            <input inputMode="decimal" value={locationForm.latitude} onChange={(event) => setLocationForm({ ...locationForm, latitude: event.target.value })} />
-            <input inputMode="decimal" value={locationForm.longitude} onChange={(event) => setLocationForm({ ...locationForm, longitude: event.target.value })} />
-          </div>
-          <label>
-            Radius {locationForm.radius_meters}m
-            <input type="range" min="25" max="750" value={locationForm.radius_meters} onChange={(event) => setLocationForm({ ...locationForm, radius_meters: event.target.value })} />
-          </label>
-          <label>
-            Attach units
-            <select
-              multiple
-              value={attachUnitIds}
-              onChange={(event) => setAttachUnitIds(Array.from(event.target.selectedOptions).map((option) => option.value))}
-            >
-              {data?.units
-                .filter((unit) => !unit.location_id)
-                .map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {unit.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <button className="primary" disabled={!data?.areas.length}>
-            Save location
-          </button>
-        </form>
-      </section>
-
-      <section className="panel">
-        <h2>Create unit</h2>
-        <form onSubmit={createUnit} className="stack">
-          <input placeholder="Unit name" value={unitForm.name} onChange={(event) => setUnitForm({ ...unitForm, name: event.target.value })} />
-          <select value={unitForm.unit_type} onChange={(event) => setUnitForm({ ...unitForm, unit_type: event.target.value as UnitType })}>
-            <option value="department">Department</option>
-            <option value="division">Division</option>
-            <option value="tenant">Tenant command</option>
-          </select>
-          <select value={unitForm.location_id} onChange={(event) => setUnitForm({ ...unitForm, location_id: event.target.value })}>
-            <option value="">Unassigned</option>
-            {data?.locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </select>
-          <input inputMode="numeric" value={unitForm.visit_interval_days} onChange={(event) => setUnitForm({ ...unitForm, visit_interval_days: event.target.value })} />
-          <button className="primary">Save unit</button>
-        </form>
-      </section>
-
-      <section className="panel">
-        <h2>Create team member</h2>
-        <p className="muted">
-          This is the current grant-access workflow: create the roster entry here, send the workspace link, then the member selects
-          their name and creates their own PIN on first sign-in.
-        </p>
-        <form onSubmit={createMember} className="stack">
-          <input placeholder="Name" value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} />
-          <input placeholder="Role" value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} />
-          <button className="primary">Save member</button>
-        </form>
-      </section>
-
-      <section className="coverage-list">
-        {data?.areas.map((area) => (
-          <article key={area.id} className="admin-row">
-            <input defaultValue={area.name} onBlur={(event) => patch(`/api/admin/areas/${area.id}`, { name: event.target.value })} />
-            <input
-              inputMode="numeric"
-              defaultValue={area.sort_order}
-              onBlur={(event) => patch(`/api/admin/areas/${area.id}`, { sort_order: Number(event.target.value) })}
-            />
-          </article>
-        ))}
-        {data?.locations.map((location) => (
-          <article key={location.id} className="admin-row">
-            <input defaultValue={location.name} onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { name: event.target.value })} />
-            <div className="grid-two">
-              <input
-                inputMode="decimal"
-                defaultValue={location.latitude}
-                onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { latitude: Number(event.target.value) })}
-              />
-              <input
-                inputMode="decimal"
-                defaultValue={location.longitude}
-                onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { longitude: Number(event.target.value) })}
-              />
-            </div>
-            <button className="secondary" onClick={() => patch(`/api/admin/locations/${location.id}`, { active: !location.active })}>
-              {location.active ? 'Deactivate' : 'Activate'}
-            </button>
-          </article>
-        ))}
-        {data?.units.map((unit) => (
-          <article key={unit.id} className="admin-row">
-            <div>
-              <input defaultValue={unit.name} onBlur={(event) => patch(`/api/admin/units/${unit.id}`, { name: event.target.value })} />
+          {showOnboardingChecklist && (
+            <OnboardingChecklist onboarding={onboardingSummary} onComplete={() => setShowOnboardingChecklist(false)} />
+          )}
+          <section className="panel">
+            <h2>Create area</h2>
+            <form onSubmit={createArea} className="stack">
+              <input placeholder="Area name" value={areaForm.name} onChange={(event) => setAreaForm({ ...areaForm, name: event.target.value })} />
               <input
                 inputMode="numeric"
-                defaultValue={unit.visit_interval_days}
-                onBlur={(event) => patch(`/api/admin/units/${unit.id}`, { visit_interval_days: Number(event.target.value) })}
+                placeholder="Sort order"
+                value={areaForm.sort_order}
+                onChange={(event) => setAreaForm({ ...areaForm, sort_order: event.target.value.replace(/[^0-9-]/g, '') })}
               />
-            </div>
-            <select value={unit.location_id ?? ''} onChange={(event) => patch(`/api/admin/units/${unit.id}`, { location_id: event.target.value || null })}>
-              <option value="">Unassigned</option>
-              {data.locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
-            <button className="secondary" onClick={() => patch(`/api/admin/units/${unit.id}`, { active: !unit.active })}>
-              {unit.active ? 'Deactivate' : 'Activate'}
-            </button>
-          </article>
-        ))}
-        {data?.teamMembers.map((member) => (
-          <article key={member.id} className="admin-row">
-            <div className="stack">
-              <input defaultValue={member.name} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { name: event.target.value })} />
-              <input defaultValue={member.role ?? ''} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { role: event.target.value })} />
-              <p className="muted">{member.active ? 'Active roster entry.' : 'Inactive roster entry.'}</p>
-            </div>
-            <div className="stack">
-              <button className="secondary" onClick={() => patch(`/api/admin/team-members/${member.id}`, { active: !member.active })}>
-                {member.active ? 'Deactivate' : 'Activate'}
+              <button className="primary">Save area</button>
+            </form>
+          </section>
+
+          <section className="panel">
+            <h2>Create location</h2>
+            <p className="warning-notice">{locationMappingNotice}</p>
+            <form onSubmit={createLocation} className="stack">
+              <select value={locationForm.area_id} onChange={(event) => setLocationForm({ ...locationForm, area_id: event.target.value })}>
+                {data?.areas.map((area) => (
+                  <option key={area.id} value={area.id}>
+                    {area.name}
+                  </option>
+                ))}
+              </select>
+              {!data?.areas.length && <p className="notice">Create an area first. Locations are assigned to areas.</p>}
+              <input placeholder="Location name" value={locationForm.name} onChange={(event) => setLocationForm({ ...locationForm, name: event.target.value })} />
+              <AdminMapPicker
+                latitude={Number(locationForm.latitude)}
+                longitude={Number(locationForm.longitude)}
+                onChange={(coords) =>
+                  setLocationForm({
+                    ...locationForm,
+                    latitude: coords.latitude.toFixed(6),
+                    longitude: coords.longitude.toFixed(6),
+                  })
+                }
+              />
+              <div className="grid-two">
+                <input inputMode="decimal" value={locationForm.latitude} onChange={(event) => setLocationForm({ ...locationForm, latitude: event.target.value })} />
+                <input inputMode="decimal" value={locationForm.longitude} onChange={(event) => setLocationForm({ ...locationForm, longitude: event.target.value })} />
+              </div>
+              <label>
+                Radius {locationForm.radius_meters}m
+                <input type="range" min="25" max="750" value={locationForm.radius_meters} onChange={(event) => setLocationForm({ ...locationForm, radius_meters: event.target.value })} />
+              </label>
+              <label>
+                Attach units
+                <select
+                  multiple
+                  value={attachUnitIds}
+                  onChange={(event) => setAttachUnitIds(Array.from(event.target.selectedOptions).map((option) => option.value))}
+                >
+                  {data?.units
+                    .filter((unit) => !unit.location_id)
+                    .map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <button className="primary" disabled={!data?.areas.length}>
+                Save location
               </button>
-              <button className="secondary danger-text" onClick={() => void resetMemberPin(member.id, member.name)}>
-                Reset PIN and revoke devices
-              </button>
-            </div>
-          </article>
-        ))}
-      </section>
+            </form>
+          </section>
+
+          <section className="panel">
+            <h2>Create unit</h2>
+            <form onSubmit={createUnit} className="stack">
+              <input placeholder="Unit name" value={unitForm.name} onChange={(event) => setUnitForm({ ...unitForm, name: event.target.value })} />
+              <select value={unitForm.unit_type} onChange={(event) => setUnitForm({ ...unitForm, unit_type: event.target.value as UnitType })}>
+                <option value="department">Department</option>
+                <option value="division">Division</option>
+                <option value="tenant">Tenant command</option>
+              </select>
+              <select value={unitForm.location_id} onChange={(event) => setUnitForm({ ...unitForm, location_id: event.target.value })}>
+                <option value="">Unassigned</option>
+                {data?.locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+              </select>
+              <input inputMode="numeric" value={unitForm.visit_interval_days} onChange={(event) => setUnitForm({ ...unitForm, visit_interval_days: event.target.value })} />
+              <button className="primary">Save unit</button>
+            </form>
+          </section>
+
+          <section className="panel">
+            <h2>Create team member</h2>
+            <p className="muted">
+              This is the current grant-access workflow: create the roster entry here, send the workspace link, then the member selects
+              their name and creates their own PIN on first sign-in.
+            </p>
+            <form onSubmit={createMember} className="stack">
+              <input placeholder="Name" value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} />
+              <input placeholder="Role" value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} />
+              <button className="primary">Save member</button>
+            </form>
+          </section>
+
+          <section className="coverage-list">
+            {data?.areas.map((area) => (
+              <article key={area.id} className="admin-row">
+                <input defaultValue={area.name} onBlur={(event) => patch(`/api/admin/areas/${area.id}`, { name: event.target.value })} />
+                <input
+                  inputMode="numeric"
+                  defaultValue={area.sort_order}
+                  onBlur={(event) => patch(`/api/admin/areas/${area.id}`, { sort_order: Number(event.target.value) })}
+                />
+              </article>
+            ))}
+            {data?.locations.map((location) => (
+              <article key={location.id} className="admin-row">
+                <input defaultValue={location.name} onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { name: event.target.value })} />
+                <div className="grid-two">
+                  <input
+                    inputMode="decimal"
+                    defaultValue={location.latitude}
+                    onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { latitude: Number(event.target.value) })}
+                  />
+                  <input
+                    inputMode="decimal"
+                    defaultValue={location.longitude}
+                    onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { longitude: Number(event.target.value) })}
+                  />
+                </div>
+                <button className="secondary" onClick={() => patch(`/api/admin/locations/${location.id}`, { active: !location.active })}>
+                  {location.active ? 'Deactivate' : 'Activate'}
+                </button>
+              </article>
+            ))}
+            {data?.units.map((unit) => (
+              <article key={unit.id} className="admin-row">
+                <div>
+                  <input defaultValue={unit.name} onBlur={(event) => patch(`/api/admin/units/${unit.id}`, { name: event.target.value })} />
+                  <input
+                    inputMode="numeric"
+                    defaultValue={unit.visit_interval_days}
+                    onBlur={(event) => patch(`/api/admin/units/${unit.id}`, { visit_interval_days: Number(event.target.value) })}
+                  />
+                </div>
+                <select value={unit.location_id ?? ''} onChange={(event) => patch(`/api/admin/units/${unit.id}`, { location_id: event.target.value || null })}>
+                  <option value="">Unassigned</option>
+                  {data.locations.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.name}
+                    </option>
+                  ))}
+                </select>
+                <button className="secondary" onClick={() => patch(`/api/admin/units/${unit.id}`, { active: !unit.active })}>
+                  {unit.active ? 'Deactivate' : 'Activate'}
+                </button>
+              </article>
+            ))}
+            {data?.teamMembers.map((member) => (
+              <article key={member.id} className="admin-row">
+                <div className="stack">
+                  <input defaultValue={member.name} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { name: event.target.value })} />
+                  <input defaultValue={member.role ?? ''} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { role: event.target.value })} />
+                  <p className="muted">{member.active ? 'Active roster entry.' : 'Inactive roster entry.'}</p>
+                </div>
+                <div className="stack">
+                  <button className="secondary" onClick={() => patch(`/api/admin/team-members/${member.id}`, { active: !member.active })}>
+                    {member.active ? 'Deactivate' : 'Activate'}
+                  </button>
+                  <button className="secondary danger-text" onClick={() => void resetMemberPin(member.id, member.name)}>
+                    Reset PIN and revoke devices
+                  </button>
+                </div>
+              </article>
+            ))}
+          </section>
         </>
       )}
     </main>
