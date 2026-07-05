@@ -48,10 +48,14 @@ export async function savePendingBatch(batch: PendingVisitBatch) {
   await db.put('pendingBatches', { ...batch, updatedAt: new Date().toISOString() });
 }
 
-export async function getPendingBatches(teamMemberId?: string) {
+export async function getPendingBatches(teamMemberId?: string, organizationId?: string | null) {
   const db = await dbPromise;
   const all = await db.getAll('pendingBatches');
-  return teamMemberId ? all.filter((batch) => batch.teamMemberId === teamMemberId) : all;
+  return all.filter((batch) => {
+    if (teamMemberId && batch.teamMemberId !== teamMemberId) return false;
+    if (organizationId !== undefined && (batch.organizationId ?? null) !== (organizationId ?? null)) return false;
+    return true;
+  });
 }
 
 export async function getPendingBatch(clientBatchId: string) {
@@ -59,9 +63,10 @@ export async function getPendingBatch(clientBatchId: string) {
   return (await db.get('pendingBatches', clientBatchId)) ?? null;
 }
 
-export async function updatePendingBatchIndicators(clientBatchId: string, indicators: VisitIndicatorState) {
+export async function updatePendingBatchIndicators(clientBatchId: string, indicators: VisitIndicatorState, organizationId?: string | null) {
   const batch = await getPendingBatch(clientBatchId);
   if (!batch) return null;
+  if ((batch.organizationId ?? null) !== (organizationId ?? null)) return null;
   const next = { ...batch, ...indicators, updatedAt: new Date().toISOString() };
   await savePendingBatch(next);
   return next;
@@ -72,8 +77,8 @@ export async function removePendingBatch(clientBatchId: string) {
   await db.delete('pendingBatches', clientBatchId);
 }
 
-export async function countBlockingPendingBatches(teamMemberId: string) {
-  const pending = await getPendingBatches(teamMemberId);
+export async function countBlockingPendingBatches(teamMemberId: string, organizationId?: string | null) {
+  const pending = await getPendingBatches(teamMemberId, organizationId);
   return pending.filter((batch) => batch.syncStatus !== 'synced').length;
 }
 

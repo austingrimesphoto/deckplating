@@ -870,7 +870,7 @@ function CheckInScreen({
     if (!confirmation) return;
     setConfirmation({ ...confirmation, indicators: next });
     if (confirmation.syncStatus === 'queued') {
-      await updatePendingBatchIndicators(confirmation.clientBatchId, next);
+      await updatePendingBatchIndicators(confirmation.clientBatchId, next, identity.organizationId ?? null);
       return;
     }
     try {
@@ -2757,7 +2757,7 @@ export default function App() {
           setSyncMessage('Sync needs PIN refresh.');
           return;
         }
-        const pending = await countBlockingPendingBatches(currentIdentity.teamMemberId);
+        const pending = await countBlockingPendingBatches(currentIdentity.teamMemberId, currentIdentity.organizationId ?? null);
         if (pending > 0) {
           setSyncState('auth');
           setSyncMessage('Sync needs PIN refresh.');
@@ -2784,14 +2784,16 @@ export default function App() {
 
   async function refreshPendingCount(currentIdentity = identity) {
     if (!currentIdentity) return;
-    const count = await countBlockingPendingBatches(currentIdentity.teamMemberId);
+    const count = await countBlockingPendingBatches(currentIdentity.teamMemberId, currentIdentity.organizationId ?? null);
     setPendingCount(count);
     if (count > 0 && syncState === 'synced') setSyncState('pending');
   }
 
   async function syncPending(currentIdentity = identity) {
     if (!currentIdentity) return;
-    const batches = (await getPendingBatches(currentIdentity.teamMemberId)).filter((batch) => batch.syncStatus !== 'synced');
+    const batches = (await getPendingBatches(currentIdentity.teamMemberId, currentIdentity.organizationId ?? null)).filter(
+      (batch) => batch.syncStatus !== 'synced',
+    );
     setPendingCount(batches.length);
     if (!batches.length) {
       setSyncState(cachedMode ? 'offline' : 'synced');

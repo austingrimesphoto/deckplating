@@ -14,6 +14,15 @@ type OperatorContext = {
   authMethod: 'central_operator';
 };
 
+class RequestValidationError extends Error {
+  statusCode: number;
+
+  constructor(statusCode: number, message: string) {
+    super(message);
+    this.statusCode = statusCode;
+  }
+}
+
 const supabaseUrl = process.env.SUPABASE_URL ?? '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const adminPassphraseHash = process.env.ADMIN_PASSPHRASE_HASH ?? '';
@@ -53,7 +62,10 @@ const readBody = <T>(event: HandlerEvent): T => {
 
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
-const pinHash = (teamMemberId: string, pin: string) => sha256(`${teamMemberId}:${pin}`);
+const legacyPinHash = (teamMemberId: string, pin: string) => sha256(`${teamMemberId}:${pin}`);
+
+const pinHash = (teamMemberId: string, pin: string, organizationId: string | null) =>
+  sha256(`${organizationId ?? 'single-org'}:${teamMemberId}:${pin}`);
 
 let organizationSchemaEnabledCache: boolean | null = null;
 let organizationAdminSchemaEnabledCache: boolean | null = null;
@@ -121,6 +133,46 @@ const scoped = (query: any, organizationId: string | null) =>
 
 const withOrganization = <T extends Record<string, unknown>>(values: T, organizationId: string | null) =>
   organizationId ? { ...values, organization_id: organizationId } : values;
+
+const uniqueUuidValues = (values: unknown[]) => {
+  const nonEmptyValues = values.filter((value) => value != null && value !== '');
+  if (nonEmptyValues.some((value) => typeof value !== 'string')) {
+    throw new RequestValidationError(400, 'Referenced IDs must be UUIDs.');
+  }
+  const ids = Array.from(new Set(nonEmptyValues.map((value) => String(value))));
+  if (ids.some((id) => !isUuid(id))) throw new RequestValidationError(400, 'Referenced IDs must be UUIDs.');
+  return ids;
+};
+
+async function ensureScopedIds(table: string, ids: string[], organizationId: string | null, message: string) {
+  if (!ids.length) return;
+  const { data, error } = await scoped(supabase.from(table).select('id').in('id', ids), organizationId);
+  if (error) throw error;
+  if ((data ?? []).length !== ids.length) throw new RequestValidationError(404, message);
+}
+
+async function validateLocationReferences(values: Record<string, unknown>, organizationId: string | null) {
+  if (values.area_id == null || values.area_id === '') return;
+  const [areaId] = uniqueUuidValues([values.area_id]);
+  await ensureScopedIds('areas', [areaId], organizationId, 'Area not found.');
+}
+
+async function validateUnitReferences(values: Record<string, unknown>, organizationId: string | null) {
+  if (values.location_id == null || values.location_id === '') return;
+  const [locationId] = uniqueUuidValues([values.location_id]);
+  await ensureScopedIds('locations', [locationId], organizationId, 'Location not found.');
+}
+
+async function validateUnitAssignment(unitIds: unknown[], organizationId: string | null) {
+  const ids = uniqueUuidValues(unitIds);
+  await ensureScopedIds('units', ids, organizationId, 'One or more units were not found.');
+  return ids;
+}
+
+async function validateTeamMemberReferences(ids: unknown[], organizationId: string | null) {
+  const teamMemberIds = uniqueUuidValues(ids);
+  await ensureScopedIds('team_members', teamMemberIds, organizationId, 'Team member not found.');
+}
 
 const organizationAdminHash = (organizationId: string, passphrase: string) =>
   sha256(`${organizationId}:admin:${passphrase}`);
@@ -532,9 +584,12 @@ async function registerDevice(body: { teamMemberId: string; pin: string; deviceT
     .eq('active', true);
   const { data: member, error: memberError } = await scoped(memberQuery, organizationId).single();
   if (memberError || !member) return json(404, { error: 'Team member not found.' });
-  const nextPinHash = pinHash(body.teamMemberId, body.pin);
-  if (member.pin_hash && member.pin_hash !== nextPinHash) return json(403, { error: 'PIN does not match.' });
-  if (!member.pin_hash) {
+  const nextPinHash = pinHash(body.teamMemberId, body.pin, organizationId);
+  const oldPinHash = legacyPinHash(body.teamMemberId, body.pin);
+  if (member.pin_hash && member.pin_hash !== nextPinHash && member.pin_hash !== oldPinHash) {
+    return json(403, { error: 'PIN does not match.' });
+  }
+  if (!member.pin_hash || member.pin_hash === oldPinHash) {
     let update = supabase.from('team_members').update({ pin_hash: nextPinHash }).eq('id', body.teamMemberId);
     update = scoped(update, organizationId);
     await update;
@@ -763,7 +818,11 @@ async function route(event: HandlerEvent) {
     if (!user || user.teamMemberId !== body.currentTeamMemberId) return json(403, { error: 'Authentication required.' });
     const currentQuery = supabase.from('team_members').select('*').eq('id', body.currentTeamMemberId);
     const { data: current } = await scoped(currentQuery, user.organizationId).single();
-    if (!current?.pin_hash || current.pin_hash !== pinHash(body.currentTeamMemberId, body.pin)) {
+    if (
+      !current?.pin_hash ||
+      (current.pin_hash !== pinHash(body.currentTeamMemberId, body.pin, user.organizationId) &&
+        current.pin_hash !== legacyPinHash(body.currentTeamMemberId, body.pin))
+    ) {
       return json(403, { error: 'Current PIN does not match.' });
     }
     let update = supabase.from('devices').update({ active: false }).eq('device_token_hash', sha256(body.deviceToken));
@@ -1475,6 +1534,12 @@ async function route(event: HandlerEvent) {
       adminTeamMemberId?: string;
     }>(event);
     if (!body.adminTeamMemberId) return json(400, { error: 'adminTeamMemberId is required.' });
+    try {
+      await validateTeamMemberReferences([body.adminTeamMemberId, body.team_member_id].filter(Boolean), organizationId);
+    } catch (error) {
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      return json(500, { error: errorMessage(error) });
+    }
 
     const existingQuery = supabase
       .from('checkins')
@@ -1525,8 +1590,9 @@ async function route(event: HandlerEvent) {
       .from('checkins')
       .update(update)
       .eq('id', adminCheckinMatch[1]);
-    const { data, error } = await scoped(checkinUpdateQuery, organizationId).select('id').single();
+    const { data, error } = await scoped(checkinUpdateQuery, organizationId).select('id').maybeSingle();
     if (error) return json(500, { error: error.message });
+    if (!data) return json(404, { error: 'Check-in not found.' });
     return json(200, { checkin: data, coverage: await getCoverage(organizationId) });
   }
 
@@ -1535,6 +1601,14 @@ async function route(event: HandlerEvent) {
     const body = readBody<any>(event);
     const { unitIds = [], ...locationValues } = body;
     delete locationValues.organization_id;
+    if (!Array.isArray(unitIds)) return json(400, { error: 'unitIds must be an array.' });
+    try {
+      await validateLocationReferences(locationValues, organizationId);
+      if (unitIds.length) await validateUnitAssignment(unitIds, organizationId);
+    } catch (error) {
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      return json(500, { error: errorMessage(error) });
+    }
     const { data, error } = await supabase
       .from('locations')
       .insert(withOrganization(locationValues, organizationId))
@@ -1554,9 +1628,18 @@ async function route(event: HandlerEvent) {
     const body = readBody<any>(event);
     const { unitIds, ...locationValues } = body;
     delete locationValues.organization_id;
+    if (unitIds !== undefined && !Array.isArray(unitIds)) return json(400, { error: 'unitIds must be an array.' });
+    try {
+      await validateLocationReferences(locationValues, organizationId);
+      if (Array.isArray(unitIds)) await validateUnitAssignment(unitIds, organizationId);
+    } catch (error) {
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      return json(500, { error: errorMessage(error) });
+    }
     const locationUpdate = supabase.from('locations').update(locationValues).eq('id', locationMatch[1]);
-    const { data, error } = await scoped(locationUpdate, organizationId).select('*').single();
+    const { data, error } = await scoped(locationUpdate, organizationId).select('*').maybeSingle();
     if (error) return json(500, { error: error.message });
+    if (!data) return json(404, { error: 'Location not found.' });
     if (Array.isArray(unitIds)) {
       const unitUpdate = supabase.from('units').update({ location_id: data.id }).in('id', unitIds);
       await scoped(unitUpdate, organizationId);
@@ -1568,6 +1651,12 @@ async function route(event: HandlerEvent) {
     const organizationId = adminContext!.organizationId;
     const body = readBody<any>(event);
     delete body.organization_id;
+    try {
+      await validateUnitReferences(body, organizationId);
+    } catch (error) {
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      return json(500, { error: errorMessage(error) });
+    }
     const { data, error } = await supabase.from('units').insert(withOrganization(body, organizationId)).select('*').single();
     if (error) return json(500, { error: error.message });
     return json(200, { unit: data });
@@ -1578,9 +1667,16 @@ async function route(event: HandlerEvent) {
     const organizationId = adminContext!.organizationId;
     const body = readBody<any>(event);
     delete body.organization_id;
+    try {
+      await validateUnitReferences(body, organizationId);
+    } catch (error) {
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      return json(500, { error: errorMessage(error) });
+    }
     const unitUpdate = supabase.from('units').update(body).eq('id', unitMatch[1]);
-    const { data, error } = await scoped(unitUpdate, organizationId).select('*').single();
+    const { data, error } = await scoped(unitUpdate, organizationId).select('*').maybeSingle();
     if (error) return json(500, { error: error.message });
+    if (!data) return json(404, { error: 'Unit not found.' });
     return json(200, { unit: data });
   }
 
@@ -1603,8 +1699,9 @@ async function route(event: HandlerEvent) {
     const body = readBody<any>(event);
     delete body.organization_id;
     const memberUpdate = supabase.from('team_members').update(body).eq('id', memberMatch[1]);
-    const { data, error } = await scoped(memberUpdate, organizationId).select('id, name, role, active').single();
+    const { data, error } = await scoped(memberUpdate, organizationId).select('id, name, role, active').maybeSingle();
     if (error) return json(500, { error: error.message });
+    if (!data) return json(404, { error: 'Team member not found.' });
     return json(200, { teamMember: data });
   }
 

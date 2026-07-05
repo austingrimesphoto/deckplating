@@ -2,7 +2,7 @@
 
 ## Current Milestone
 
-Exact current stopping point: the repository is on `main` after commit `5ea9c5a` (`Add workspace-aware entry flow`). The user approved starting the next roadmap task, `Tenant-isolation hardening and test harness`, but then explicitly stopped feature work to preserve this plan. No tenant-isolation implementation has begun.
+Exact current stopping point: the repository is on `main` with the `Tenant-isolation hardening and test harness` milestone implemented and verified. The only remaining work in this session is preserving the updated plan/handoff and committing the milestone. Do not begin a new feature in this handoff.
 
 Completed steps:
 
@@ -15,10 +15,17 @@ Completed steps:
 - Added organization admin/setup-code migration `006`.
 - Added protected central-operator API groundwork for approved workspace and setup-code creation.
 - Added workspace-aware entry flow: workspace slug resolution, setup-code activation UI, workspace-specific roster loading, device registration, admin login, and workspace-keyed offline bootstrap cache.
+- Completed tenant-isolation hardening and test harness:
+  - Added organization-scoped related-ID validators and safe scoped not-found behavior in `netlify/functions/api.ts`.
+  - Hardened admin correction, location, unit, and team-member mutations so referenced records must belong to the admin token organization.
+  - Moved PIN hashing to include organization context while preserving a legacy beta hash upgrade path on successful PIN use.
+  - Partitioned offline pending-batch reads, sync replay, indicator updates, and identity-change blocking by organization and team member.
+  - Added `scripts/tenant-isolation-check.mjs` and `npm run test:tenant-isolation`.
+  - Added `docs/AI/TENANT_ISOLATION_REVIEW.md` with a route-by-route scope review and harness limits.
 
-In-progress step: only plan/handoff preservation in `docs/AI`. No product code work is in progress.
+In-progress step: only plan/handoff preservation in `docs/AI` and the milestone commit. No product feature work is in progress.
 
-Next exact task: implement **Tenant-isolation hardening and test harness**. Start by reading `docs/MULTI_TENANT_SECURITY_CHECKLIST.md`, `netlify/functions/api.ts`, `src/App.tsx`, `src/offline.ts`, and this plan. Then add focused automated or scriptable checks proving one workspace cannot read, mutate, or infer another workspace's data through the API. Do not replan the roadmap.
+Next exact task: begin **Stage 2 outside-team pilot validation preparation**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/PILOT_PACKET.md`, `docs/PILOT_READINESS_GUIDE.md`, `docs/PILOT_FEEDBACK_TEMPLATE.md`, and `docs/PILOT_SUPPORT_PLAYBOOK.md`. Then update the pilot packet/checklist only as needed so two outside RMTs can run a 2-4 week validation and report setup, offline behavior, check-in reliability, admin workflow, and reporting feedback. Do not build new product features for this task.
 
 Deferred/out-of-scope items:
 
@@ -130,11 +137,11 @@ Current behavior:
 - Admin token remains in `sessionStorage` as `deckplate.admin`.
 - Workspace-specific bootstrap snapshots are saved in IndexedDB using organization-specific keys, with legacy `latest` fallback still present.
 
-## Next Task: Tenant-Isolation Hardening And Test Harness
+## Completed Task: Tenant-Isolation Hardening And Test Harness
 
 Objective: prove and harden that organization/workspace boundaries are enforced before managed multi-organization pilots progress.
 
-Scope:
+Completed scope:
 
 - Review every API route in `netlify/functions/api.ts`.
 - Identify how organization scope is derived for each route.
@@ -146,44 +153,49 @@ Scope:
 - Add a focused test harness or scriptable checks for cross-workspace isolation.
 - Document the test harness and its limits.
 
-Likely files to start with:
+Changed files:
 
-- `docs/MULTI_TENANT_SECURITY_CHECKLIST.md`
 - `netlify/functions/api.ts`
 - `src/App.tsx`
 - `src/offline.ts`
-- `src/types.ts`
-- `package.json` if a new test script is needed
-- possibly `scripts/` for a small local test harness
+- `package.json`
+- `scripts/tenant-isolation-check.mjs`
+- `docs/AI/TENANT_ISOLATION_REVIEW.md`
+- `docs/AI/DECKPLATING_PLAN.md`
+- `docs/AI/HANDOFF.md`
 
-Acceptance criteria:
+Verification results:
 
-- There is a route-by-route isolation review captured in code comments, tests, or docs.
-- Automated or scriptable checks cover at least:
-  - workspace A user token cannot load workspace B bootstrap/dashboard/leaderboard data
-  - workspace A admin token cannot load or mutate workspace B locations, units, members, check-ins, settings, or activity log
-  - check-in creation rejects unit/location IDs from another workspace
-  - check-in batch idempotency cannot return another workspace's batch
-  - indicator update cannot update another workspace's batch
-  - undo cannot void another workspace's check-ins
-  - admin correction cannot alter another workspace's check-ins, units, members, or locations
-  - device registration only registers against the selected active workspace
-  - identity change cannot cross workspaces
-  - setup-code activation cannot activate an expired, used, revoked, or wrong-hash code
-  - operator routes require central operator token and never return setup-code hashes or admin credential hashes
-- `npm run typecheck`, `npm run build`, and `git diff --check` pass.
-- Do not apply migrations or touch external services unless separately requested.
+- `npm run test:tenant-isolation` passed with 17 checks.
+- `npm run typecheck` passed.
+- `npm run build` passed. Vite emitted the existing large-chunk warning, but the build completed successfully.
+- `git diff --check` passed.
+- No migrations were added or applied.
+- No deployment, Netlify/Supabase settings, external services, or production data were touched.
 
-Potential implementation approach:
+Harness limits:
 
-- First make a table of routes and organization-scope source.
-- Add small helpers if needed to reduce mistakes:
-  - organization-scoped ID validators
-  - safe not-found response for cross-org UUIDs
-  - consistent organization-aware update/select wrappers
-- Add tests at the API level if practical without production data.
-- If a full local DB test harness is too heavy, add a scriptable static/contract check plus documented manual API checks, but prefer executable checks where feasible.
-- Do not install dependencies unless needed and approved.
+The tenant-isolation harness is a static/contract check. It verifies that the route guards, scoped query/update calls, related-ID validators, setup-code protections, operator hash omissions, schema support for organization-scoped check-in batch idempotency, and offline organization filters are present in the code. It does not replace a future live database integration suite that seeds two organizations and executes HTTP requests against Netlify Functions.
+
+## Next Task: Stage 2 Outside-Team Pilot Validation Preparation
+
+Objective: prepare the pilot materials and feedback loop for at least two outside RMTs to validate real use before full centralized multi-tenancy work continues.
+
+Scope:
+
+- Review the existing pilot packet, readiness guide, feedback template, support playbook, and this plan.
+- Update only the pilot documentation needed for a 2-4 week outside-team validation.
+- Ensure the packet asks for feedback on setup, offline behavior, check-in reliability, admin workflow, reporting, safe-use clarity, and any critical blockers.
+- Do not build new product features, deploy, alter external services, apply migrations, or access production data as part of this preparation task.
+
+Likely files to start with:
+
+- `docs/AI/DECKPLATING_PLAN.md`
+- `docs/AI/HANDOFF.md`
+- `docs/PILOT_PACKET.md`
+- `docs/PILOT_READINESS_GUIDE.md`
+- `docs/PILOT_FEEDBACK_TEMPLATE.md`
+- `docs/PILOT_SUPPORT_PLAYBOOK.md`
 
 ## Managed Distribution Roadmap
 
@@ -199,7 +211,7 @@ Stage 2 - outside-team pilot validation:
 - Objective: validate real RMT use before full centralized multi-tenancy.
 - Scope: at least two outside RMTs use current app for 2-4 weeks; collect feedback on setup, offline behavior, check-in reliability, admin workflow, and reporting.
 - Exit criteria: two outside teams complete pilot; critical blockers are documented or fixed; evidence supports centralized hosting as the right adoption path.
-- Current next work: tenant-isolation hardening before managed pilots progress.
+- Current next work: prepare the outside-team pilot packet and feedback/support loop now that tenant-isolation hardening is complete.
 
 Stage 3 - managed multi-organization service:
 
@@ -210,12 +222,12 @@ Stage 3 - managed multi-organization service:
 
 ## Known Security Work Still Required
 
-- PIN hashing currently needs organization context before production multi-organization use.
+- PIN hashing includes organization context, with a legacy beta hash upgrade path on successful PIN use.
 - Environment-wide admin fallback must be disabled before managed production; it may remain only for self-hosted/default-organization beta compatibility.
 - Organization-aware session refresh behavior needs hardening.
-- Offline pending batches must be reviewed for organization partitioning and identity-change blocking across organizations.
+- Offline pending batches are partitioned for active sync/count/indicator paths by organization and team member; a future IndexedDB schema migration can add a dedicated organization index if volume requires it.
 - Backup/export/delete boundaries must become organization-specific.
-- Tenant-isolation tests must pass before a managed pilot with real outside teams.
+- The static tenant-isolation harness passes; a future live two-organization API integration suite is still recommended before production managed scale.
 
 ## Validation Pattern For Future Changes
 
