@@ -481,14 +481,12 @@ function WorkspaceEntry({
   onBack,
   onWorkspace,
   onAdminToken,
-  onOperator,
 }: {
   workspace: WorkspaceContext | null;
   teamMembers: TeamMember[];
   onBack: () => void;
   onWorkspace: (workspace: WorkspaceContext | null) => void;
   onAdminToken: (token: string) => void;
-  onOperator: () => void;
 }) {
   const [mode, setMode] = useState<'choose' | 'activate'>('choose');
   const [workspaceSlug, setWorkspaceSlug] = useState('');
@@ -597,9 +595,6 @@ function WorkspaceEntry({
             Back to names
           </button>
         )}
-        <button className="secondary" type="button" onClick={onOperator}>
-          System administrator
-        </button>
         <div className="tab-row">
           <button className={mode === 'choose' ? 'active' : ''} onClick={() => setMode('choose')}>
             Select workspace
@@ -3649,7 +3644,6 @@ export default function App() {
           teamMembers={teamMembers}
           onBack={() => setShowWorkspaceEntry(false)}
           onWorkspace={setActiveWorkspace}
-          onOperator={openOperatorConsole}
           onAdminToken={() => {
             setShowAdminSetup(true);
           }}
