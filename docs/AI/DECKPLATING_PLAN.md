@@ -2,7 +2,7 @@
 
 ## Current Milestone
 
-Exact current stopping point: the repository is on `main` after a successful live managed dry run against `https://deckplating.netlify.app`. The hosted app now supports protected operator workspace setup, tenant-scoped local onboarding, and first-use check-ins on the real managed stack. The user remains the system administrator during the small-command test phase.
+Exact current stopping point: the repository is on `main` after completing **Managed Pilot Administration v1** for `https://deckplating.netlify.app`. The hosted app now supports protected central-operator bootstrap, reachable in-app system administration, workspace suspend/reactivate, emergency local-admin recovery, local roster grant-access guidance, and local team-member PIN reset with device revocation. The user remains the central operator during the small-command managed pilot phase.
 
 Completed steps:
 
@@ -39,10 +39,17 @@ Completed steps:
   - Fixed and redeployed one setup-code response-shape defect found during the dry run.
   - Revoked the two unused diagnostic setup codes after validation.
   - Documented the current managed-pilot feedback loop, including the fact that feedback capture still uses the setup-site Netlify Form rather than an in-app hosted-app entry point.
+- Completed Managed Pilot Administration v1:
+  - Added a local `scripts/bootstrap-central-operator.sh` helper that securely prompts for a new central operator passphrase, hashes it locally, and updates `CENTRAL_OPERATOR_PASSPHRASE_HASH` on the linked Netlify production site without printing secrets.
+  - Made `System Administration` reachable from normal `Settings` and reliable through `?operator=1` without clearing the normal stored user identity.
+  - Added operator workspace suspend/reactivate and emergency local-admin passphrase recovery controls.
+  - Bound user and admin sessions to live workspace state so suspend/reactivate invalidates existing sessions.
+  - Added local-admin `Reset PIN and revoke devices` for same-workspace roster members.
+  - Added `docs/ADMINISTRATOR_RUNBOOK.md` for exact pilot administration procedures.
 
 In-progress step: none.
 
-Next exact task: begin **Managed Production Guardrails v1**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/CENTRAL_OPERATOR_GUIDE.md`, `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`, `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`, `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`, `netlify/functions/api.ts`, and `src/App.tsx`. Then disable or explicitly gate the environment-wide admin fallback for managed hosted production, add the smallest missing operator-side containment control for pilot support, and tighten the operator/support runbook around passphrase rotation, dry-run cleanup, live incident recovery, and managed feedback collection.
+Next exact task: begin **Managed Pilot Self-Service Hardening v1**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/ADMINISTRATOR_RUNBOOK.md`, `docs/CENTRAL_OPERATOR_GUIDE.md`, `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`, `netlify/functions/api.ts`, `src/App.tsx`, and `scripts/tenant-isolation-check.mjs`. Then explicitly gate or remove the environment-wide admin fallback for managed hosted production, tighten suspended-workspace UX around stale cached sessions, and add only the smallest remaining safeguards needed before a broader self-service managed rollout.
 
 Deferred/out-of-scope items:
 

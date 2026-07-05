@@ -121,6 +121,15 @@ const workspaceParam = () => {
   return params.get('workspace') || params.get('org') || params.get('organization');
 };
 
+const operatorParamEnabled = () => new URLSearchParams(window.location.search).get('operator') === '1';
+
+const setOperatorQueryParam = (enabled: boolean) => {
+  const url = new URL(window.location.href);
+  if (enabled) url.searchParams.set('operator', '1');
+  else url.searchParams.delete('operator');
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+};
+
 const looksLikeUuid = (value: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
@@ -645,7 +654,7 @@ function OnboardingChecklist({ onboarding }: { onboarding: OnboardingSummary | n
   );
 }
 
-function OperatorConsole({ onBack }: { onBack: () => void }) {
+function OperatorConsole({ onClose }: { onClose: () => void }) {
   const [token, setToken] = useState(sessionStorage.getItem(operatorKey) ?? '');
   const [passphrase, setPassphrase] = useState('');
   const [organizations, setOrganizations] = useState<OperatorOrganization[]>([]);
@@ -654,6 +663,7 @@ function OperatorConsole({ onBack }: { onBack: () => void }) {
   const [organizationForm, setOrganizationForm] = useState({ name: '', slug: '' });
   const [setupForms, setSetupForms] = useState<Record<string, { label: string; expiresInDays: string }>>({});
   const [lastIssuedCode, setLastIssuedCode] = useState<Record<string, { code: string; link: string }>>({});
+  const [recoveryForms, setRecoveryForms] = useState<Record<string, { passphrase: string; confirmPassphrase: string }>>({});
 
   async function loadOrganizations(currentToken = token) {
     const result = await api<{ organizations: OperatorOrganization[] }>('/api/operator/organizations', {
@@ -741,6 +751,66 @@ function OperatorConsole({ onBack }: { onBack: () => void }) {
     }
   }
 
+  async function setWorkspaceActiveState(organization: OperatorOrganization, nextActive: boolean) {
+    setError('');
+    setMessage('');
+    const actionLabel = nextActive ? 'reactivate' : 'suspend';
+    const confirmation = window.prompt(
+      `${nextActive ? 'Reactivating' : 'Suspending'} ${organization.name} will ${
+        nextActive ? 'require every admin and member to sign in again.' : 'block workspace resolution, activation, device registration, and current member/admin sessions.'
+      }\n\nType the workspace slug "${organization.slug}" to ${actionLabel} this workspace.`,
+      '',
+    );
+    if (confirmation !== organization.slug) {
+      setMessage(`Workspace ${actionLabel} cancelled.`);
+      return;
+    }
+    try {
+      await api(`/api/operator/organizations/${organization.id}/status`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ active: nextActive }),
+      });
+      setMessage(`Workspace ${nextActive ? 'reactivated' : 'suspended'}.`);
+      await loadOrganizations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Workspace ${actionLabel} failed.`);
+    }
+  }
+
+  async function recoverLocalAdminPassphrase(organization: OperatorOrganization) {
+    setError('');
+    setMessage('');
+    const form = recoveryForms[organization.id] ?? { passphrase: '', confirmPassphrase: '' };
+    if (form.passphrase.length < 8) {
+      setError('Recovery passphrase must be at least 8 characters.');
+      return;
+    }
+    if (form.passphrase !== form.confirmPassphrase) {
+      setError('Recovery passphrase confirmation does not match.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Set a new temporary local admin passphrase for ${organization.name}?\n\nThis is an emergency recovery action. Existing local admin sessions for this workspace will stop working. Deliver the temporary passphrase directly to the approved local lead.`,
+    );
+    if (!confirmed) return;
+    try {
+      await api(`/api/operator/organizations/${organization.id}/admin-passphrase`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ passphrase: form.passphrase }),
+      });
+      setRecoveryForms((current) => ({
+        ...current,
+        [organization.id]: { passphrase: '', confirmPassphrase: '' },
+      }));
+      setMessage('Temporary local admin recovery passphrase saved.');
+      await loadOrganizations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Local admin recovery failed.');
+    }
+  }
+
   useEffect(() => {
     if (!token) return;
     void loadOrganizations(token).catch((err) => {
@@ -760,8 +830,8 @@ function OperatorConsole({ onBack }: { onBack: () => void }) {
               <input type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} />
             </label>
             <button className="primary">Unlock operator console</button>
-            <button className="secondary" type="button" onClick={onBack}>
-              Back
+            <button className="secondary" type="button" onClick={onClose}>
+              Back and lock
             </button>
           </form>
           {error && <p className="error">{error}</p>}
@@ -775,17 +845,15 @@ function OperatorConsole({ onBack }: { onBack: () => void }) {
       <div className="screen-title">
         <div>
           <p className="eyebrow">System administrator</p>
-          <h1>Workspace approvals</h1>
+          <h1>System Administration</h1>
         </div>
         <button
           className="secondary"
           onClick={() => {
-            sessionStorage.removeItem(operatorKey);
-            setToken('');
-            setOrganizations([]);
+            onClose();
           }}
         >
-          Lock
+          Back and lock
         </button>
       </div>
       {message && <p className="notice">{message}</p>}
@@ -818,7 +886,9 @@ function OperatorConsole({ onBack }: { onBack: () => void }) {
                   <p className="eyebrow">{organization.slug}</p>
                   <h2>{organization.name}</h2>
                 </div>
-                <span className="status-pill">{organization.onboarding?.readyForCheckins ? 'Ready' : 'Setup in progress'}</span>
+                <span className="status-pill">
+                  {organization.active ? (organization.onboarding?.readyForCheckins ? 'Active and ready' : 'Active setup in progress') : 'Suspended'}
+                </span>
               </div>
               <dl className="mission-stats">
                 <div>
@@ -839,8 +909,9 @@ function OperatorConsole({ onBack }: { onBack: () => void }) {
                 </div>
               </dl>
               <p className="muted">
-                Admin passphrase: {organization.onboarding?.organizationAdminConfigured ? 'configured' : 'not configured'}.
-                Setup codes: {organization.setupCodeSummary.activeUnused} active unused, {organization.setupCodeSummary.used} used.
+                Status: {organization.active ? 'active' : 'suspended'}. Admin passphrase:{' '}
+                {organization.onboarding?.organizationAdminConfigured ? 'configured' : 'not configured'}. Setup codes:{' '}
+                {organization.setupCodeSummary.activeUnused} active unused, {organization.setupCodeSummary.used} used.
               </p>
               <div className="filters">
                 <input
@@ -866,6 +937,50 @@ function OperatorConsole({ onBack }: { onBack: () => void }) {
                 />
                 <button className="secondary" onClick={() => void createSetupCode(organization)}>
                   Issue setup code
+                </button>
+                <button
+                  className={organization.active ? 'secondary danger-text' : 'secondary'}
+                  onClick={() => void setWorkspaceActiveState(organization, !organization.active)}
+                >
+                  {organization.active ? 'Suspend workspace' : 'Reactivate workspace'}
+                </button>
+              </div>
+              <div className="stack">
+                <p className="muted">
+                  Emergency local admin recovery: set a temporary workspace-admin passphrase, then deliver it directly to the approved local lead.
+                </p>
+                <input
+                  type="password"
+                  placeholder="Temporary recovery passphrase"
+                  value={recoveryForms[organization.id]?.passphrase ?? ''}
+                  minLength={8}
+                  onChange={(event) =>
+                    setRecoveryForms((current) => ({
+                      ...current,
+                      [organization.id]: {
+                        ...(current[organization.id] ?? { passphrase: '', confirmPassphrase: '' }),
+                        passphrase: event.target.value,
+                      },
+                    }))
+                  }
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm recovery passphrase"
+                  value={recoveryForms[organization.id]?.confirmPassphrase ?? ''}
+                  minLength={8}
+                  onChange={(event) =>
+                    setRecoveryForms((current) => ({
+                      ...current,
+                      [organization.id]: {
+                        ...(current[organization.id] ?? { passphrase: '', confirmPassphrase: '' }),
+                        confirmPassphrase: event.target.value,
+                      },
+                    }))
+                  }
+                />
+                <button className="secondary" onClick={() => void recoverLocalAdminPassphrase(organization)}>
+                  Set temporary recovery passphrase
                 </button>
               </div>
               {issued && (
@@ -903,7 +1018,7 @@ function OperatorConsole({ onBack }: { onBack: () => void }) {
       </section>
       <nav className="bottom-nav">
         <button className="active">Operator</button>
-        <button onClick={onBack}>Back to app entry</button>
+        <button onClick={onClose}>Back and lock</button>
       </nav>
     </main>
   );
@@ -2568,6 +2683,20 @@ function AdminScreen({
     load();
   }
 
+  async function resetMemberPin(memberId: string, memberName: string) {
+    const confirmed = window.confirm(
+      `Reset PIN and revoke devices for ${memberName}?\n\nThis clears the current PIN, disables that member's existing devices in this workspace, and forces the member to choose a new PIN the next time they select their name.`,
+    );
+    if (!confirmed) return;
+    await api(`/api/admin/team-members/${memberId}/reset-pin`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    setMessage(`PIN reset and devices revoked for ${memberName}.`);
+    refresh();
+    await load();
+  }
+
   async function loadActivity() {
     const params = new URLSearchParams();
     if (activityFilters.from) params.set('from', activityFilters.from);
@@ -2850,6 +2979,10 @@ function AdminScreen({
 
       <section className="panel">
         <h2>Create team member</h2>
+        <p className="muted">
+          This is the current grant-access workflow: create the roster entry here, send the workspace link, then the member selects
+          their name and creates their own PIN on first sign-in.
+        </p>
         <form onSubmit={createMember} className="stack">
           <input placeholder="Name" value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} />
           <input placeholder="Role" value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} />
@@ -2913,11 +3046,19 @@ function AdminScreen({
         ))}
         {data?.teamMembers.map((member) => (
           <article key={member.id} className="admin-row">
-            <input defaultValue={member.name} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { name: event.target.value })} />
-            <input defaultValue={member.role ?? ''} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { role: event.target.value })} />
-            <button className="secondary" onClick={() => patch(`/api/admin/team-members/${member.id}`, { active: !member.active })}>
-              {member.active ? 'Deactivate' : 'Activate'}
-            </button>
+            <div className="stack">
+              <input defaultValue={member.name} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { name: event.target.value })} />
+              <input defaultValue={member.role ?? ''} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { role: event.target.value })} />
+              <p className="muted">{member.active ? 'Active roster entry.' : 'Inactive roster entry.'}</p>
+            </div>
+            <div className="stack">
+              <button className="secondary" onClick={() => patch(`/api/admin/team-members/${member.id}`, { active: !member.active })}>
+                {member.active ? 'Deactivate' : 'Activate'}
+              </button>
+              <button className="secondary danger-text" onClick={() => void resetMemberPin(member.id, member.name)}>
+                Reset PIN and revoke devices
+              </button>
+            </div>
           </article>
         ))}
       </section>
@@ -2932,11 +3073,13 @@ function Settings({
   members,
   pendingCount,
   onIdentity,
+  onOpenSystemAdministration,
 }: {
   identity: Identity;
   members: TeamMember[];
   pendingCount: number;
   onIdentity: (identity: Identity) => void;
+  onOpenSystemAdministration: () => void;
 }) {
   const [pin, setPin] = useState('');
   const [newMember, setNewMember] = useState(members[0]?.id ?? '');
@@ -3020,6 +3163,15 @@ function Settings({
           ))}
         </ul>
       </section>
+      <section className="panel">
+        <h2>System Administration</h2>
+        <p className="muted">
+          Locked central operator console for workspace approvals, emergency recovery actions, and pilot workspace status.
+        </p>
+        <button className="secondary" onClick={onOpenSystemAdministration}>
+          Open system administration
+        </button>
+      </section>
     </main>
   );
 }
@@ -3040,9 +3192,7 @@ export default function App() {
   });
   const [showWorkspaceEntry, setShowWorkspaceEntry] = useState(false);
   const [showAdminSetup, setShowAdminSetup] = useState(() => Boolean(sessionStorage.getItem('deckplate.admin')));
-  const [showOperatorConsole, setShowOperatorConsole] = useState(
-    () => Boolean(sessionStorage.getItem(operatorKey)) || new URLSearchParams(window.location.search).get('operator') === '1',
-  );
+  const [showOperatorConsole, setShowOperatorConsole] = useState(() => Boolean(sessionStorage.getItem(operatorKey)) || operatorParamEnabled());
   const [identity, setIdentity] = useState<Identity | null>(() => {
     const stored = localStorage.getItem(identityKey);
     if (!stored) return null;
@@ -3084,9 +3234,22 @@ export default function App() {
       }
     }
     sessionStorage.removeItem('deckplate.admin');
+    sessionStorage.removeItem(operatorKey);
     setShowAdminSetup(false);
     setShowOperatorConsole(false);
+    setOperatorQueryParam(false);
     void loadTeamMembers(normalized);
+  }
+
+  function openOperatorConsole() {
+    setOperatorQueryParam(true);
+    setShowOperatorConsole(true);
+  }
+
+  function closeOperatorConsole() {
+    sessionStorage.removeItem(operatorKey);
+    setShowOperatorConsole(false);
+    setOperatorQueryParam(false);
   }
 
   async function loadWorkspaceFromUrl() {
@@ -3301,6 +3464,9 @@ export default function App() {
 
   useEffect(() => {
     const requestedWorkspace = workspaceParam();
+    if (operatorParamEnabled()) {
+      setShowOperatorConsole(true);
+    }
     if (requestedWorkspace) {
       void loadWorkspaceFromUrl();
       return;
@@ -3341,11 +3507,11 @@ export default function App() {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [screen]);
 
+  if (showOperatorConsole) {
+    return <OperatorConsole onClose={closeOperatorConsole} />;
+  }
   if (error) return <main className="center-shell"><p className="error">{error}</p></main>;
   if (!identity) {
-    if (showOperatorConsole) {
-      return <OperatorConsole onBack={() => setShowOperatorConsole(false)} />;
-    }
     if (showAdminSetup) {
       return (
         <>
@@ -3374,7 +3540,7 @@ export default function App() {
           teamMembers={teamMembers}
           onBack={() => setShowWorkspaceEntry(false)}
           onWorkspace={setActiveWorkspace}
-          onOperator={() => setShowOperatorConsole(true)}
+          onOperator={openOperatorConsole}
           onAdminToken={() => {
             setShowAdminSetup(true);
           }}
@@ -3469,7 +3635,15 @@ export default function App() {
           <Scoreboard identity={identity} gamificationTone={bootstrap.gamificationTone ?? 'professional'} />
         )
       )}
-      {screen === 'settings' && <Settings identity={identity} members={bootstrap.teamMembers} pendingCount={pendingCount} onIdentity={handleIdentity} />}
+      {screen === 'settings' && (
+        <Settings
+          identity={identity}
+          members={bootstrap.teamMembers}
+          pendingCount={pendingCount}
+          onIdentity={handleIdentity}
+          onOpenSystemAdministration={openOperatorConsole}
+        />
+      )}
       <nav className="bottom-nav">
         {[
           ['checkin', 'Check In'],

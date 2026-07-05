@@ -32,17 +32,28 @@ const indicatorRoute = section(api, 'const indicatorMatch', "if (method === 'GET
 const operatorRoutes = section(api, "if (method === 'GET' && path === '/operator/organizations')", "if (method === 'GET' && path === '/workspaces/resolve')");
 const operatorOrganizations = section(api, "if (method === 'GET' && path === '/operator/organizations')", "if (method === 'POST' && path === '/operator/organizations')");
 const operatorSetupCodeCreate = section(api, 'const operatorSetupCodeMatch', 'const operatorCodeRevokeMatch');
-const operatorSetupCodeRevoke = section(api, 'const operatorCodeRevokeMatch', "if (method === 'GET' && path === '/workspaces/resolve')");
+const operatorSetupCodeRevoke = section(api, 'const operatorCodeRevokeMatch', 'const operatorOrganizationStatusMatch');
+const operatorStatusRoute = section(api, 'const operatorOrganizationStatusMatch', 'const operatorAdminRecoveryMatch');
+const operatorAdminRecovery = section(api, 'const operatorAdminRecoveryMatch', "if (method === 'GET' && path === '/workspaces/resolve')");
 const setupActivation = section(api, "if (method === 'POST' && path === '/workspaces/activate')", "if (method === 'POST' && path === '/admin/login')");
 const adminRoutes = section(api, "const adminContext = path.startsWith('/admin/')", 'return json(404');
 const adminCorrection = section(api, 'const adminCheckinMatch', "if (method === 'POST' && path === '/admin/locations')");
 const adminLocations = section(api, "if (method === 'POST' && path === '/admin/locations')", "if (method === 'POST' && path === '/admin/units')");
 const adminUnits = section(api, "if (method === 'POST' && path === '/admin/units')", "if (method === 'POST' && path === '/admin/team-members')");
+const adminMemberReset = section(api, 'const memberResetPinMatch', 'return json(404');
 const registerDevice = section(api, 'async function registerDevice', 'async function route');
 const changeIdentity = section(api, "if (method === 'POST' && path === '/device/change-identity')", "if (method === 'GET' && path === '/nearby-locations')");
 
 check('PIN hashes include organization context with legacy upgrade path', has(api, /const pinHash = .*organizationId/s) && has(api, 'legacyPinHash') && has(registerDevice, "member.pin_hash === oldPinHash"));
 check('Signed user sessions derive organization scope server-side', has(userToken, 'parsed.organizationId') && has(userToken, 'scoped(baseQuery, organizationId)') && has(userToken, 'member.organization_id !== organizationId'));
+check(
+  'User and admin sessions are invalidated when workspace status changes',
+  has(api, 'organizationSessionState') &&
+    has(api, 'organizationUpdatedAt') &&
+    has(userToken, 'organizationState.updated_at !== (parsed.organizationUpdatedAt ?? null)') &&
+    has(api, 'adminCredentialUpdatedAt') &&
+    has(api, "organizationState.updated_at !== (parsed.organizationUpdatedAt ?? null)")
+);
 check('Bootstrap/dashboard/leaderboard use token organization scope', has(api, "path === '/bootstrap'") && has(api, 'getCoverage(user.organizationId)') && has(api, "path === '/dashboard'") && has(api, "path === '/leaderboard'") && has(section(api, "path === '/leaderboard'", "if (method === 'POST' && path === '/workspaces/activate')"), 'user.organizationId'));
 check('Check-in creation validates units and idempotency inside organization', has(checkinRoute, 'scoped(unitsQuery, user.organizationId)') && has(checkinRoute, 'scoped(batchLookupQuery, user.organizationId)') && has(checkinRoute, 'withOrganization({') && has(checkinRoute, 'scoped(existingQuery, user.organizationId)') && has(checkinRoute, 'scoped(retryQuery, user.organizationId)'));
 check('Check-in scoring history stays organization scoped', has(checkinRoute, 'scoped(recentQuery, user.organizationId)') && has(checkinRoute, 'scoped(priorQuery, user.organizationId)'));
@@ -65,9 +76,30 @@ check(
     !has(operatorSetupCodeCreate, 'passphrase_hash') &&
     !has(operatorSetupCodeRevoke, '.select(\'code_hash') &&
     !has(operatorSetupCodeRevoke, 'passphrase_hash') &&
-    !has(operatorRoutes, 'organization_admin_credentials'),
+    !has(operatorStatusRoute, 'passphrase_hash') &&
+    !has(operatorAdminRecovery, '.select(\'passphrase_hash'),
+);
+check(
+  'Operator workspace lifecycle controls update only intended workspace state',
+  has(operatorStatusRoute, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/status$/)") &&
+    has(operatorStatusRoute, ".update({ active: body.active })") &&
+    has(operatorStatusRoute, ".eq('id', organizationId)")
+);
+check(
+  'Operator admin recovery rotates only the selected workspace admin hash',
+  has(operatorAdminRecovery, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/admin-passphrase$/)") &&
+    has(operatorAdminRecovery, 'organizationAdminHash(organizationId, body.passphrase)') &&
+    has(operatorAdminRecovery, "onConflict: 'organization_id'")
 );
 check('Setup-code activation rejects invalid/expired/used/revoked codes', has(api, 'async function verifySetupCode') && has(api, ".eq('code_hash', hash)") && has(api, ".eq('active', true)") && has(api, 'data.used_at') && has(api, 'data.expires_at && data.expires_at < now') && has(setupActivation, 'markSetupCodeUsed'));
+check(
+  'Local admin PIN reset clears the member PIN and revokes only same-workspace devices',
+  has(api, "path.match(/^\\/admin\\/team-members\\/([^/]+)\\/reset-pin$/)") &&
+    has(api, 'pin_hash: null') &&
+    has(api, 'active: false') &&
+    has(api, "eq('team_member_id', memberId)") &&
+    has(api, 'scoped(deviceUpdate, organizationId)')
+);
 check('Offline pending batches are partitioned by organization', has(files.offline, 'getPendingBatches(teamMemberId?: string, organizationId?: string | null)') && has(files.offline, '(batch.organizationId ?? null) !== (organizationId ?? null)') && has(files.app, 'getPendingBatches(currentIdentity.teamMemberId, currentIdentity.organizationId ?? null)') && has(files.app, 'countBlockingPendingBatches(currentIdentity.teamMemberId, currentIdentity.organizationId ?? null)'));
 
 const failed = checks.filter((candidate) => !candidate.passed);

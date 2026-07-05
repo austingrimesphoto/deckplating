@@ -2,19 +2,26 @@
 
 Branch: `main`
 
-`git status --short` at managed pilot dry-run start: clean.
+`git status --short` at managed-pilot administration start: clean.
 
 What changed in this handoff session:
 
-- Completed the real managed dry run against `https://deckplating.netlify.app`.
-- Linked the repo to the live Netlify site `deckplating` and confirmed the live backend was the real Supabase project `deckplating` (`vfjqnuwbkjdwvoaxepfi`).
-- Enabled central operator access on the live host by setting `CENTRAL_OPERATOR_PASSPHRASE_HASH` in Netlify production and redeploying.
-- Ran the hosted flow live through operator login, workspace creation, setup-code issuance, workspace activation, local admin setup, first device registration, bootstrap, and a real check-in.
-- Found and fixed one production defect: setup-code creation returned the plaintext code at `setupCode.code` while the new operator console expected `code`.
-- Redeployed the fix, reran the live dry run successfully, and revoked the two unused diagnostic setup codes.
-- Added a durable dry-run record and updated the operator/onboarding docs with exact live procedure and failure-recovery notes.
-- Added a managed-pilot feedback-loop note so the next session does not assume the old self-hosted feedback path still matches the current hosted model.
-- Updated the durable plan to mark the dry-run milestone complete and move the next work to managed-production guardrails.
+- Completed **Managed Pilot Administration v1** for `https://deckplating.netlify.app`.
+- Added `scripts/bootstrap-central-operator.sh` so the central operator passphrase can be securely bootstrapped or rotated from the linked repo without printing the plaintext passphrase or its SHA-256 hash.
+- Added operator workspace lifecycle controls in `netlify/functions/api.ts` and `src/App.tsx`:
+  - suspend workspace
+  - reactivate workspace
+  - emergency local-admin passphrase recovery
+- Bound user and admin sessions to live workspace state so suspended workspaces block:
+  - workspace resolution
+  - setup activation
+  - device registration
+  - existing member/admin sessions
+- Added local-admin `Reset PIN and revoke devices` for same-workspace roster members.
+- Made `System Administration` reachable from normal `Settings` and reliable via `?operator=1` without clearing the normal stored user identity.
+- Added `docs/ADMINISTRATOR_RUNBOOK.md`.
+- Updated `scripts/tenant-isolation-check.mjs` for the new authorization and inactive-workspace guarantees.
+- Updated the durable plan to mark the pilot-administration milestone complete and move the next work to managed self-service hardening.
 
 Working tree expectation after the handoff commit: clean.
 
@@ -24,10 +31,9 @@ Changed files in the milestone:
 
 - `netlify/functions/api.ts`
 - `src/App.tsx`
-- `docs/CENTRAL_OPERATOR_GUIDE.md`
-- `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`
-- `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`
-- `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`
+- `scripts/bootstrap-central-operator.sh`
+- `scripts/tenant-isolation-check.mjs`
+- `docs/ADMINISTRATOR_RUNBOOK.md`
 - `docs/AI/DECKPLATING_PLAN.md`
 - `docs/AI/HANDOFF.md`
 
@@ -47,14 +53,13 @@ git diff --check
 
 Exact next task:
 
-Follow `docs/AI/DECKPLATING_PLAN.md`, section `Next Task: Managed Production Guardrails v1`. Start by reading `docs/MANAGED_PILOT_FEEDBACK_LOOP.md` along with the current plan, handoff, operator guide, and onboarding docs. Then disable or explicitly gate the environment-wide admin fallback for managed hosted production, add the smallest missing operator-side containment control for pilot support, and tighten the operator/support runbook around passphrase rotation, dry-run cleanup, live incident recovery, and managed feedback collection.
+Follow `docs/AI/DECKPLATING_PLAN.md`, section `Next exact task`. Start by reading the current plan, handoff, runbook, operator guide, onboarding doc, `netlify/functions/api.ts`, `src/App.tsx`, and `scripts/tenant-isolation-check.mjs`. Then explicitly gate or remove the environment-wide admin fallback for managed hosted production, tighten suspended-workspace UX around stale cached sessions, and add only the smallest remaining safeguards needed before broader managed self-service.
 
 Current readiness assessment for a real outside chaplain:
 
-- close, but not yet a true one-link self-start experience
-- the hosted app is live and the managed onboarding flow works end to end
-- another chaplain could test it now with system-administrator involvement
-- the main remaining gaps before a cleaner independent pilot handoff are:
+- the hosted app is now usable for a small managed pilot through Deckplating itself
+- the central operator can create a workspace, issue/revoke setup codes, suspend/reactivate a pilot, recover a forgotten local-admin passphrase, and leave routine roster/PIN handling to the local lead
+- the main remaining gaps before broader self-service rollout are:
   - managed-host admin fallback guardrails
-  - operator containment controls
+  - cleaner stale-session UX when a workspace is suspended
   - feedback capture still lives on the setup-site form rather than inside `deckplating.netlify.app`

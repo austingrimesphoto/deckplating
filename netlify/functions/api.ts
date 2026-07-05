@@ -9,6 +9,8 @@ type GamificationTone = 'professional' | 'friendly' | 'banter';
 type AdminContext = {
   organizationId: string | null;
   authMethod: 'organization' | 'environment' | 'legacy';
+  organizationUpdatedAt: string | null;
+  adminCredentialUpdatedAt: string | null;
 };
 type OperatorContext = {
   authMethod: 'central_operator';
@@ -185,6 +187,29 @@ async function validateTeamMemberReferences(ids: unknown[], organizationId: stri
 const organizationAdminHash = (organizationId: string, passphrase: string) =>
   sha256(`${organizationId}:admin:${passphrase}`);
 
+async function organizationSessionState(organizationId: string | null) {
+  if (!organizationId || !(await organizationSchemaEnabled())) return null;
+  const { data, error } = await supabase
+    .from('organizations')
+    .select('id, active, updated_at')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (error || !data || !data.active) return null;
+  return data as { id: string; active: boolean; updated_at: string };
+}
+
+async function organizationAdminCredentialState(organizationId: string | null) {
+  if (!organizationId || !(await organizationAdminSchemaEnabled())) return null;
+  const { data, error } = await supabase
+    .from('organization_admin_credentials')
+    .select('id, active, updated_at')
+    .eq('organization_id', organizationId)
+    .eq('active', true)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as { id: string; active: boolean; updated_at: string };
+}
+
 const hmac = (value: string) =>
   crypto.createHmac('sha256', adminSessionSecret).update(value).digest('hex');
 
@@ -306,11 +331,16 @@ async function getWorkspaceOnboardingSummary(organizationId: string | null): Pro
   };
 }
 
-const createAdminToken = (context: AdminContext) => {
+const createAdminToken = async (context: Pick<AdminContext, 'organizationId' | 'authMethod'>) => {
+  const organizationState = await organizationSessionState(context.organizationId);
+  const adminCredentialState =
+    context.authMethod === 'organization' ? await organizationAdminCredentialState(context.organizationId) : null;
   const payload = base64url(
     JSON.stringify({
       organizationId: context.organizationId,
       authMethod: context.authMethod,
+      organizationUpdatedAt: organizationState?.updated_at ?? null,
+      adminCredentialUpdatedAt: adminCredentialState?.updated_at ?? null,
       expires: Date.now() + 1000 * 60 * 60 * 8,
     }),
   );
@@ -330,10 +360,24 @@ async function requireAdmin(event: HandlerEvent): Promise<AdminContext | null> {
   const legacyExpires = Number(payloadOrExpires);
   if (Number.isFinite(legacyExpires)) {
     if (legacyExpires < Date.now()) return null;
-    return { organizationId: await currentOrganizationId(), authMethod: 'legacy' };
+    const organizationId = await currentOrganizationId();
+    const organizationState = await organizationSessionState(organizationId);
+    if (organizationId && !organizationState) return null;
+    return {
+      organizationId,
+      authMethod: 'legacy',
+      organizationUpdatedAt: organizationState?.updated_at ?? null,
+      adminCredentialUpdatedAt: null,
+    };
   }
 
-  let parsed: { organizationId?: string | null; authMethod?: AdminContext['authMethod']; expires?: number };
+  let parsed: {
+    organizationId?: string | null;
+    authMethod?: AdminContext['authMethod'];
+    organizationUpdatedAt?: string | null;
+    adminCredentialUpdatedAt?: string | null;
+    expires?: number;
+  };
   try {
     parsed = JSON.parse(fromBase64url(payloadOrExpires));
   } catch {
@@ -341,9 +385,23 @@ async function requireAdmin(event: HandlerEvent): Promise<AdminContext | null> {
   }
   if (!parsed.expires || parsed.expires < Date.now()) return null;
   if (parsed.organizationId && !isUuid(parsed.organizationId)) return null;
+  const organizationId = parsed.organizationId ?? (await currentOrganizationId());
+  const organizationState = await organizationSessionState(organizationId);
+  if (organizationId && (!organizationState || organizationState.updated_at !== (parsed.organizationUpdatedAt ?? null))) {
+    return null;
+  }
+  if (parsed.authMethod === 'organization') {
+    const credentialState = await organizationAdminCredentialState(organizationId);
+    if (!credentialState || credentialState.updated_at !== (parsed.adminCredentialUpdatedAt ?? null)) {
+      return null;
+    }
+  }
   return {
-    organizationId: parsed.organizationId ?? (await currentOrganizationId()),
+    organizationId,
     authMethod: parsed.authMethod === 'organization' ? 'organization' : 'environment',
+    organizationUpdatedAt: organizationState?.updated_at ?? null,
+    adminCredentialUpdatedAt:
+      parsed.authMethod === 'organization' ? parsed.adminCredentialUpdatedAt ?? null : null,
   };
 }
 
@@ -351,7 +409,7 @@ async function tryOrganizationAdminLogin(organizationId: string | null, passphra
   if (!organizationId || !(await organizationAdminSchemaEnabled())) return null;
   const { data, error } = await supabase
     .from('organization_admin_credentials')
-    .select('id, passphrase_hash')
+    .select('id, passphrase_hash, updated_at')
     .eq('organization_id', organizationId)
     .eq('active', true)
     .maybeSingle();
@@ -362,12 +420,22 @@ async function tryOrganizationAdminLogin(organizationId: string | null, passphra
     .update({ last_used_at: new Date().toISOString() })
     .eq('id', data.id)
     .eq('organization_id', organizationId);
-  return { organizationId, authMethod: 'organization' };
+  return {
+    organizationId,
+    authMethod: 'organization',
+    organizationUpdatedAt: null,
+    adminCredentialUpdatedAt: data.updated_at ?? null,
+  };
 }
 
 function tryEnvironmentAdminLogin(passphrase: string, organizationId: string | null): AdminContext | null {
   if (!adminPassphraseHash || sha256(passphrase) !== adminPassphraseHash) return null;
-  return { organizationId, authMethod: 'environment' };
+  return {
+    organizationId,
+    authMethod: 'environment',
+    organizationUpdatedAt: null,
+    adminCredentialUpdatedAt: null,
+  };
 }
 
 const setupCodeHash = (code: string) => sha256(`setup-code:${code.trim()}`);
@@ -444,12 +512,14 @@ const markSetupCodeUsed = async (id: string, organizationId: string, usedByLabel
  * Legacy tokens are still accepted above so current beta sessions do not break.
  * New logins receive a signed JSON token with organization scope.
  */
-const createUserToken = (teamMemberId: string, deviceToken: string, organizationId: string | null) => {
+const createUserToken = async (teamMemberId: string, deviceToken: string, organizationId: string | null) => {
+  const organizationState = await organizationSessionState(organizationId);
   const payload = base64url(
     JSON.stringify({
       teamMemberId,
       deviceHash: sha256(deviceToken),
       organizationId,
+      organizationUpdatedAt: organizationState?.updated_at ?? null,
       expires: Date.now() + 1000 * 60 * 60 * 24 * 30,
     }),
   );
@@ -467,7 +537,13 @@ async function requireUser(event: HandlerEvent) {
   if (signature.length !== expected.length) return null;
   if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
 
-  let parsed: { teamMemberId?: string; deviceHash?: string; organizationId?: string | null; expires?: number };
+  let parsed: {
+    teamMemberId?: string;
+    deviceHash?: string;
+    organizationId?: string | null;
+    organizationUpdatedAt?: string | null;
+    expires?: number;
+  };
   try {
     parsed = JSON.parse(fromBase64url(payload));
   } catch {
@@ -476,6 +552,10 @@ async function requireUser(event: HandlerEvent) {
 
   if (!parsed.teamMemberId || !parsed.deviceHash || !parsed.expires || parsed.expires < Date.now()) return null;
   const organizationId = (await organizationSchemaEnabled()) ? parsed.organizationId ?? defaultOrganizationId : null;
+  const organizationState = await organizationSessionState(organizationId);
+  if (organizationId && (!organizationState || organizationState.updated_at !== (parsed.organizationUpdatedAt ?? null))) {
+    return null;
+  }
   const baseQuery = supabase
     .from('devices')
     .select(
@@ -654,7 +734,7 @@ async function registerDevice(body: { teamMemberId: string; pin: string; deviceT
     organizationId,
     organization: await organizationSummary(organizationId),
     deviceId: device.id,
-    sessionToken: createUserToken(body.teamMemberId, body.deviceToken, organizationId),
+    sessionToken: await createUserToken(body.teamMemberId, body.deviceToken, organizationId),
     teamMember: { id: member.id, name: member.name },
   });
 }
@@ -792,6 +872,50 @@ async function route(event: HandlerEvent) {
     if (error) return json(500, { error: error.message });
     if (!data) return json(404, { error: 'Unused setup code not found.' });
     return json(200, { setupCode: data });
+  }
+
+  const operatorOrganizationStatusMatch = path.match(/^\/operator\/organizations\/([^/]+)\/status$/);
+  if (method === 'POST' && operatorOrganizationStatusMatch) {
+    const organizationId = operatorOrganizationStatusMatch[1];
+    if (!isUuid(organizationId)) return json(400, { error: 'Organization ID must be a UUID.' });
+    const body = readBody<{ active?: boolean }>(event);
+    if (typeof body.active !== 'boolean') return json(400, { error: 'active must be true or false.' });
+    const { data, error } = await supabase
+      .from('organizations')
+      .update({ active: body.active })
+      .eq('id', organizationId)
+      .select('id, slug, name, active, created_at, updated_at')
+      .maybeSingle();
+    if (error) return json(500, { error: error.message });
+    if (!data) return json(404, { error: 'Organization not found.' });
+    return json(200, { organization: data });
+  }
+
+  const operatorAdminRecoveryMatch = path.match(/^\/operator\/organizations\/([^/]+)\/admin-passphrase$/);
+  if (method === 'POST' && operatorAdminRecoveryMatch) {
+    const organizationId = operatorAdminRecoveryMatch[1];
+    if (!isUuid(organizationId)) return json(400, { error: 'Organization ID must be a UUID.' });
+    const body = readBody<{ passphrase?: string }>(event);
+    if (!body.passphrase || body.passphrase.length < 8) {
+      return json(400, { error: 'Passphrase must be at least 8 characters.' });
+    }
+    const { data: organization, error: organizationError } = await supabase
+      .from('organizations')
+      .select('id, slug, name, active, created_at, updated_at')
+      .eq('id', organizationId)
+      .maybeSingle();
+    if (organizationError) return json(500, { error: organizationError.message });
+    if (!organization) return json(404, { error: 'Organization not found.' });
+    const { error } = await supabase.from('organization_admin_credentials').upsert(
+      {
+        organization_id: organizationId,
+        passphrase_hash: organizationAdminHash(organizationId, body.passphrase),
+        active: true,
+      },
+      { onConflict: 'organization_id' },
+    );
+    if (error) return json(500, { error: error.message });
+    return json(200, { organization });
   }
 
   if (method === 'GET' && path === '/workspaces/resolve') {
@@ -1426,7 +1550,7 @@ async function route(event: HandlerEvent) {
     return json(200, {
       organizationId,
       organization: await organizationSummary(organizationId),
-      token: createAdminToken({ organizationId, authMethod: 'organization' }),
+      token: await createAdminToken({ organizationId, authMethod: 'organization' }),
     });
   }
 
@@ -1445,7 +1569,7 @@ async function route(event: HandlerEvent) {
       return json(403, { error: 'Invalid admin passphrase.' });
     }
     return json(200, {
-      token: createAdminToken(adminContext),
+      token: await createAdminToken(adminContext),
       organizationId: adminContext.organizationId,
       organization: await organizationSummary(adminContext.organizationId),
       authMethod: adminContext.authMethod,
@@ -1790,6 +1914,27 @@ async function route(event: HandlerEvent) {
     if (error) return json(500, { error: error.message });
     if (!data) return json(404, { error: 'Team member not found.' });
     return json(200, { teamMember: data });
+  }
+
+  const memberResetPinMatch = path.match(/^\/admin\/team-members\/([^/]+)\/reset-pin$/);
+  if (method === 'POST' && memberResetPinMatch) {
+    const organizationId = adminContext!.organizationId;
+    const memberId = memberResetPinMatch[1];
+    if (!isUuid(memberId)) return json(400, { error: 'Team member ID must be a UUID.' });
+    const memberQuery = supabase.from('team_members').select('id, name').eq('id', memberId);
+    const { data: member, error: memberError } = await scoped(memberQuery, organizationId).maybeSingle();
+    if (memberError) return json(500, { error: memberError.message });
+    if (!member) return json(404, { error: 'Team member not found.' });
+    const memberUpdate = supabase.from('team_members').update({ pin_hash: null }).eq('id', memberId);
+    const deviceUpdate = supabase.from('devices').update({ active: false }).eq('team_member_id', memberId);
+    const [{ error: resetError }, { error: deviceError }] = await Promise.all([
+      scoped(memberUpdate, organizationId),
+      scoped(deviceUpdate, organizationId),
+    ]);
+    if (resetError || deviceError) {
+      return json(500, { error: resetError?.message ?? deviceError?.message ?? 'Unable to reset member PIN.' });
+    }
+    return json(200, { teamMember: { id: member.id, name: member.name } });
   }
 
   return json(404, { error: 'Route not found.' });
