@@ -7,7 +7,7 @@ For the complete sendable packet, use [PILOT_PACKET.md](PILOT_PACKET.md).
 ## Email Or Teams Draft
 
 ```text
-Subject: Deckplating beta pilot
+Subject: Deckplating outside-team beta pilot
 
 Deckplating is a mobile web app for unclassified, non-sensitive ministry coverage awareness.
 
@@ -42,8 +42,9 @@ Suggested pilot use:
 - at least one chaplain or RP uses it on a phone
 - normal deckplating only
 - start with GitHub first, then use GitHub login for Supabase and Netlify when available
+- submit one feedback artifact after setup and one after 2-4 weeks of use
 
-Please capture setup friction, offline behavior, map/GPS issues, Mission Board usefulness, and anything that would stop another team from adopting it.
+Please capture setup friction, offline behavior, map/GPS issues, admin workflow, reporting usefulness, Mission Board usefulness, safe-use clarity, and anything that would stop another team from adopting it.
 ```
 
 ## What To Ask The Pilot Lead
@@ -53,3 +54,5 @@ Please capture setup friction, offline behavior, map/GPS issues, Mission Board u
 - How many phone users will test it?
 - What installation or unit will they use as the map center?
 - Are they comfortable testing a self-hosted beta before any centralized hosting exists?
+- When will they submit setup feedback?
+- When will they submit closeout feedback after 2-4 weeks?

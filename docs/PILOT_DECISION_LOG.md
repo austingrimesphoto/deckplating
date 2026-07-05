@@ -74,8 +74,14 @@ Begin centralized multi-organization architecture work only when pilot evidence 
 
 Append dated notes here.
 
-### YYYY-MM-DD
+### 2026-07-05
 
-- Decision:
+- Decision: Pilot execution is ready internally but blocked externally until two outside RMT leads are identified and agree to the setup and closeout feedback cadence.
 - Evidence:
+  - The pilot packet, readiness guide, feedback template, support playbook, invitation message, closeout template, and decision log are current.
+  - No actual outside-team pilot leads, contact records, setup feedback artifacts, or closeout artifacts are present in the repository.
+  - No in-repo evidence exists yet to satisfy the Stage 2 pilot execution exit criteria.
 - Follow-up:
+  - Send the current pilot packet or invitation message to two real outside RMT leads.
+  - Confirm durable GitHub, Supabase, and Netlify ownership for each lead.
+  - Schedule setup calls and collect one setup feedback artifact plus one closeout artifact per team.

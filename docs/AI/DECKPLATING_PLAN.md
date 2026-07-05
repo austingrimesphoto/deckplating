@@ -2,7 +2,7 @@
 
 ## Current Milestone
 
-Exact current stopping point: the repository is on `main` with `Stage 2 outside-team pilot validation preparation` implemented in the pilot documentation set. The only remaining work in this session is preserving the updated plan/handoff, verifying the docs diff, and committing this documentation milestone. Do not begin a new product feature in this handoff.
+Exact current stopping point: the repository is on `main` with `Stage 2 outside-team pilot validation preparation` implemented and the pilot-execution blocker documented. Internal preparation is complete. Progress on Stage 2 execution now depends on identifying two real outside RMT pilot leads and running the external support cadence. Do not begin a new product feature in this handoff.
 
 Completed steps:
 
@@ -28,9 +28,9 @@ Completed steps:
   - Updated `docs/PILOT_FEEDBACK_TEMPLATE.md` to capture setup versus closeout checkpoints, admin/reporting usability, safe-use clarity, and critical blockers.
   - Updated `docs/PILOT_SUPPORT_PLAYBOOK.md` to emphasize bounded support, adoption blockers, evidence capture, and local-owner usability for admin and reports.
 
-In-progress step: only plan/handoff preservation in `docs/AI` and the milestone commit. No product feature work is in progress.
+In-progress step: external pilot recruitment and execution are pending. No product feature work is in progress.
 
-Next exact task: begin **Stage 2 outside-team pilot execution and evidence collection**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/PILOT_PACKET.md`, `docs/PILOT_READINESS_GUIDE.md`, `docs/PILOT_FEEDBACK_TEMPLATE.md`, `docs/PILOT_SUPPORT_PLAYBOOK.md`, `docs/PILOT_DECISION_LOG.md`, and `docs/PILOT_CLOSEOUT_TEMPLATE.md`. Then recruit or line up two outside RMT pilot leads, run the setup/support cadence, collect the setup and closeout feedback artifacts, and log blockers without starting unrelated product work.
+Next exact task: begin **Stage 2 outside-team pilot execution and evidence collection**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/PILOT_PACKET.md`, `docs/PILOT_READINESS_GUIDE.md`, `docs/PILOT_INVITATION_MESSAGE.md`, `docs/PILOT_FEEDBACK_TEMPLATE.md`, `docs/PILOT_SUPPORT_PLAYBOOK.md`, `docs/PILOT_DECISION_LOG.md`, and `docs/PILOT_CLOSEOUT_TEMPLATE.md`. Then recruit or line up two outside RMT pilot leads through real external contacts, run the setup/support cadence, collect the setup and closeout feedback artifacts, and log blockers without starting unrelated product work.
 
 Deferred/out-of-scope items:
 
@@ -206,6 +206,7 @@ Verification results:
 
 - `git diff --check` passed.
 - No product code, migrations, deployments, Netlify settings, Supabase settings, or production data were touched.
+- Stage 2 execution remains blocked on external pilot-lead availability; this blocker is recorded in `docs/PILOT_DECISION_LOG.md`.
 
 ## Next Task: Stage 2 Outside-Team Pilot Execution And Evidence Collection
 
@@ -226,6 +227,7 @@ Likely files to start with:
 - `docs/AI/HANDOFF.md`
 - `docs/PILOT_PACKET.md`
 - `docs/PILOT_READINESS_GUIDE.md`
+- `docs/PILOT_INVITATION_MESSAGE.md`
 - `docs/PILOT_FEEDBACK_TEMPLATE.md`
 - `docs/PILOT_SUPPORT_PLAYBOOK.md`
 - `docs/PILOT_DECISION_LOG.md`
