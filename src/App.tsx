@@ -3179,12 +3179,14 @@ function Settings({
   pendingCount,
   onIdentity,
   onOpenSystemAdministration,
+  showSystemAdministration,
 }: {
   identity: Identity;
   members: TeamMember[];
   pendingCount: number;
   onIdentity: (identity: Identity) => void;
   onOpenSystemAdministration: () => void;
+  showSystemAdministration: boolean;
 }) {
   const [pin, setPin] = useState('');
   const [newMember, setNewMember] = useState(members[0]?.id ?? '');
@@ -3268,15 +3270,17 @@ function Settings({
           ))}
         </ul>
       </section>
-      <section className="panel">
-        <h2>System Administration</h2>
-        <p className="muted">
-          Locked central operator console for workspace approvals, emergency recovery actions, and pilot workspace status.
-        </p>
-        <button className="secondary" onClick={onOpenSystemAdministration}>
-          Open system administration
-        </button>
-      </section>
+      {showSystemAdministration && (
+        <section className="panel">
+          <h2>System Administration</h2>
+          <p className="muted">
+            Locked central operator console for workspace approvals, emergency recovery actions, and pilot workspace status.
+          </p>
+          <button className="secondary" onClick={onOpenSystemAdministration}>
+            Open system administration
+          </button>
+        </section>
+      )}
     </main>
   );
 }
@@ -3747,6 +3751,7 @@ export default function App() {
           pendingCount={pendingCount}
           onIdentity={handleIdentity}
           onOpenSystemAdministration={openOperatorConsole}
+          showSystemAdministration={Boolean(sessionStorage.getItem(operatorKey))}
         />
       )}
       <nav className="bottom-nav">
