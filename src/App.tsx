@@ -702,7 +702,7 @@ function OperatorConsole({ onBack }: { onBack: () => void }) {
     setMessage('');
     const form = setupForms[organization.id] ?? { label: '', expiresInDays: '14' };
     try {
-      const result = await api<{ code: string }>('/api/operator/organizations/' + organization.id + '/setup-codes', {
+      const result = await api<{ code?: string; setupCode?: { code?: string } }>('/api/operator/organizations/' + organization.id + '/setup-codes', {
         method: 'POST',
         headers: { authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -710,10 +710,12 @@ function OperatorConsole({ onBack }: { onBack: () => void }) {
           expiresInDays: Number(form.expiresInDays || '14'),
         }),
       });
+      const code = result.code ?? result.setupCode?.code;
+      if (!code) throw new Error('Setup code was created but not returned by the API.');
       setLastIssuedCode((current) => ({
         ...current,
         [organization.id]: {
-          code: result.code,
+          code,
           link: `${window.location.origin}${window.location.pathname}?workspace=${encodeURIComponent(organization.slug)}`,
         },
       }));

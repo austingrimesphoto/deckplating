@@ -2,7 +2,7 @@
 
 ## Current Milestone
 
-Exact current stopping point: the repository is on `main` with the strategic plan pivot documented. The user wants to accelerate away from each command owning separate GitHub, Supabase, and Netlify accounts and toward one centrally hosted `deckplating.netlify.app` service where each command has an isolated workspace, guided onboarding, and local command setup inside the app. The user will act as system administrator during the small-command test phase.
+Exact current stopping point: the repository is on `main` after a successful live managed dry run against `https://deckplating.netlify.app`. The hosted app now supports protected operator workspace setup, tenant-scoped local onboarding, and first-use check-ins on the real managed stack. The user remains the system administrator during the small-command test phase.
 
 Completed steps:
 
@@ -32,10 +32,16 @@ Completed steps:
   - The system administrator owns central workspace creation/approval, setup-code issuance, overhead visibility, incident response, and platform operations during the small-command test phase.
   - Local command leads own their roster, areas, locations, units, and local admin passphrase inside their tenant sandbox.
   - Self-hosted deployment remains an advanced/local-control option, no longer the primary pilot path.
+- Completed the live managed pilot dry run:
+  - Linked the repo to the live Netlify site `deckplating` and confirmed the real Supabase backend.
+  - Enabled central operator access on production.
+  - Ran workspace creation, setup-code issuance, activation, local setup, device registration, bootstrap, and one real check-in on the live hosted app.
+  - Fixed and redeployed one setup-code response-shape defect found during the dry run.
+  - Revoked the two unused diagnostic setup codes after validation.
 
-In-progress step: plan preservation and roadmap pivot only. No product feature work is in progress.
+In-progress step: none.
 
-Next exact task: begin **Managed Hosted Onboarding v1**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/MANAGED_DISTRIBUTION_PLAN.md`, `docs/MANAGED_DISTRIBUTION_ROADMAP.md`, `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`, `docs/CENTRAL_OPERATOR_GUIDE.md`, `netlify/functions/api.ts`, `src/App.tsx`, `src/offline.ts`, and `src/types.ts`. Then implement the smallest guided hosted path where a system administrator can create/approve a command workspace, issue or manage a setup code, and a local lead can visit `deckplating.netlify.app`, activate that workspace, create team members/locations/units, and start using the app without GitHub/Supabase/Netlify exposure. Do not build unrestricted public signup.
+Next exact task: begin **Managed Production Guardrails v1**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/CENTRAL_OPERATOR_GUIDE.md`, `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`, `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`, `netlify/functions/api.ts`, and `src/App.tsx`. Then disable or explicitly gate the environment-wide admin fallback for managed hosted production, add the smallest missing operator-side containment control for pilot support, and tighten the operator/support runbook around passphrase rotation, dry-run cleanup, and live incident recovery.
 
 Deferred/out-of-scope items:
 
@@ -270,17 +276,56 @@ Validation completed:
 - `npm run build`
 - `git diff --check`
 
-## Next Task: Managed Pilot Dry Run and Deployment Readiness
+## Completed: Managed Pilot Dry Run and Deployment Readiness
 
-Objective: prove that the new hosted onboarding path works end to end in a real operator-led dry run before widening usage.
+Objective achieved: the hosted onboarding flow now works end to end against the real managed stack at `https://deckplating.netlify.app`.
+
+Implementation and operational summary:
+
+- Linked the repo to the live Netlify project `deckplating` and confirmed the hosted app uses the real Supabase project `deckplating` (`vfjqnuwbkjdwvoaxepfi`).
+- Enabled managed operator access on the live host by setting `CENTRAL_OPERATOR_PASSPHRASE_HASH` in Netlify production and redeploying.
+- Ran the hosted flow live through operator login, workspace creation, setup-code issuance, workspace activation, local admin setup, first device registration, bootstrap, and a real check-in.
+- Found one production defect: setup-code creation returned the plaintext code only at `setupCode.code` while the new operator console expected `code`.
+- Fixed that contract mismatch in `netlify/functions/api.ts` and `src/App.tsx`, redeployed, reran the dry run successfully, and revoked the unused diagnostic setup codes.
+- Updated the operator and onboarding docs with the exact live procedure and failure-recovery notes.
+
+Durable dry-run record:
+
+- `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`
+
+Changed files:
+
+- `netlify/functions/api.ts`
+- `src/App.tsx`
+- `docs/CENTRAL_OPERATOR_GUIDE.md`
+- `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`
+- `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`
+- `docs/AI/DECKPLATING_PLAN.md`
+- `docs/AI/HANDOFF.md`
+
+Validation and live verification completed:
+
+- `npm run typecheck`
+- `npm run build`
+- `git diff --check`
+- live Netlify production deploy to `https://deckplating.netlify.app`
+- live managed dry run with:
+  - operator login
+  - workspace activation
+  - onboarding summary from `not ready` to `ready`
+  - first member sign-in
+  - first live check-in with score `3`
+
+## Next Task: Managed Production Guardrails v1
+
+Objective: reduce the remaining managed-host risk before onboarding a real non-dry-run command workspace.
 
 Scope:
 
-- Run the hosted flow against the real managed stack with operator login, workspace creation, setup-code issuance, workspace activation, local admin setup, and first member sign-in.
-- Fix any defects uncovered by the dry run without widening product scope.
-- Document the exact operator steps, required environment configuration, and failure/recovery points for small-command testing.
-- Confirm the system administrator can monitor readiness and access posture without exposing one command's command data to another.
-- Keep unrestricted public signup, sensitive-data workflows, and broader service hardening out of scope for this pass.
+- Disable or explicitly gate the environment-wide admin fallback for managed hosted production.
+- Add the smallest operator-side lifecycle controls still missing for safe pilot support, starting with workspace deactivate/archive or equivalent containment.
+- Tighten the operator/support runbook around passphrase rotation, dry-run cleanup, and live incident recovery.
+- Keep public signup, backup/export/delete workflows, and broad service hardening out of scope for this pass.
 
 Likely files to start with:
 
@@ -305,7 +350,7 @@ Stage 2 - managed hosted small-command pilot:
 - Objective: validate real command use through one centrally hosted app with controlled workspace onboarding.
 - Scope: a small number of approved commands use `deckplating.netlify.app`; the system administrator creates/approves workspaces and monitors workspace health; local command leads complete guided setup and run normal operations inside their tenant sandbox.
 - Exit criteria: at least two commands activate managed workspaces, complete local setup without GitHub/Supabase/Netlify exposure, complete real check-ins, and report whether the hosted flow is viable.
-- Current next work: run the first managed dry run and close any defects revealed by it.
+- Current next work: add the remaining managed-production guardrails, then onboard the first real pilot command workspace.
 
 Stage 3 - managed service hardening and sustainment:
 

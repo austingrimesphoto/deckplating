@@ -775,7 +775,7 @@ async function route(event: HandlerEvent) {
       .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
       .single();
     if (error) return json(500, { error: error.message });
-    return json(201, { organization, setupCode: { ...data, code } });
+    return json(201, { organization, code, setupCode: { ...data, code } });
   }
 
   const operatorCodeRevokeMatch = path.match(/^\/operator\/setup-codes\/([^/]+)\/revoke$/);

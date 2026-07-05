@@ -4,6 +4,11 @@ This guide is for managed Deckplating pilots where `deckplating.netlify.app` sup
 
 It is not public signup. Do not create workspaces for unapproved teams.
 
+Managed dry run status:
+
+- Verified live on `2026-07-05`
+- Dry-run notes: `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`
+
 ## Enable Operator Access
 
 Set `CENTRAL_OPERATOR_PASSPHRASE_HASH` in the managed host environment.
@@ -12,7 +17,20 @@ The value is a SHA-256 hash of the central operator passphrase. Do not reuse the
 
 Normal self-hosted installs should leave this value blank.
 
+The managed host also needs the normal production values already in place:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `ADMIN_PASSPHRASE_HASH`
+- `ADMIN_SESSION_SECRET`
+- `MAP_TILE_URL`
+- optional `MAP_TILE_KEY`
+
+If `CENTRAL_OPERATOR_PASSPHRASE_HASH` is added or rotated, redeploy the site before testing operator login.
+
 ## Operator API Flow
+
+The live host also exposes an in-app operator entry from the workspace setup screen. The API sequence below remains the source of truth and the fallback path for support.
 
 ### 1. Log In
 
@@ -95,11 +113,25 @@ Use this when a code was sent to the wrong recipient, expired operationally, or 
 - Do not use operator access to bypass tenant boundaries or expose one command's operational data to another command.
 - Do not use this flow for CUI, classified information, counseling records, case management, or official records.
 
+## Failure And Recovery Notes
+
+- If `POST /api/operator/login` returns `Central operator access is not configured.`, set `CENTRAL_OPERATOR_PASSPHRASE_HASH` in Netlify production and redeploy.
+- If setup-code issuance succeeds but the app does not display a usable code, confirm the site is running the post-`2026-07-05` build that accepts both `code` and `setupCode.code`.
+- If activation fails, check whether the setup code is still marked unused. Do not keep issuing codes blindly; capture the activation response first.
+- After failed activation attempts, revoke unused setup codes before continuing.
+- Confirm readiness from the operator organization summary before handing the site to a wider command audience:
+  - area count
+  - location count
+  - unit count
+  - team-member count
+  - organization admin configured
+  - ready for check-ins
+- For CLI support, link the repo to the live Netlify site before using `netlify env:*` or `netlify deploy`.
+
 ## Current Limitations
 
-- This is API and app-entry groundwork only; there is no polished operator console yet.
+- The operator console is intentionally minimal. It supports workspace creation, setup-code issuance/revocation, and readiness summaries, not full lifecycle management.
 - The app can remember one selected workspace per device and can resolve workspace links by slug.
-- The app does not yet provide a full public workspace directory or unrestricted self-service signup.
-- Guided workspace setup needs to become the normal first-run flow for local command leads.
+- The app does not provide a full public workspace directory or unrestricted self-service signup.
 - Environment-wide admin fallback still exists for self-hosted beta compatibility.
 - Static tenant-isolation checks exist; a future live two-workspace integration suite is still recommended before broad managed expansion.

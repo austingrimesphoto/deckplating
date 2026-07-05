@@ -4,6 +4,11 @@ Use this blueprint for centrally hosted Deckplating pilots at `deckplating.netli
 
 This is not public self-service signup. The system administrator creates or approves each command workspace before a local RMT lead can activate it.
 
+Managed dry run status:
+
+- Verified live on `2026-07-05`
+- Dry-run notes: `docs/MANAGED_PILOT_DRY_RUN_2026-07-05.md`
+
 ## Current Foundation
 
 Migration `006_org_admin_and_invitations.sql` adds:
@@ -21,8 +26,17 @@ The API adds:
 - `GET /api/workspaces/resolve`
 - `POST /api/workspaces/activate`
 - `POST /api/admin/organization-admin/passphrase`
+- `GET /api/admin/settings` onboarding summary fields
+- `POST /api/admin/areas`
+- `PATCH /api/admin/areas/:id`
 
 Current self-hosted teams can keep using the environment admin passphrase. Organization admin passphrases are the normal local admin model for managed hosting.
+
+The hosted app now includes:
+
+- a minimal operator console from the workspace setup screen
+- local admin onboarding checklist state
+- tenant-scoped area, location, unit, and team-member creation from inside the app
 
 See `docs/CENTRAL_OPERATOR_GUIDE.md` for the protected operator workflow.
 
@@ -32,13 +46,29 @@ See `docs/CENTRAL_OPERATOR_GUIDE.md` for the protected operator workflow.
 2. System administrator creates a one-time setup code for that workspace.
 3. System administrator sends the `deckplating.netlify.app` workspace link and code to the local RMT lead.
 4. Local RMT lead activates the workspace with the code.
-5. Local RMT lead creates the organization admin passphrase.
-6. Guided onboarding prompts the lead to create roster, areas, locations, units, and safe-use acknowledgment.
+5. Local RMT lead lands in Admin Setup with an organization-scoped admin session.
+6. Guided onboarding prompts the lead to confirm the local admin passphrase, then create roster, areas, locations, and units.
 7. Team members open `deckplating.netlify.app`, select the command workspace, select their name, set a PIN, and use the app.
+8. The system administrator confirms readiness from the operator summary before treating the workspace as live.
 
 The system administrator keeps overhead visibility into workspace status, setup-code state, activity health, and access posture. Command data remains tenant-scoped and must not be visible across workspaces.
 
 Workspace links may include `?workspace=workspace-slug`. The browser stores the selected workspace locally so roster selection, device registration, admin login, and cached bootstrap data stay attached to that workspace.
+
+## Live Dry Run Outcome
+
+The live managed stack successfully completed this sequence on `2026-07-05`:
+
+- operator login
+- workspace creation
+- setup-code issuance
+- workspace activation
+- local admin onboarding from zero to ready
+- first member device registration
+- bootstrap
+- first live check-in
+
+The first production attempt exposed one API/UI response-shape mismatch during setup-code issuance. That defect was fixed and redeployed the same day. Unused dry-run setup codes were revoked after validation.
 
 ## Current API Contract
 
@@ -98,6 +128,7 @@ Behavior:
 - Requires a central operator token.
 - Stores only the setup-code hash.
 - Returns the plaintext setup code only once.
+- Current response shape includes both `code` and `setupCode.code` for compatibility.
 - Supports revocation through `POST /api/operator/setup-codes/{setupCodeId}/revoke`.
 
 ### Activate Workspace
@@ -176,10 +207,10 @@ The setup code table stores:
 
 ## Future Work
 
-Still needed before managed hosted pilots:
+Still needed before broader managed expansion:
 
-- guided workspace onboarding after activation,
-- central administrator visibility into workspace status and activity health,
 - organization admin session refresh behavior,
 - removal or disabling of environment admin fallback in managed production,
-- organization-scoped backup/export/delete operations.
+- organization-scoped backup/export/delete operations,
+- workspace deactivate/archive/delete lifecycle,
+- scripted live integration coverage for multi-workspace flows.
