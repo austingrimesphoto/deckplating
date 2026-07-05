@@ -117,7 +117,7 @@ async function resolveOrganizationSlug(slug: string) {
     .maybeSingle();
   if (error) throw error;
   if (!data || !data.active) throw new Error('Workspace not found or inactive.');
-  return data as { id: string; slug: string; name: string; active: boolean };
+  return (await organizationSummary(data.id)) as Awaited<ReturnType<typeof organizationSummary>>;
 }
 
 async function organizationSummary(organizationId: string | null) {
@@ -128,7 +128,16 @@ async function organizationSummary(organizationId: string | null) {
     .eq('id', organizationId)
     .maybeSingle();
   if (error || !data || !data.active) return null;
-  return data as { id: string; slug: string; name: string; active: boolean };
+  const mapSettings = await getWorkspaceMapSettings(organizationId);
+  return { ...data, ...mapSettings } as {
+    id: string;
+    slug: string;
+    name: string;
+    active: boolean;
+    installationName: string;
+    mapDefaultLatitude: number;
+    mapDefaultLongitude: number;
+  };
 }
 
 async function organizationAdminSchemaEnabled() {
@@ -136,6 +145,90 @@ async function organizationAdminSchemaEnabled() {
   const { error } = await supabase.from('organization_admin_credentials').select('id').limit(1);
   organizationAdminSchemaEnabledCache = !error;
   return organizationAdminSchemaEnabledCache;
+}
+
+const fallbackInstallationName = process.env.INSTALLATION_NAME ?? 'Naval Air Station Key West';
+const fallbackMapDefaultLatitude = Number.isFinite(Number(process.env.MAP_DEFAULT_LATITUDE))
+  ? Number(process.env.MAP_DEFAULT_LATITUDE)
+  : 24.57;
+const fallbackMapDefaultLongitude = Number.isFinite(Number(process.env.MAP_DEFAULT_LONGITUDE))
+  ? Number(process.env.MAP_DEFAULT_LONGITUDE)
+  : -81.78;
+
+type InstallationSearchResult = {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+  class?: string;
+  type?: string;
+  importance?: number;
+  address?: Record<string, string>;
+};
+
+const installationSearchCache = new Map<string, { expiresAt: number; results: InstallationSearchResult[] }>();
+
+async function getWorkspaceMapSettings(organizationId: string | null) {
+  if (!organizationId || !(await organizationSchemaEnabled())) {
+    return {
+      installationName: fallbackInstallationName,
+      mapDefaultLatitude: fallbackMapDefaultLatitude,
+      mapDefaultLongitude: fallbackMapDefaultLongitude,
+    };
+  }
+  const { data, error } = await scoped(
+    supabase.from('app_settings').select('key, value').in('key', ['installation_name', 'map_default_latitude', 'map_default_longitude']),
+    organizationId,
+  );
+  if (error) {
+    return {
+      installationName: fallbackInstallationName,
+      mapDefaultLatitude: fallbackMapDefaultLatitude,
+      mapDefaultLongitude: fallbackMapDefaultLongitude,
+    };
+  }
+  const settings = new Map((data ?? []).map((row: any) => [row.key, row.value] as const));
+  const mapDefaultLatitude = Number(settings.get('map_default_latitude'));
+  const mapDefaultLongitude = Number(settings.get('map_default_longitude'));
+  return {
+    installationName: settings.get('installation_name') || fallbackInstallationName,
+    mapDefaultLatitude: Number.isFinite(mapDefaultLatitude) ? mapDefaultLatitude : fallbackMapDefaultLatitude,
+    mapDefaultLongitude: Number.isFinite(mapDefaultLongitude) ? mapDefaultLongitude : fallbackMapDefaultLongitude,
+  };
+}
+
+async function searchInstallations(query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return [];
+  const cached = installationSearchCache.get(normalized);
+  if (cached && cached.expiresAt > Date.now()) return cached.results;
+
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', query);
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('addressdetails', '1');
+  url.searchParams.set('namedetails', '1');
+  url.searchParams.set('limit', '5');
+
+  const response = await fetch(url, {
+    headers: {
+      'user-agent': 'Deckplating managed pilot',
+      referer: 'https://deckplating.netlify.app',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Installation lookup failed with status ${response.status}.`);
+  }
+  const data = (await response.json()) as InstallationSearchResult[];
+  const results = (Array.isArray(data) ? data : [])
+    .map((result) => ({
+      ...result,
+      lat: String(result.lat),
+      lon: String(result.lon),
+    }))
+    .filter((result) => result.display_name && Number.isFinite(Number(result.lat)) && Number.isFinite(Number(result.lon)));
+  installationSearchCache.set(normalized, { expiresAt: Date.now() + 24 * 60 * 60 * 1000, results });
+  return results;
 }
 
 const scoped = (query: any, organizationId: string | null) =>
@@ -745,6 +838,16 @@ async function route(event: HandlerEvent) {
   const path = normalizePath(event);
   const method = event.httpMethod;
 
+  if (method === 'GET' && path === '/installations/search') {
+    const query = event.queryStringParameters?.q?.trim() ?? '';
+    if (query.length < 2) return json(400, { error: 'q is required.' });
+    try {
+      return json(200, { results: await searchInstallations(query) });
+    } catch (error) {
+      return json(502, { error: errorMessage(error) });
+    }
+  }
+
   if (method === 'POST' && path === '/operator/login') {
     const body = readBody<{ passphrase?: string }>(event);
     if (!centralOperatorPassphraseHash) {
@@ -964,6 +1067,7 @@ async function route(event: HandlerEvent) {
       getGamificationTone(user.organizationId),
     ]);
     if (error) return json(500, { error: error.message });
+    const mapSettings = await getWorkspaceMapSettings(user.organizationId);
     return json(200, {
       organizationId: user.organizationId,
       organization: await organizationSummary(user.organizationId),
@@ -971,9 +1075,7 @@ async function route(event: HandlerEvent) {
       teamMembers: teamMembers ?? [],
       units: coverage.units,
       mapTileUrl: (process.env.MAP_TILE_URL ?? '').replace('{key}', process.env.MAP_TILE_KEY ?? ''),
-      mapDefaultLatitude: envNumber(process.env.MAP_DEFAULT_LATITUDE, 24.57),
-      mapDefaultLongitude: envNumber(process.env.MAP_DEFAULT_LONGITUDE, -81.78),
-      installationName: process.env.INSTALLATION_NAME ?? 'Naval Air Station Key West',
+      ...mapSettings,
       gamificationTone,
     });
   }
@@ -1527,7 +1629,15 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'POST' && path === '/workspaces/activate') {
-    const body = readBody<{ setupCode?: string; adminPassphrase?: string; organizationName?: string; leadLabel?: string }>(event);
+    const body = readBody<{
+      setupCode?: string;
+      adminPassphrase?: string;
+      organizationName?: string;
+      leadLabel?: string;
+      installationName?: string;
+      installationLatitude?: number;
+      installationLongitude?: number;
+    }>(event);
     if (!body.setupCode || !body.adminPassphrase || body.adminPassphrase.length < 8) {
       return json(400, { error: 'setupCode and an adminPassphrase of at least 8 characters are required.' });
     }
@@ -1536,6 +1646,40 @@ async function route(event: HandlerEvent) {
     const organizationId = setupCode.organization_id;
     if (body.organizationName?.trim()) {
       await supabase.from('organizations').update({ name: body.organizationName.trim() }).eq('id', organizationId);
+    }
+    const installationName = body.installationName?.trim() || body.organizationName?.trim();
+    const installationLatitude = Number(body.installationLatitude);
+    const installationLongitude = Number(body.installationLongitude);
+    let resolvedInstallationName = installationName ?? null;
+    let resolvedLatitude = Number.isFinite(installationLatitude) ? installationLatitude : null;
+    let resolvedLongitude = Number.isFinite(installationLongitude) ? installationLongitude : null;
+    if (resolvedInstallationName && (resolvedLatitude == null || resolvedLongitude == null)) {
+      const matches = await searchInstallations(resolvedInstallationName);
+      const match = matches[0];
+      if (!match) {
+        return json(404, {
+          error: 'Installation name could not be resolved. Use the installation search to choose a match.',
+        });
+      }
+      resolvedInstallationName = match.display_name;
+      resolvedLatitude = Number(match.lat);
+      resolvedLongitude = Number(match.lon);
+    }
+    if (resolvedInstallationName && resolvedLatitude != null && resolvedLongitude != null) {
+      await Promise.all([
+        supabase.from('app_settings').upsert(
+          withOrganization({ key: 'installation_name', value: resolvedInstallationName }, organizationId),
+          { onConflict: 'organization_id,key' },
+        ),
+        supabase.from('app_settings').upsert(
+          withOrganization({ key: 'map_default_latitude', value: String(resolvedLatitude) }, organizationId),
+          { onConflict: 'organization_id,key' },
+        ),
+        supabase.from('app_settings').upsert(
+          withOrganization({ key: 'map_default_longitude', value: String(resolvedLongitude) }, organizationId),
+          { onConflict: 'organization_id,key' },
+        ),
+      ]);
     }
     const { error } = await supabase.from('organization_admin_credentials').upsert(
       {

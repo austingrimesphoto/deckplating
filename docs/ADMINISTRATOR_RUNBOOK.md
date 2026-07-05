@@ -73,6 +73,7 @@ Send:
 - the one-time setup code shown at the same time
 
 The local lead opens the link, selects `Activate workspace`, enters the setup code, and sets the local admin passphrase.
+The activation form also includes `Installation name`; use `Find installation` if the name may be abbreviated, variant, or misspelled. The chosen installation becomes the workspace map center.
 
 ## Local Roster Creation And Deactivation
 

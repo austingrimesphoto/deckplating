@@ -63,6 +63,9 @@ export type WorkspaceContext = {
   id: string;
   slug: string;
   name: string;
+  installationName?: string | null;
+  mapDefaultLatitude?: number | null;
+  mapDefaultLongitude?: number | null;
 };
 
 export type Identity = {

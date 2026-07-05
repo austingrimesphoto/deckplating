@@ -75,6 +75,17 @@ type OperatorOrganization = WorkspaceContext & {
   };
 };
 
+type InstallationSearchResult = {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+  class?: string;
+  type?: string;
+  importance?: number;
+  address?: Record<string, string>;
+};
+
 type CheckinConfirmation = {
   clientBatchId: string;
   checkinIds: string[];
@@ -483,6 +494,10 @@ function WorkspaceEntry({
   const [workspaceSlug, setWorkspaceSlug] = useState('');
   const [setupCode, setSetupCode] = useState('');
   const [organizationName, setOrganizationName] = useState(workspace?.name ?? '');
+  const [installationQuery, setInstallationQuery] = useState(workspace?.installationName ?? workspace?.name ?? '');
+  const [installationResults, setInstallationResults] = useState<InstallationSearchResult[]>([]);
+  const [selectedInstallation, setSelectedInstallation] = useState<InstallationSearchResult | null>(null);
+  const [searchingInstallation, setSearchingInstallation] = useState(false);
   const [leadLabel, setLeadLabel] = useState('');
   const [adminPassphrase, setAdminPassphrase] = useState('');
   const [error, setError] = useState('');
@@ -508,6 +523,27 @@ function WorkspaceEntry({
     }
   }
 
+  async function searchInstallation(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    setSearchingInstallation(true);
+    try {
+      const result = await api<{ results: InstallationSearchResult[] }>(`/api/installations/search?q=${encodeURIComponent(installationQuery)}`);
+      setInstallationResults(result.results);
+      setSelectedInstallation(result.results[0] ?? null);
+      if (result.results[0]) {
+        setMessage(`Found ${result.results.length} installation result${result.results.length === 1 ? '' : 's'}.`);
+      } else {
+        setMessage('No installation results found. Try the full official name or nearby city.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Installation lookup failed.');
+    } finally {
+      setSearchingInstallation(false);
+    }
+  }
+
   async function activateWorkspace(event: FormEvent) {
     event.preventDefault();
     setError('');
@@ -520,12 +556,18 @@ function WorkspaceEntry({
           adminPassphrase,
           organizationName,
           leadLabel,
+          installationName: selectedInstallation?.display_name ?? installationQuery,
+          installationLatitude: selectedInstallation ? Number(selectedInstallation.lat) : undefined,
+          installationLongitude: selectedInstallation ? Number(selectedInstallation.lon) : undefined,
         }),
       });
       const next = result.organization ?? {
         id: result.organizationId,
         slug: '',
         name: organizationName.trim() || 'Activated Workspace',
+        installationName: selectedInstallation?.display_name ?? installationQuery,
+        mapDefaultLatitude: selectedInstallation ? Number(selectedInstallation.lat) : undefined,
+        mapDefaultLongitude: selectedInstallation ? Number(selectedInstallation.lon) : undefined,
       };
       onWorkspace(next);
       sessionStorage.setItem('deckplate.admin', result.token);
@@ -597,6 +639,38 @@ function WorkspaceEntry({
               Workspace display name
               <input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} placeholder="Example RMT" />
             </label>
+            <label>
+              Installation name
+              <input
+                value={installationQuery}
+                onChange={(event) => {
+                  setInstallationQuery(event.target.value);
+                  setSelectedInstallation(null);
+                  setInstallationResults([]);
+                }}
+                placeholder="NAS Pensacola, Naval Air Station Pensacola, or a typo close to it"
+              />
+            </label>
+            <button className="secondary" type="button" onClick={searchInstallation} disabled={searchingInstallation}>
+              {searchingInstallation ? 'Searching...' : 'Find installation'}
+            </button>
+            {installationResults.length > 0 && (
+              <div className="stack">
+                {installationResults.map((result) => (
+                  <button
+                    key={result.place_id}
+                    type="button"
+                    className={selectedInstallation?.place_id === result.place_id ? 'secondary active' : 'secondary'}
+                    onClick={() => setSelectedInstallation(result)}
+                  >
+                    <strong>{result.display_name}</strong>
+                    <small>
+                      {result.lat}, {result.lon}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            )}
             <label>
               Lead label
               <input value={leadLabel} onChange={(event) => setLeadLabel(event.target.value)} placeholder="Optional" />
@@ -3517,8 +3591,8 @@ export default function App() {
         <>
           <AdminScreen
             refresh={() => void loadTeamMembers(workspace)}
-            mapDefaultLatitude={24.57}
-            mapDefaultLongitude={-81.78}
+            mapDefaultLatitude={workspace?.mapDefaultLatitude ?? 24.57}
+            mapDefaultLongitude={workspace?.mapDefaultLongitude ?? -81.78}
             workspace={workspace}
           />
           <nav className="bottom-nav">
