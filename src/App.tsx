@@ -3173,6 +3173,8 @@ function Settings({
   members,
   pendingCount,
   onIdentity,
+  onSignOut,
+  onSwitchWorkspace,
   onOpenSystemAdministration,
   showSystemAdministration,
 }: {
@@ -3180,6 +3182,8 @@ function Settings({
   members: TeamMember[];
   pendingCount: number;
   onIdentity: (identity: Identity) => void;
+  onSignOut: () => void;
+  onSwitchWorkspace: () => void;
   onOpenSystemAdministration: () => void;
   showSystemAdministration: boolean;
 }) {
@@ -3256,6 +3260,18 @@ function Settings({
           <button className="primary">Change</button>
         </form>
         {message && <p className="notice">{message}</p>}
+      </section>
+      <section className="panel">
+        <h2>Account</h2>
+        <p className="muted">Use these controls to leave the current name or move to another workspace without losing the app state.</p>
+        <div className="stack">
+          <button className="secondary" type="button" onClick={onSignOut}>
+            Sign out of this account
+          </button>
+          <button className="secondary" type="button" onClick={onSwitchWorkspace}>
+            Switch workspace
+          </button>
+        </div>
       </section>
       <section className="panel">
         <h2>Safe Use</h2>
@@ -3354,6 +3370,20 @@ export default function App() {
     sessionStorage.removeItem(operatorKey);
     setShowOperatorConsole(false);
     setOperatorQueryParam(false);
+  }
+
+  function signOutIdentity(showWorkspacePicker = false) {
+    localStorage.removeItem(identityKey);
+    sessionStorage.removeItem('deckplate.admin');
+    setIdentity(null);
+    setShowAdminSetup(false);
+    setShowWorkspaceEntry(showWorkspacePicker);
+    setScreen('checkin');
+    setError('');
+    setSyncState('synced');
+    setSyncMessage('');
+    setRefreshPin('');
+    setPendingCount(0);
   }
 
   async function loadWorkspaceFromUrl() {
@@ -3744,6 +3774,8 @@ export default function App() {
           members={bootstrap.teamMembers}
           pendingCount={pendingCount}
           onIdentity={handleIdentity}
+          onSignOut={() => signOutIdentity(false)}
+          onSwitchWorkspace={() => signOutIdentity(true)}
           onOpenSystemAdministration={openOperatorConsole}
           showSystemAdministration={Boolean(sessionStorage.getItem(operatorKey))}
         />
