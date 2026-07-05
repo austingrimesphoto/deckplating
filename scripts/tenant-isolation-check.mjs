@@ -35,6 +35,7 @@ const operatorSetupCodeCreate = section(api, 'const operatorSetupCodeMatch', 'co
 const operatorSetupCodeRevoke = section(api, 'const operatorCodeRevokeMatch', 'const operatorOrganizationStatusMatch');
 const operatorStatusRoute = section(api, 'const operatorOrganizationStatusMatch', 'const operatorAdminRecoveryMatch');
 const operatorAdminRecovery = section(api, 'const operatorAdminRecoveryMatch', "if (method === 'GET' && path === '/workspaces/resolve')");
+const operatorDeleteRoute = section(api, 'const operatorDeleteOrganizationMatch', "if (method === 'GET' && path === '/workspaces/resolve')");
 const setupActivation = section(api, "if (method === 'POST' && path === '/workspaces/activate')", "if (method === 'POST' && path === '/admin/login')");
 const adminRoutes = section(api, "const adminContext = path.startsWith('/admin/')", 'return json(404');
 const adminCorrection = section(api, 'const adminCheckinMatch', "if (method === 'POST' && path === '/admin/locations')");
@@ -77,7 +78,8 @@ check(
     !has(operatorSetupCodeRevoke, '.select(\'code_hash') &&
     !has(operatorSetupCodeRevoke, 'passphrase_hash') &&
     !has(operatorStatusRoute, 'passphrase_hash') &&
-    !has(operatorAdminRecovery, '.select(\'passphrase_hash'),
+    !has(operatorAdminRecovery, '.select(\'passphrase_hash') &&
+    !has(operatorDeleteRoute, 'passphrase_hash'),
 );
 check(
   'Operator workspace lifecycle controls update only intended workspace state',
@@ -90,6 +92,15 @@ check(
   has(operatorAdminRecovery, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/admin-passphrase$/)") &&
     has(operatorAdminRecovery, 'organizationAdminHash(organizationId, body.passphrase)') &&
     has(operatorAdminRecovery, "onConflict: 'organization_id'")
+);
+check(
+  'Operator delete removes the selected workspace and its owned data',
+  has(operatorDeleteRoute, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/delete$/)") &&
+    has(operatorDeleteRoute, "confirmSlug must match the workspace slug") &&
+    has(operatorDeleteRoute, "deleteSteps") &&
+    has(operatorDeleteRoute, "organization_setup_codes") &&
+    has(operatorDeleteRoute, "organization_admin_credentials") &&
+    has(operatorDeleteRoute, "delete().eq('id', organizationId)")
 );
 check('Setup-code activation rejects invalid/expired/used/revoked codes', has(api, 'async function verifySetupCode') && has(api, ".eq('code_hash', hash)") && has(api, ".eq('active', true)") && has(api, 'data.used_at') && has(api, 'data.expires_at && data.expires_at < now') && has(setupActivation, 'markSetupCodeUsed'));
 check(

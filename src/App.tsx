@@ -885,6 +885,34 @@ function OperatorConsole({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function deleteWorkspace(organization: OperatorOrganization) {
+    setError('');
+    setMessage('');
+    const confirmation = window.prompt(
+      `Type the workspace slug "${organization.slug}" to permanently delete ${organization.name} and all of its data.`,
+      '',
+    );
+    if (confirmation !== organization.slug) {
+      setMessage('Workspace deletion cancelled.');
+      return;
+    }
+    const reallyDelete = window.confirm(
+      `Delete ${organization.name} now?\n\nThis permanently removes the workspace and all of its roster, locations, units, check-ins, setup codes, and admin credentials.`,
+    );
+    if (!reallyDelete) return;
+    try {
+      await api(`/api/operator/organizations/${organization.id}/delete`, {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ confirmSlug: organization.slug }),
+      });
+      setMessage(`Workspace ${organization.name} deleted.`);
+      await loadOrganizations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Workspace deletion failed.');
+    }
+  }
+
   useEffect(() => {
     if (!token) return;
     void loadOrganizations(token).catch((err) => {
@@ -1017,6 +1045,9 @@ function OperatorConsole({ onClose }: { onClose: () => void }) {
                   onClick={() => void setWorkspaceActiveState(organization, !organization.active)}
                 >
                   {organization.active ? 'Suspend workspace' : 'Reactivate workspace'}
+                </button>
+                <button className="secondary danger-text" onClick={() => void deleteWorkspace(organization)}>
+                  Delete workspace and data
                 </button>
               </div>
               <div className="stack">

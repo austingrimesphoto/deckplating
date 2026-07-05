@@ -1021,6 +1021,45 @@ async function route(event: HandlerEvent) {
     return json(200, { organization });
   }
 
+  const operatorDeleteOrganizationMatch = path.match(/^\/operator\/organizations\/([^/]+)\/delete$/);
+  if (method === 'DELETE' && operatorDeleteOrganizationMatch) {
+    const organizationId = operatorDeleteOrganizationMatch[1];
+    if (!isUuid(organizationId)) return json(400, { error: 'Organization ID must be a UUID.' });
+    const body = readBody<{ confirmSlug?: string }>(event);
+    const { data: organization, error: organizationError } = await supabase
+      .from('organizations')
+      .select('id, slug, name, active')
+      .eq('id', organizationId)
+      .maybeSingle();
+    if (organizationError) return json(500, { error: organizationError.message });
+    if (!organization) return json(404, { error: 'Organization not found.' });
+    if (body.confirmSlug?.trim() !== organization.slug) {
+      return json(400, { error: 'confirmSlug must match the workspace slug.' });
+    }
+
+    const deleteSteps: Array<{ table: string; query: any }> = [
+      { table: 'checkins', query: supabase.from('checkins').delete() },
+      { table: 'checkin_batches', query: supabase.from('checkin_batches').delete() },
+      { table: 'devices', query: supabase.from('devices').delete() },
+      { table: 'units', query: supabase.from('units').delete() },
+      { table: 'locations', query: supabase.from('locations').delete() },
+      { table: 'team_members', query: supabase.from('team_members').delete() },
+      { table: 'areas', query: supabase.from('areas').delete() },
+      { table: 'app_settings', query: supabase.from('app_settings').delete() },
+      { table: 'organization_setup_codes', query: supabase.from('organization_setup_codes').delete() },
+      { table: 'organization_admin_credentials', query: supabase.from('organization_admin_credentials').delete() },
+    ];
+
+    for (const step of deleteSteps) {
+      const { error } = await scoped(step.query.eq('organization_id', organizationId), organizationId);
+      if (error) return json(500, { error: `Failed to delete ${step.table}. ${error.message}` });
+    }
+
+    const { error } = await supabase.from('organizations').delete().eq('id', organizationId);
+    if (error) return json(500, { error: error.message });
+    return json(200, { deletedOrganization: organization });
+  }
+
   if (method === 'GET' && path === '/workspaces/resolve') {
     try {
       const slug = event.queryStringParameters?.slug;

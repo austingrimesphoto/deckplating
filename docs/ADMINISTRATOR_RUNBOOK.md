@@ -149,6 +149,20 @@ Reactivate:
 3. Type the workspace slug exactly in the confirmation prompt.
 4. Members and admins must sign in again.
 
+## Delete Workspace And Data
+
+1. Open `System Administration`.
+2. Find the workspace card.
+3. Select `Delete workspace and data`.
+4. Type the exact workspace slug when prompted.
+5. Confirm the final irreversible delete prompt.
+
+Result:
+
+- the workspace is removed from the system administrator dashboard
+- the workspace's roster, areas, locations, units, check-ins, setup codes, admin credentials, and settings are deleted
+- the workspace can only be recreated as a new workspace later
+
 ## Not Supported Yet
 
 - public signup
