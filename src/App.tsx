@@ -3296,6 +3296,39 @@ function Settings({
   );
 }
 
+function SessionControlBar({
+  identity,
+  workspace,
+  onSignOut,
+  onSwitchWorkspace,
+}: {
+  identity: Identity;
+  workspace: WorkspaceContext | null;
+  onSignOut: () => void;
+  onSwitchWorkspace: () => void;
+}) {
+  return (
+    <section className="panel">
+      <div className="screen-title inline-title">
+        <div>
+          <p className="eyebrow">Current session</p>
+          <h2>{identity.teamMemberName}</h2>
+          <p className="muted">Workspace: {workspace?.name ?? identity.organization?.name ?? 'Default Workspace'}</p>
+        </div>
+        <div className="stack">
+          <button className="secondary" type="button" onClick={onSwitchWorkspace}>
+            Switch workspace
+          </button>
+          <button className="secondary danger-text" type="button" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
+      </div>
+      <p className="notice">Use this to leave the current test identity and move back to another installation or user.</p>
+    </section>
+  );
+}
+
 export default function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [cachedAt, setCachedAt] = useState<string | null>(null);
@@ -3705,6 +3738,12 @@ export default function App() {
         onReload={() => {
           if (pendingCount === 0) void applyUpdate?.();
         }}
+      />
+      <SessionControlBar
+        identity={identity}
+        workspace={workspace}
+        onSignOut={() => signOutIdentity(false)}
+        onSwitchWorkspace={() => signOutIdentity(true)}
       />
       <MissionBrief units={bootstrap.units} tone={bootstrap.gamificationTone ?? 'professional'} recentRecovery={false} />
       {syncState === 'auth' && (
