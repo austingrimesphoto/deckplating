@@ -2,7 +2,17 @@
 
 ## Current Milestone
 
-Exact current stopping point: the repository is on `main` after completing **Managed Pilot Administration v1** for `https://deckplating.netlify.app`. The hosted app now supports protected central-operator bootstrap, reachable in-app system administration, workspace suspend/reactivate, emergency local-admin recovery, local roster grant-access guidance, and local team-member PIN reset with device revocation. The user remains the central operator during the small-command managed pilot phase.
+Exact current milestone: **Managed Pilot Onboarding And Launch Readiness v1** is locally implemented and verified. It still needs human review and production deployment.
+
+The repository is on `main` after completing **Managed Pilot Administration v1** for `https://deckplating.netlify.app`. The hosted app now supports protected central-operator bootstrap, reachable in-app system administration, workspace create/delete/suspend/reactivate, emergency local-admin recovery, local roster grant-access guidance, and local team-member PIN reset with device revocation. The user remains the central operator during the small-command managed pilot phase.
+
+Current priority order:
+
+1. tighten managed-pilot onboarding clarity inside the app
+2. rewrite the public setup site so pilots request/access the managed service instead of self-hosting first
+3. rebuild the user guide around concrete workflows and scrubbed screenshots
+4. make feedback capture obvious for first RMT pilots
+5. then return to backend hardening, reliability, speed, and managed-production guardrails
 
 Completed steps:
 
@@ -47,9 +57,9 @@ Completed steps:
   - Added local-admin `Reset PIN and revoke devices` for same-workspace roster members.
   - Added `docs/ADMINISTRATOR_RUNBOOK.md` for exact pilot administration procedures.
 
-In-progress step: none.
+In-progress step: review/deploy Managed Pilot Onboarding And Launch Readiness v1, then begin backend hardening.
 
-Next exact task: begin **Managed Pilot Self-Service Hardening v1**. Start by reading `docs/AI/DECKPLATING_PLAN.md`, `docs/AI/HANDOFF.md`, `docs/ADMINISTRATOR_RUNBOOK.md`, `docs/CENTRAL_OPERATOR_GUIDE.md`, `docs/CONTROLLED_WORKSPACE_ONBOARDING.md`, `netlify/functions/api.ts`, `src/App.tsx`, and `scripts/tenant-isolation-check.mjs`. Then explicitly gate or remove the environment-wide admin fallback for managed hosted production, tighten suspended-workspace UX around stale cached sessions, and add only the smallest remaining safeguards needed before a broader self-service managed rollout.
+Next exact task: review the onboarding-launch diff, deploy the app and setup site if accepted, then begin backend hardening. Start with `docs/AI/NEXT_SESSION_START_HERE.md`, then review `src/App.tsx`, `setup-site/index.html`, `setup-site/user-guide.html`, `docs/USER_GUIDE.md`, `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`, `docs/PILOT_FEEDBACK_REVIEW.md`, and `docs/PILOT_PACKET.md`. Keep the managed-pilot path clear: request workspace access, use the approved `deckplating.netlify.app` workspace link/setup code, complete local setup, use the app, and submit feedback without exposing secrets or production data.
 
 Deferred/out-of-scope items:
 
@@ -326,7 +336,9 @@ Validation and live verification completed:
 
 ## Next Task: Managed Production Guardrails v1
 
-Objective: reduce the remaining managed-host risk before onboarding a real non-dry-run command workspace.
+Status: deferred until managed-pilot onboarding, setup-site, guide, and feedback materials are clear enough for first RMT pilots.
+
+Objective: reduce the remaining managed-host risk before broader self-service managed rollout.
 
 Scope:
 
@@ -359,7 +371,7 @@ Stage 2 - managed hosted small-command pilot:
 - Objective: validate real command use through one centrally hosted app with controlled workspace onboarding.
 - Scope: a small number of approved commands use `deckplating.netlify.app`; the system administrator creates/approves workspaces and monitors workspace health; local command leads complete guided setup and run normal operations inside their tenant sandbox.
 - Exit criteria: at least two commands activate managed workspaces, complete local setup without GitHub/Supabase/Netlify exposure, complete real check-ins, and report whether the hosted flow is viable.
-- Current next work: add the remaining managed-production guardrails, then onboard the first real pilot command workspace.
+- Current next work: finish onboarding clarity, setup-site relaunch, screenshot guide, and feedback loop, then add the remaining managed-production guardrails.
 
 Stage 3 - managed service hardening and sustainment:
 

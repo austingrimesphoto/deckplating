@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640" role="img" aria-labelledby="title desc">
+  <title id="title">Deckplating coverage board with demo data</title>
+  <desc id="desc">Scrubbed representative screenshot showing filters, unit status cards, and a detail drawer.</desc>
+  <rect width="960" height="640" fill="#eef2f5"/>
+  <rect x="150" y="48" width="660" height="544" rx="16" fill="#f8fbfd" stroke="#d6dee6"/>
+  <text x="184" y="94" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#255a82">COVERAGE</text>
+  <text x="184" y="130" font-family="Arial, sans-serif" font-size="32" font-weight="800" fill="#17212b">Coverage Board</text>
+  <rect x="184" y="156" width="592" height="60" rx="10" fill="#fff" stroke="#d6dee6"/>
+  <text x="204" y="192" font-family="Arial, sans-serif" font-size="16" fill="#5f6d7a">Filters: area, type, overdue, never visited, date range</text>
+  <rect x="184" y="240" width="592" height="76" rx="10" fill="#fff7f7" stroke="#e0b7b7"/>
+  <rect x="184" y="240" width="8" height="76" fill="#bd3030"/>
+  <text x="210" y="270" font-family="Arial, sans-serif" font-size="20" font-weight="800" fill="#17212b">Demo Unit Alpha</text>
+  <text x="210" y="298" font-family="Arial, sans-serif" font-size="15" fill="#5f6d7a">Overdue - last visit 41 days ago</text>
+  <rect x="184" y="330" width="592" height="76" rx="10" fill="#fffaf0" stroke="#ead6a0"/>
+  <rect x="184" y="330" width="8" height="76" fill="#b47b13"/>
+  <text x="210" y="360" font-family="Arial, sans-serif" font-size="20" font-weight="800" fill="#17212b">Demo Unit Bravo</text>
+  <text x="210" y="388" font-family="Arial, sans-serif" font-size="15" fill="#5f6d7a">Due soon - public Building 12</text>
+  <rect x="184" y="420" width="592" height="116" rx="10" fill="#eef6fb" stroke="#bdd4e7"/>
+  <text x="210" y="452" font-family="Arial, sans-serif" font-size="20" font-weight="800" fill="#17212b">Detail drawer</text>
+  <text x="210" y="482" font-family="Arial, sans-serif" font-size="15" fill="#5f6d7a">Recent visits, last visitor, indicators, and visit interval</text>
+  <text x="210" y="510" font-family="Arial, sans-serif" font-size="15" fill="#5f6d7a">Use this to decide where to go next.</text>
+</svg>

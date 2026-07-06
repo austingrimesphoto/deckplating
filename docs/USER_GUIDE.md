@@ -4,422 +4,430 @@ Hosted guide:
 
 <https://deckplatingsetup.netlify.app/user-guide.html>
 
-Use this guide to teach a new Religious Ministry Team how to use Deckplating after setup is complete.
+Live managed app:
 
-## Quick Start
+<https://deckplating.netlify.app>
 
-Teach this first. A normal phone user should be able to do this in under 10 minutes.
+Use this guide to teach a Religious Ministry Team how to use Deckplating after workspace approval. Deckplating is a coverage-awareness tool for unclassified, non-sensitive ministry presence. It is not a counseling record, case-management tool, official record, CUI system, or classified system.
 
-1. Open Deckplating from the phone home screen or browser.
-2. Select your roster name.
-3. Enter your 4-digit PIN.
-4. Read the sync/status bar at the top.
-5. Tap **Locate Me** on the **Check In** screen.
-6. If a mapped location appears, select one or more units at that location and tap **Check In**.
-7. If no location appears, tap **Manual unit lookup**, choose one mapped location with attached units or one unmapped unit, then submit.
-8. Review the confirmation screen.
-9. Optional: check **Confidential care provided** or **Referral provided** only when appropriate.
-10. Tap **Done**.
+Screenshots in this guide use scrubbed demo data only. Do not capture or share setup codes, passphrases, real names, production data, sensitive locations, counseling details, medical details, or operational details.
 
-The daily habit is simple: open the app, find the location, select the unit or units, check in, move on.
+## Contents
 
-## App Philosophy
+- [Select Workspace](#select-workspace)
+- [Activate Workspace](#activate-workspace)
+- [Choose Name And PIN](#choose-name-and-pin)
+- [Check In](#check-in)
+- [Manual Check-In](#manual-check-in)
+- [Coverage Board](#coverage-board)
+- [Map](#map)
+- [Mission Board](#mission-board)
+- [Admin Unlock](#admin-unlock)
+- [Create Areas](#create-areas)
+- [Create Locations](#create-locations)
+- [Create Units](#create-units)
+- [Create Team Members](#create-team-members)
+- [Reset PIN](#reset-pin)
+- [Activity Log](#activity-log)
+- [Admin Settings](#admin-settings)
+- [Account Switch And Sign-Out](#account-switch-and-sign-out)
+- [Feedback](#feedback)
+- [Safe-Use Boundaries](#safe-use-boundaries)
+- [Troubleshooting](#troubleshooting)
 
-Deckplating is a lightweight coverage-awareness tool.
+## Select Workspace
 
-It is built to answer practical RMT questions:
+Screenshot: [workspace activation](../setup-site/assets/screenshots/01-workspace-activation.svg)
 
-- Which commands, departments, divisions, or tenant units have been visited recently?
-- Which units are overdue or have never been visited?
-- Where are the public mapped locations?
-- What meaningful coverage progress has the team made this month?
-- Are referrals or confidential-care indicators increasing in certain locations over time?
+What the user sees: `Workspace setup`, the current workspace, `Select workspace`, and `Activate workspace`.
 
-Deckplating is not:
+What they click:
 
-- a counseling record,
-- a case-management tool,
-- an official system of record,
-- a CUI system,
-- a place for sensitive operational data.
+1. Open the workspace link from the operator, or open `https://deckplating.netlify.app`.
+2. Choose `Select workspace` if the workspace already exists.
+3. Enter the approved workspace slug.
+4. Click `Use workspace`.
 
-The tool should help chaplains and RPs get out of the office and maintain practical ministry presence without creating risky records.
+Expected result: the app loads that workspace and shows the roster name picker if local setup is complete.
 
-## Safe Use
+Common mistake: entering an installation name instead of the workspace slug. The slug comes from the operator or workspace link.
 
-- Use Deckplating only for unclassified, non-sensitive coverage tracking.
-- Do not enter CUI, classified information, counseling notes, medical details, family information, home addresses, phone numbers, email addresses, dates of birth, or sensitive operational locations.
-- Map only publicly identifiable buildings or general areas.
-- If a location should not be broadly shared, leave it unmapped and use manual check-in.
-- Optional indicators are generic location-visit counts only. They are not tied to a person, department, counseling case, or referral detail.
+Safe-use reminder: workspace selection should never require a passphrase, setup code, or production data in screenshots or chat.
 
-For the full policy, read [SAFE_USE.md](SAFE_USE.md).
+## Activate Workspace
 
-## The Five Things Every User Must Know
+Screenshot: [workspace activation](../setup-site/assets/screenshots/01-workspace-activation.svg)
 
-1. **Sign in with name and PIN.** Pick your own roster identity and use your own 4-digit PIN.
-2. **Locate Me is the fastest check-in path.** Precise location permission matters.
-3. **Manual lookup is the fallback.** GPS problems should not stop check-ins.
-4. **The confirmation screen is the immediate correction window.** Use Undo there for accidental check-ins.
-5. **The sync bar tells the truth.** If visits are waiting to upload, keep the app until they sync or intentionally undo the queued visit.
+What the user sees: `Activate workspace`, `One-time setup code`, workspace display name, installation lookup, local lead label, and local admin passphrase.
 
-## Screen-by-Screen Guide
+What they click:
 
-### Login And Identity
+1. Click `Activate workspace`.
+2. Enter the one-time setup code from the operator.
+3. Confirm the workspace display name.
+4. Search for the public installation or command area with `Find installation`.
+5. Select the correct installation result to set the map center.
+6. Enter a local admin passphrase.
+7. Click `Activate workspace`.
 
-Use this screen to select who is using the device.
+Expected result: the workspace activates, the local lead is placed in Admin, and the lead continues to local setup for areas, locations, units, and roster.
 
-Normal first use:
+Common mistake: treating activation like public signup. The setup code is centrally issued for an already approved workspace; it is not an email invitation or public account.
 
-1. Select your roster name.
+Safe-use reminder: never paste setup codes or passphrases into feedback forms, docs, screenshots, or messages.
+
+## Choose Name And PIN
+
+Screenshot: [name and PIN](../setup-site/assets/screenshots/02-name-pin.svg)
+
+What the user sees: `Select your name`, the workspace name, safe-use reminder, a roster dropdown, and a 4-digit PIN field.
+
+What they click:
+
+1. Select their own roster name.
 2. Enter a 4-digit PIN.
-3. The app registers that device for your identity.
+3. Click `Continue`.
 
-Returning use:
+Expected result: the device is registered for that roster identity and the app opens to normal use.
 
-1. Open the app.
-2. If the session is still valid, the app opens directly.
-3. If prompted, enter the same PIN to refresh the session.
+Common mistake: sharing a PIN or selecting another person's name to save time.
 
-Rules:
+Safe-use reminder: display names should stay practical, such as rank and last name. Do not use full personal profiles or sensitive identifiers.
 
-- Do not share PINs.
-- Do not use another person's roster identity.
-- Do not change identity while unsynced visits are waiting to upload.
-- PINs are not stored in browser storage.
+## Check In
 
-### Sync And Offline Status
+Screenshot: [check-in](../setup-site/assets/screenshots/03-check-in.svg)
 
-The status bar appears near the top of the app.
+What the user sees: sync status, Mission Brief, `Locate Me`, nearby location result, unit checkboxes, and `Check In`.
 
-- **Online and synced**: no queued visits remain.
-- **Offline - cached data**: the app is using the latest cached snapshot.
-- **X visits waiting to upload**: check-ins are saved on the phone and waiting for sync.
-- **Sync needs PIN refresh**: enter your existing PIN to refresh the session without losing queued work.
-- **Sync failed - retry available**: check connectivity and tap **Sync Now**.
+What they click:
 
-Offline mode requires one successful online launch first. Background upload while the app is fully closed is not guaranteed on every phone.
-
-### Check In
-
-The Check In screen is the main working screen.
-
-Normal nearby flow:
-
-1. Tap **Locate Me**.
-2. Wait for the nearest saved location to appear.
-3. Select one or more units attached to that physical location.
-4. Tap **Check In**.
+1. Read the sync/status bar.
+2. Click `Locate Me`.
+3. Select one or more units attached to the nearby mapped location.
+4. Click `Check In`.
 5. Review the confirmation screen.
-6. Tap **Done**.
+6. Click `Done`.
 
-Manual flow:
+Expected result: the visit is saved, coverage status updates, and the Mission Board can credit meaningful coverage.
 
-1. Tap **Manual unit lookup**.
-2. Choose one mapped location and one or more units attached to it, or choose one unmapped unit.
+Common mistake: closing the app before seeing confirmation when connectivity is weak.
+
+Safe-use reminder: one check-in is one physical visit. Do not add notes, names, counseling details, or incident information.
+
+## Manual Check-In
+
+Screenshot: [check-in](../setup-site/assets/screenshots/03-check-in.svg)
+
+What the user sees: `Manual unit lookup` on the Check In screen.
+
+What they click:
+
+1. Click `Manual unit lookup` when GPS is unavailable or the location is intentionally unmapped.
+2. Choose one mapped location and its units, or choose one unmapped unit by itself.
 3. Submit the manual check-in.
-4. Review the confirmation screen.
+4. Review confirmation and click `Done`.
 
-Location rules:
+Expected result: the visit records without GPS verification and still contributes to coverage.
 
-- One check-in batch represents one physical visit.
-- Multi-unit check-ins are allowed only when those units belong to the same mapped location.
-- An unmapped unit can be checked in manually by itself.
-- Do not combine unrelated unmapped units into one visit.
+Common mistake: combining unrelated unmapped units into one manual visit.
 
-Confirmation screen:
+Safe-use reminder: if a location should not be broadly shared, leave it unmapped and use manual check-in.
 
-- Shows units checked in.
-- Shows date/time.
-- Shows points awarded.
-- Shows **Undo this check-in**.
-- Shows optional visit indicators.
-- Shows Deckplate Brief.
+## Coverage Board
 
-Use **Undo this check-in** only for immediate accidental submissions. Older or more complex corrections belong in **Admin > Activity Log**.
+Screenshot: [coverage board](../setup-site/assets/screenshots/04-coverage-board.svg)
 
-### Optional Visit Indicators
+What the user sees: filters, unit cards, status colors, and detail drawers.
 
-The optional indicators are:
+What they click:
 
-- **Confidential care provided**
-- **Referral provided**
+1. Open `Coverage`.
+2. Filter by area, type, overdue, never visited, or date range.
+3. Click a unit card.
+4. Read the detail drawer for last visit, recent check-ins, and indicator totals.
 
-Use them only as generic location-level counts.
+Expected result: the team can decide which command, department, division, or tenant unit needs attention next.
 
-Rules:
+Common mistake: using the board as a productivity leaderboard only. It is primarily for coverage decisions.
 
-- They are optional.
-- Leaving them unchecked stores no value.
-- Checking a box saves automatically.
-- Unchecking it before leaving the confirmation screen returns it to unanswered.
-- Do not enter names, circumstances, counseling details, medical information, or referral details.
-- Indicators do not affect score, badges, coverage status, or the leaderboard.
+Safe-use reminder: reports and indicators are generic location-level counts, not case records.
 
-### Coverage
+## Map
 
-Use Coverage to decide where attention should go next.
+Screenshot: [map and mission](../setup-site/assets/screenshots/05-map-and-mission.svg)
 
-What to look for:
+What the user sees: mapped public locations, radius circles, and location cards. Offline mode may show the cached location list without live map tiles.
 
-- **Never visited** units.
-- **Overdue** units.
-- **Due soon** units.
-- Current units that are being maintained.
-- Recent check-in history for a specific unit.
+What they click:
 
-Common actions:
+1. Open `Map`.
+2. Click or tap a mapped location card.
+3. Review attached units and radius.
 
-1. Filter by area, type, overdue status, never-visited status, or date range.
-2. Tap a command, department, division, or tenant-command card.
-3. Review the detail drawer that opens directly under that card.
-4. Look at recent check-ins and last visitor.
-5. Use the reporting section for confidential-care and referral indicator trends.
+Expected result: users understand where public/general mapped locations are and which units are attached.
 
-### Reports
+Common mistake: mapping sensitive spaces because they are operationally useful.
 
-Reports help answer trend questions without creating sensitive records.
+Safe-use reminder: map only publicly identifiable buildings or general areas. Do not map SCIFs, restricted spaces, deployed locations, homes, or sensitive locations.
 
-Use reports to see:
+## Mission Board
 
-- referral indicator counts by mapped location,
-- confidential-care indicator counts by mapped location,
-- date-range totals,
-- which locations are producing more generic indicator activity over time.
+Screenshot: [map and mission](../setup-site/assets/screenshots/05-map-and-mission.svg)
 
-Reports should not be used to infer counseling cases, medical details, names, events, or sensitive operational information.
+What the user sees: score, meaningful visits, distinct units, recovered units, active days, badges, and Mission Brief tone.
 
-### Map
+What they click:
 
-Use Map to review public mapped locations and the units attached to them.
+1. Open `Scores`.
+2. Review monthly progress and badges.
+3. Use the top needs to inform the next visit.
 
-Online:
+Expected result: the board rewards meaningful coverage, recovery, breadth, and consistency.
 
-- Shows the interactive map.
-- Shows saved locations and radius circles.
-- Lets you open a location detail panel.
+Common mistake: chasing repeated easy check-ins instead of overdue or never-visited units.
 
-Offline:
+Safe-use reminder: Mission Board should encourage action without shaming named people, ranks, faith groups, commands, or roles.
 
-- Uses cached location data.
-- May hide map tiles.
-- Keeps the cached location list usable.
+## Admin Unlock
 
-If the map freezes or tiles are unavailable, use the list and manual check-in flow.
+Screenshot: [admin setup](../setup-site/assets/screenshots/06-admin-setup.svg)
 
-### Mission Board
+What the user sees: `Admin`, workspace name, and local admin passphrase field.
 
-Mission Board rewards meaningful coverage.
+What they click:
 
-It shows:
+1. Open `Admin`.
+2. Enter the local admin passphrase for that workspace.
+3. Click `Unlock`.
 
-- score,
-- meaningful visits,
-- distinct units visited,
-- recovered units,
-- active days,
-- badges.
+Expected result: Admin opens to `Locations`, `Activity Log`, and `Admin settings`.
 
-Badges:
+Common mistake: using the central operator passphrase or expecting an email account login.
 
-- **First Rounds**: first qualifying check-in this month.
-- **Recovery Team**: recovered an overdue or never-visited unit.
-- **Gray to Green**: completed a first-ever visit.
-- **Wide Coverage**: visited five distinct units in the month.
-- **Sustained Presence**: checked in on four distinct days in the month.
-- **Coverage Sweep**: helped leave an area with no overdue or never-visited active units.
+Safe-use reminder: local admin passphrases are workspace-scoped. Do not store them in docs, forms, screenshots, or browser notes.
 
-The point is not raw volume. A meaningful recovery is more useful than repeated visits to the same already-current place.
+## Create Areas
 
-### Settings
+Screenshot: [admin setup](../setup-site/assets/screenshots/06-admin-setup.svg)
 
-Use Settings to:
+What the user sees: `Create area` in `Admin` > `Locations`.
 
-- refresh app data,
-- review safe-use guidance,
-- refresh the signed session,
-- change identity when no queued visits are pending.
+What they click:
 
-Admins may also set the Mission Brief tone:
+1. Enter a broad area name.
+2. Set sort order if needed.
+3. Click `Save area`.
 
-- **Professional**
-- **Friendly**
-- **Deckplate Banter**
+Expected result: the area becomes available for locations and coverage organization.
 
-Deckplate Banter is curated local content only. It should never shame named people, ranks, faith groups, commands, or roles.
+Common mistake: making areas too granular. Areas should help scanning and routing.
 
-### Admin
+Safe-use reminder: area names should remain general and non-sensitive.
 
-Admin is for local leads.
+## Create Locations
 
-Use Admin to:
+Screenshot: [admin setup](../setup-site/assets/screenshots/06-admin-setup.svg)
 
-- add and edit areas,
-- add and edit mapped public locations,
-- attach units to locations,
-- create and deactivate team members,
-- correct check-ins through Activity Log,
-- set Mission Board tone.
+What the user sees: `Create location`, mapping notice, area dropdown, location name, map picker, coordinates, radius, and attached units.
 
-Admin location mapping rule:
+What they click:
 
-Map only publicly identifiable buildings or general areas. Do not map SCIFs, restricted spaces, deployed-unit locations, homes, or any location that should not be broadly shared.
+1. Choose the area.
+2. Enter a public/general location name.
+3. Set coordinates with the map picker or coordinate fields.
+4. Set a practical radius.
+5. Attach units if they already exist.
+6. Click `Save location`.
 
-Activity Log corrections:
+Expected result: `Locate Me` can match users to that public/general location.
 
-- Correct unit, team member, or date/time mistakes.
-- Void accidental, duplicate, or incorrect records.
-- Do not delete historical records.
-- Voided records stop affecting coverage and score.
+Common mistake: using exact sensitive room names or pins.
 
-## Common Workflows
+Safe-use reminder: if there is doubt, do not map the location. Create or use an unmapped unit and manual check-in.
 
-### Daily Deckplate Round
+## Create Units
 
-1. Open the app.
-2. Read Mission Brief.
-3. Tap **Locate Me**.
-4. Select the unit or units at the current location.
-5. Submit the check-in.
-6. Add optional indicators only if appropriate.
-7. Tap **Done**.
-8. Move to the next location.
+Screenshot: [admin setup](../setup-site/assets/screenshots/06-admin-setup.svg)
 
-### GPS Does Not Find The Location
+What the user sees: `Create unit`, unit name, type, optional location assignment, and visit interval.
 
-1. Confirm phone location permission is set to precise/high accuracy.
-2. Tap **Locate Me** again.
-3. Use **Manual unit lookup** if needed.
-4. Ask an admin to verify the mapped location, coordinates, and radius later.
+What they click:
 
-### Offline Check-In
+1. Enter the unit name.
+2. Choose `Department`, `Division`, or `Tenant command`.
+3. Assign a mapped location when appropriate.
+4. Set the visit interval in days.
+5. Click `Save unit`.
 
-1. Launch the app once online before relying on offline use.
-2. When offline, confirm the app shows cached data or pending-sync status.
-3. Submit the visit normally.
-4. Confirm it says the visit is saved on the device or waiting to upload.
-5. Reopen the app or tap **Sync Now** when connectivity returns.
+Expected result: the unit appears in Coverage and Check In workflows.
 
-### Fixing A Mistake
+Common mistake: assigning every unit to a location even when the real visit should stay unmapped.
 
-- Immediate user mistake: use **Undo this check-in** on the confirmation screen.
-- Queued offline visit that has not uploaded: undo removes it locally.
-- Uploaded or older mistake: use **Admin > Activity Log**.
+Safe-use reminder: unit names should not expose sensitive mission details.
 
-### Adding A New Location
+## Create Team Members
 
-1. Open **Admin**.
-2. Add or choose an area.
-3. Add a location with a public/general name.
-4. Set coordinates and radius.
-5. Attach one or more units to that location.
-6. Test **Locate Me** from that building if possible.
+Screenshot: [admin setup](../setup-site/assets/screenshots/06-admin-setup.svg)
 
-### Adding A New Team Member
+What the user sees: `Create team member`, name, role, and active roster list.
 
-1. Open **Admin**.
-2. Add the member display name.
-3. Keep display names practical, such as rank and last name.
-4. Have the member select their name and create their own PIN on their device.
+What they click:
+
+1. Enter a practical display name.
+2. Enter a role if useful.
+3. Click `Save member`.
+4. Send the workspace link to that member.
+
+Expected result: the member can select their name and create their own PIN on first sign-in.
+
+Common mistake: trying to send email invitations. The current workflow is roster entry plus workspace link.
+
+Safe-use reminder: do not add phone numbers, email addresses, birth dates, family details, or sensitive PII to roster fields.
+
+## Reset PIN
+
+Screenshot: [admin setup](../setup-site/assets/screenshots/06-admin-setup.svg)
+
+What the user sees: the roster list in Admin with `Reset PIN and revoke devices`.
+
+What they click:
+
+1. Find the member.
+2. Click `Reset PIN and revoke devices`.
+3. Confirm the prompt.
+4. Tell the member to select their name and create a new PIN on next sign-in.
+
+Expected result: the old PIN hash is cleared, devices for that member in that workspace are deactivated, and a fresh PIN is required.
+
+Common mistake: using reset as routine account switching. Use it only when a member forgot a PIN or device access should be revoked.
+
+Safe-use reminder: do not ask members to share old or new PINs.
+
+## Activity Log
+
+Screenshot: [admin setup](../setup-site/assets/screenshots/06-admin-setup.svg)
+
+What the user sees: filters for date, team member, area, unit, `Include voided`, and editable check-in rows.
+
+What they click:
+
+1. Open `Admin` > `Activity Log`.
+2. Apply filters.
+3. Correct unit, member, or date/time mistakes.
+4. Void accidental, duplicate, or incorrect records when needed.
+
+Expected result: corrected records stay auditable; voided records stop affecting coverage and score.
+
+Common mistake: using Activity Log to erase history. It is for correction and soft-voiding.
+
+Safe-use reminder: do not add sensitive explanations. Use the allowed correction reason only.
+
+## Admin Settings
+
+Screenshot: [admin setup](../setup-site/assets/screenshots/06-admin-setup.svg)
+
+What the user sees: `Admin settings`, Mission Board tone, and local admin passphrase controls.
+
+What they click:
+
+1. Open `Admin` > `Admin settings`.
+2. Choose Mission Brief tone: `Professional`, `Friendly`, or `Deckplate Banter`.
+3. Save tone.
+4. Rotate the local admin passphrase when needed.
+
+Expected result: tone updates on the next user refresh and the workspace admin passphrase is replaced.
+
+Common mistake: confusing `Admin settings` with the user `Account` tab.
+
+Safe-use reminder: Deckplate Banter is curated local text only. It should not shame or target named people or groups.
+
+## Account Switch And Sign-Out
+
+Screenshot: [account and feedback](../setup-site/assets/screenshots/07-account-feedback.svg)
+
+What the user sees: bottom tab `Account`, identity controls, `Sign out of this account`, `Switch workspace`, `Send feedback`, Safe Use, and sometimes System Administration if an operator token exists.
+
+What they click:
+
+1. Click `Account`.
+2. Use `Sign out of this account` to leave the current name.
+3. Use `Switch workspace` to clear the local identity and pick another workspace.
+4. Use `Send feedback` to open the setup-site feedback form.
+
+Expected result: users can leave a name or workspace without clearing the whole app installation.
+
+Common mistake: switching identity while visits are waiting to upload.
+
+Safe-use reminder: confirm pending visits are synced before changing identities.
+
+## Feedback
+
+Screenshot: [account and feedback](../setup-site/assets/screenshots/07-account-feedback.svg)
+
+What the user sees: feedback form at `https://deckplatingsetup.netlify.app/#feedback`.
+
+What they click:
+
+1. Open `Account` > `Send feedback`, or go directly to the feedback link.
+2. Choose the checkpoint: setup, week one, closeout, or urgent blocker.
+3. Choose the bucket: onboarding confusion, operational blocker, feature request, or safe-use question.
+4. Submit concrete, non-sensitive details.
+
+Expected result: feedback is reviewed manually and used to decide the next fix or pilot step.
+
+Common mistake: putting setup codes, names, or operational details in the feedback form.
+
+Safe-use reminder: never submit secrets, setup codes, passphrases, production data, counseling details, medical details, personal information, or sensitive operational locations.
+
+## Safe-Use Boundaries
+
+What the user sees: safe-use reminders on setup, sign-in, Account, Admin mapping, and the setup-site forms.
+
+What they click: nothing required; this is a hard boundary for all use.
+
+Expected result: Deckplating stores only the minimum unclassified, non-sensitive coverage metadata needed to track ministry presence.
+
+Common mistake: treating Deckplating like a counseling log because chaplains are using it.
+
+Never enter:
+
+- CUI
+- classified information
+- counseling notes
+- medical details
+- incident details
+- home addresses
+- phone numbers
+- email addresses
+- dates of birth
+- family information
+- sensitive operational locations
+- real setup codes, passphrases, hashes, or production secrets
 
 ## Troubleshooting
 
-### Locate Me Does Nothing
+Locate Me does nothing:
 
-- Confirm the browser or phone-home-screen app has location permission.
-- On iPhone, confirm **Precise Location** is on.
-- Try closing and reopening the app.
-- Use manual lookup for the visit, then have an admin check the saved location radius.
-
-### GPS Accuracy Is Too Broad
-
-- Enable precise location.
-- Step outside or near a window if inside a heavy building.
+- Confirm location permission for the browser or home-screen app.
+- On iPhone, confirm Precise Location is on.
 - Try again after a few seconds.
-- Use manual lookup if accuracy remains poor.
+- Use manual check-in if GPS remains unreliable.
 
-### App Is Offline Or Slow
+Offline or slow:
 
-- Check the sync/status bar.
-- If cached data appears, continue using manual lookup or cached nearby locations.
-- If the app says it needs one online launch, reconnect and open it once online.
-- If visits are waiting to upload, do not change identity.
+- Read the sync/status bar.
+- Use cached data if available.
+- Do not change identity while visits are pending.
+- Reopen the app or click `Sync Now` when connectivity returns.
 
-### Check-In Confirmation Is Delayed
+Workspace suspended or deleted:
 
-- Wait for the confirmation before closing the app when online.
-- If the network fails, the app should save the visit locally.
-- Check the sync bar for pending visits.
+- Existing sessions should stop working.
+- Sign out and contact the local lead or operator.
+- Do not try to work around the workspace boundary with another slug or setup code.
 
-### User Cannot Change Identity
+Need help:
 
-The app blocks identity changes while pending visits belong to the current identity. Sync or intentionally discard those pending visits first.
-
-## Training Plan
-
-### First 10 Minutes
-
-- Safe-use reminder.
-- Sign in.
-- Locate Me.
-- Manual lookup.
-- Submit one test check-in.
-- Read the confirmation screen.
-
-### First 30 Minutes
-
-- Coverage Board.
-- Map.
-- Mission Board.
-- Offline behavior.
-- Undo and Activity Log correction paths.
-
-### Local Lead Add-On
-
-- Add/edit areas.
-- Add/edit locations.
-- Attach units.
-- Create team members.
-- Review Activity Log.
-- Set Mission Board tone.
-
-## Annotated Screenshot Plan
-
-Use this list when capturing real screenshots for future guide updates or videos.
-
-Do not capture real sensitive locations, names, counseling details, medical information, or operationally sensitive spaces. Use seeded/example data whenever possible.
-
-Capture these screens:
-
-1. Login identity selection.
-2. Sync/status bar states.
-3. Check In before tapping **Locate Me**.
-4. Nearby location result with selected units.
-5. Manual unit lookup.
-6. Check-in confirmation with Undo, optional indicators, and Deckplate Brief.
-7. Coverage Board with a command detail drawer open.
-8. Reports section showing generic indicator totals.
-9. Map page online with mapped public locations.
-10. Map page offline/cached list fallback.
-11. Mission Board with score, supporting metrics, and badges.
-12. Settings with Safe Use.
-13. Admin location editing with mapping notice.
-14. Admin Activity Log correction flow.
-
-Recommended annotations:
-
-- Mark the primary action button.
-- Mark the safe-use warning where present.
-- Mark where sync status appears.
-- Mark where details open after tapping a card.
-- Mark what not to enter.
-
-## Recommended Training Package
-
-Send new teams these links together:
-
-- Hosted setup wizard: <https://deckplatingsetup.netlify.app>
-- Hosted user guide: <https://deckplatingsetup.netlify.app/user-guide.html>
-- Safe-use policy: [SAFE_USE.md](SAFE_USE.md)
-- Setup walkthrough: [SETUP_GUIDE.md](SETUP_GUIDE.md)
-- Pilot feedback form: <https://deckplatingsetup.netlify.app/#feedback>
+- Use feedback for non-sensitive pilot issues: <https://deckplatingsetup.netlify.app/#feedback>
+- Keep urgent safety or operational matters outside Deckplating and follow command-approved channels.

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640" role="img" aria-labelledby="title desc">
+  <title id="title">Deckplating map and Mission Board with demo data</title>
+  <desc id="desc">Scrubbed representative screenshot showing mapped public locations and Mission Board metrics.</desc>
+  <rect width="960" height="640" fill="#eef2f5"/>
+  <rect x="80" y="60" width="380" height="520" rx="16" fill="#f8fbfd" stroke="#d6dee6"/>
+  <text x="112" y="106" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#255a82">MAP</text>
+  <text x="112" y="140" font-family="Arial, sans-serif" font-size="28" font-weight="800" fill="#17212b">Mapped locations</text>
+  <rect x="112" y="166" width="316" height="180" rx="12" fill="#dbe9f5" stroke="#b8cddd"/>
+  <circle cx="206" cy="252" r="46" fill="#f7cfd1" stroke="#bd3030" stroke-width="3"/>
+  <circle cx="330" cy="236" r="34" fill="#cfead5" stroke="#287a3e" stroke-width="3"/>
+  <rect x="112" y="370" width="316" height="64" rx="10" fill="#fff" stroke="#d6dee6"/>
+  <text x="132" y="402" font-family="Arial, sans-serif" font-size="17" font-weight="800" fill="#17212b">Public Building 12</text>
+  <text x="132" y="424" font-family="Arial, sans-serif" font-size="14" fill="#5f6d7a">Demo Area - 2 units</text>
+  <rect x="500" y="60" width="380" height="520" rx="16" fill="#f8fbfd" stroke="#d6dee6"/>
+  <text x="532" y="106" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#255a82">MISSION BOARD</text>
+  <text x="532" y="140" font-family="Arial, sans-serif" font-size="28" font-weight="800" fill="#17212b">This month</text>
+  <rect x="532" y="166" width="316" height="76" rx="10" fill="#17324d"/>
+  <text x="552" y="198" font-family="Arial, sans-serif" font-size="16" fill="#d7e6f2">Demo Chaplain</text>
+  <text x="552" y="226" font-family="Arial, sans-serif" font-size="30" font-weight="800" fill="#fff">42 points</text>
+  <rect x="532" y="270" width="150" height="76" rx="10" fill="#fff" stroke="#d6dee6"/>
+  <text x="550" y="300" font-family="Arial, sans-serif" font-size="14" fill="#5f6d7a">Meaningful</text>
+  <text x="550" y="330" font-family="Arial, sans-serif" font-size="26" font-weight="800" fill="#17212b">9</text>
+  <rect x="698" y="270" width="150" height="76" rx="10" fill="#fff" stroke="#d6dee6"/>
+  <text x="716" y="300" font-family="Arial, sans-serif" font-size="14" fill="#5f6d7a">Recovered</text>
+  <text x="716" y="330" font-family="Arial, sans-serif" font-size="26" font-weight="800" fill="#17212b">3</text>
+  <rect x="532" y="372" width="316" height="66" rx="10" fill="#eef6fb" stroke="#bdd4e7"/>
+  <text x="552" y="412" font-family="Arial, sans-serif" font-size="18" font-weight="800" fill="#17324d">Badge: Recovery Team</text>
+</svg>

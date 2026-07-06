@@ -30,7 +30,7 @@ Use the same helper later for emergency central-operator passphrase rotation.
 Normal in-app path:
 
 1. Sign in normally if needed.
-2. Open `Settings`.
+2. Open the bottom tab labeled `Account`.
 3. Select `Open system administration`.
 4. Enter the central operator passphrase.
 
@@ -80,7 +80,7 @@ The activation form also includes `Installation name`; use `Find installation` i
 Local admin path:
 
 1. Open `Admin`.
-2. Stay in the setup section.
+2. Stay in the `Locations` setup section.
 3. Use `Create team member` to add a roster entry.
 4. Send the same workspace link to that member.
 5. The member selects their name and creates their own PIN on first sign-in.
@@ -94,9 +94,17 @@ Deactivate a roster entry:
 ## Local-Admin Passphrase Rotation
 
 1. Open `Admin`.
-2. Go to `Settings`.
-3. Enter a new value under `New organization admin passphrase`.
-4. Select `Save organization passphrase`.
+2. Go to `Admin settings`.
+3. Enter a new value under `New local admin passphrase`.
+4. Select `Save local admin passphrase`.
+
+## Onboarding Checklist
+
+The local admin checklist appears in `Admin` > `Locations` while setup is incomplete. It tracks local admin passphrase, areas, locations, units, and team members.
+
+- Select `Hide checklist` to dismiss it during setup.
+- Select `Complete onboarding` after all readiness items are done.
+- If setup later becomes incomplete, the checklist can appear again when admin settings are loaded.
 
 ## Central Recovery Of Forgotten Local-Admin Passphrase
 

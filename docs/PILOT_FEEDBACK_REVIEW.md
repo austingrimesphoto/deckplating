@@ -12,21 +12,23 @@ It is the review layer that sits between:
 
 Turn pilot feedback into three outputs:
 
-1. immediate blockers,
-2. next-release candidates,
-3. evidence for go / no-go on wider pilot use.
+1. immediate onboarding or operational blockers,
+2. next-release candidates grounded in real use,
+3. evidence for go / no-go on wider managed pilot use.
 
 ## Where Feedback Comes From
 
 Primary source:
 
 - Netlify Forms on `https://deckplatingsetup.netlify.app`
+  - workspace requests: `deckplating-workspace-request`
+  - pilot feedback: `deckplating-pilot-feedback`
 
 Secondary sources:
 
 - live setup support notes,
 - follow-up calls,
-- emailed observations from pilot leads.
+- emailed observations from approved pilot leads.
 
 If feedback comes from a call or message, rewrite it into the same structure used by the hosted feedback form before reviewing it.
 
@@ -35,23 +37,19 @@ If feedback comes from a call or message, rewrite it into the same structure use
 Run this review:
 
 - once after each team completes setup,
+- once after week one,
 - once per week during a 2-4 week pilot,
 - once at pilot closeout.
 
 ## Triage Buckets
 
-Classify each issue into one bucket only.
+Classify each issue into one of these first-pilot buckets.
 
-- `Setup`: account creation, GitHub, Supabase, Netlify, setup wizard, environment variables.
-- `Identity`: name selection, PIN, session refresh, device behavior.
-- `Check-in`: nearby flow, manual flow, confirmation, undo.
-- `Map/GPS`: locate me, accuracy, nearby matching, map rendering.
-- `Offline/Sync`: cached launch, queued visits, sync retry, expired session.
-- `Coverage/Mission Board`: command detail, reporting, nudges, badges, leaderboard.
-- `Admin`: areas, locations, units, team members, activity log, corrections.
-- `Safe Use`: misunderstanding of approved data boundaries or mapping restrictions.
-- `Performance`: slow loads, freezes, delayed confirmation, poor phone responsiveness.
-- `Documentation`: setup guide, user guide, missing links, confusing wording.
+- `Onboarding confusion`: workspace request, workspace slug, setup code, installation lookup, local admin passphrase, roster creation, user guide, safe-use onboarding.
+- `Operational blocker`: name/PIN, device registration, check-in, manual check-in, map/GPS, offline/sync, Coverage Board, Mission Board, Admin, Activity Log, reset PIN, account switching, performance.
+- `Feature request`: improvements that would make adoption easier but are not blocking current core use.
+
+If safe-use confusion appears, tag it inside the most relevant bucket and escalate it in the weekly summary. Pause broader rollout if safe-use confusion repeats across more than one team.
 
 ## Severity Rules
 
@@ -83,7 +81,7 @@ Copy this table for each pilot team and append rows as needed.
 
 | Date | Team | Source | Bucket | Issue | Severity | Adoption Weight | Reproducible | Action | Owner | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| YYYY-MM-DD | Example team | Setup form | Setup | Supabase step unclear | P2 | High | Yes | Fix docs and setup wizard wording | Austin | Open |
+| YYYY-MM-DD | Example team | Setup form | Onboarding confusion | Workspace slug versus installation name unclear | P2 | High | Yes | Fix app/setup-site wording | Austin | Open |
 
 ## Weekly Pilot Summary
 
@@ -152,7 +150,7 @@ Use this section to track patterns across teams.
 
 Do not widen pilot distribution until these are true:
 
-- at least two outside RMTs complete setup with limited support,
+- at least two outside RMTs activate managed workspaces with limited support,
 - phone check-in works reliably online and offline,
 - queued visits sync without duplicate records,
 - users understand safe-use boundaries,

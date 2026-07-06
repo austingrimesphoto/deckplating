@@ -26,6 +26,10 @@
         box-sizing: border-box;
       }
 
+      html {
+        scroll-behavior: smooth;
+      }
+
       body {
         margin: 0;
       }
@@ -38,7 +42,7 @@
       .app-shell {
         min-height: 100vh;
         display: grid;
-        grid-template-columns: 280px minmax(0, 1fr);
+        grid-template-columns: 300px minmax(0, 1fr);
       }
 
       .sidebar {
@@ -73,7 +77,8 @@
       }
 
       .brand span,
-      .muted {
+      .muted,
+      .helper {
         color: var(--muted);
       }
 
@@ -98,12 +103,13 @@
       .step-link span {
         display: grid;
         width: 24px;
+        min-width: 24px;
         height: 24px;
         place-items: center;
         border-radius: 999px;
         background: var(--brand);
         color: #fff;
-        font-size: 0.78rem;
+        font-size: 0.72rem;
         font-weight: 900;
       }
 
@@ -136,6 +142,7 @@
         color: var(--brand-2);
         font-size: 0.78rem;
         font-weight: 900;
+        letter-spacing: 0;
         text-transform: uppercase;
       }
 
@@ -160,25 +167,27 @@
       }
 
       h3 {
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         font-size: 1rem;
       }
 
+      .actions,
       .grid-two,
       .grid-three,
-      .callout-list,
-      .quick-grid {
+      .workflow-grid,
+      .stack {
         display: grid;
         gap: 12px;
       }
 
-      .grid-two {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+      .actions,
+      .grid-three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
 
-      .grid-three,
-      .quick-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+      .grid-two,
+      .workflow-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
       .button {
@@ -201,94 +210,49 @@
         color: var(--brand);
       }
 
-      .chip-row,
-      .safety-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
-      .chip {
-        padding: 7px 10px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        background: var(--surface-2);
-        font-weight: 800;
-      }
-
+      .guide-note,
       .quick-card,
-      .mini-card,
-      .callout,
-      .guide-note {
+      .screen-card {
+        padding: 14px;
         border: 1px solid var(--line);
         border-radius: 8px;
         background: var(--surface-2);
       }
 
-      .quick-card,
-      .callout,
-      .guide-note {
-        padding: 14px;
-      }
-
-      .mini-card {
-        padding: 12px;
-      }
-
-      .callout {
-        border-left: 5px solid var(--brand-2);
-      }
-
       .guide-note.safe {
-        border-left: 5px solid var(--yellow);
+        border-left: 6px solid var(--yellow);
+        background: #fffaf0;
       }
 
       .guide-note.ok {
-        border-left: 5px solid var(--green);
+        border-left: 6px solid var(--green);
+        background: #eef8f0;
       }
 
-      .phone-frame {
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        background: #0f1b27;
-        padding: 16px 12px;
-      }
-
-      .diagram-wrap {
-        display: grid;
-        gap: 10px;
-      }
-
-      .diagram-caption {
-        color: var(--muted);
-        font-size: 0.92rem;
-      }
-
-      svg {
+      .screenshot {
         width: 100%;
         height: auto;
         display: block;
-        border-radius: 12px;
-        background: #e8eef3;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
       }
 
-      .legend {
+      .caption {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .flow-list {
         display: grid;
         gap: 8px;
+        padding-left: 18px;
       }
 
-      .legend li {
-        margin-left: 18px;
-      }
-
-      .section-list li,
-      .number-list li {
-        margin-bottom: 8px;
-      }
-
-      .two-col-text {
-        columns: 2;
-        column-gap: 24px;
+      .safe-list li,
+      .flow-list li {
+        margin-bottom: 6px;
       }
 
       @media (max-width: 980px) {
@@ -303,14 +267,12 @@
           border-bottom: 1px solid var(--line);
         }
 
+        .steps,
+        .actions,
         .grid-two,
         .grid-three,
-        .quick-grid {
+        .workflow-grid {
           grid-template-columns: 1fr;
-        }
-
-        .two-col-text {
-          columns: 1;
         }
 
         main {
@@ -330,473 +292,315 @@
           </div>
         </div>
         <nav class="steps" aria-label="Guide sections">
-          <a class="step-link" href="#quick-start"><span>1</span>Quick Start</a>
-          <a class="step-link" href="#philosophy"><span>2</span>Philosophy</a>
-          <a class="step-link" href="#login"><span>3</span>Login</a>
+          <a class="step-link" href="#workspace"><span>1</span>Workspace</a>
+          <a class="step-link" href="#activate"><span>2</span>Activate</a>
+          <a class="step-link" href="#name-pin"><span>3</span>Name/PIN</a>
           <a class="step-link" href="#checkin"><span>4</span>Check In</a>
-          <a class="step-link" href="#coverage"><span>5</span>Coverage</a>
-          <a class="step-link" href="#reports"><span>6</span>Reports</a>
+          <a class="step-link" href="#manual"><span>5</span>Manual</a>
+          <a class="step-link" href="#coverage"><span>6</span>Coverage</a>
           <a class="step-link" href="#map"><span>7</span>Map</a>
-          <a class="step-link" href="#mission-board"><span>8</span>Mission Board</a>
-          <a class="step-link" href="#settings"><span>9</span>Settings</a>
-          <a class="step-link" href="#admin"><span>10</span>Admin</a>
-          <a class="step-link" href="#workflows"><span>11</span>Workflows</a>
-          <a class="step-link" href="#troubleshooting"><span>12</span>Troubleshooting</a>
-          <a class="step-link" href="#training"><span>13</span>Training</a>
-          <a class="step-link" href="#screenshots"><span>14</span>Screenshots</a>
+          <a class="step-link" href="#mission"><span>8</span>Mission Board</a>
+          <a class="step-link" href="#admin"><span>9</span>Admin</a>
+          <a class="step-link" href="#build-local"><span>10</span>Local Setup</a>
+          <a class="step-link" href="#activity"><span>11</span>Activity Log</a>
+          <a class="step-link" href="#account"><span>12</span>Account</a>
+          <a class="step-link" href="#feedback"><span>13</span>Feedback</a>
+          <a class="step-link" href="#safe-use"><span>14</span>Safe Use</a>
         </nav>
-        <a class="button secondary" href="index.html">Back to Setup Wizard</a>
+        <a class="button secondary" href="index.html">Back to Setup Site</a>
       </aside>
 
       <main>
         <section class="hero">
-          <p class="eyebrow">Phone-first field guide</p>
+          <p class="eyebrow">Managed pilot guide</p>
           <h1>How to use Deckplating without guessing.</h1>
           <p class="muted">
-            This guide is for chaplains, RPs, and local leads after the app is already set up. It starts with the basic daily workflow, then walks through each screen, correction path, and reporting use case.
+            This guide is for approved managed pilots using <a href="https://deckplating.netlify.app" target="_blank" rel="noreferrer">deckplating.netlify.app</a>. It covers workspace activation, local setup, check-ins, coverage views, admin tools, account switching, feedback, and safe-use boundaries.
           </p>
           <div class="grid-two">
             <div class="guide-note ok">
-              <strong>Best first lesson</strong>
-              <p>Teach new users five things first: sign in, Locate Me, manual lookup, check-in confirmation, and the sync bar.</p>
+              <strong>Teach first</strong>
+              <p>Select workspace, choose name/PIN, Locate Me, manual lookup, confirmation, and sync status.</p>
             </div>
             <div class="guide-note safe">
-              <strong>Safe use still applies</strong>
-              <p>Use Deckplating only for unclassified, non-sensitive coverage metadata. No counseling notes, medical details, or sensitive locations.</p>
+              <strong>Data boundary</strong>
+              <p>Use only unclassified, non-sensitive coverage metadata. Do not store counseling, medical, personal, or sensitive operational details.</p>
             </div>
           </div>
-          <div class="chip-row">
-            <span class="chip">Coverage awareness</span>
-            <span class="chip">Offline-capable</span>
-            <span class="chip">Meaningful visits</span>
-            <span class="chip">Local team ownership</span>
+          <div class="actions">
+            <a class="button" href="https://deckplating.netlify.app" target="_blank" rel="noreferrer">Open App</a>
+            <a class="button secondary" href="index.html#request">Request Workspace</a>
+            <a class="button secondary" href="index.html#feedback">Send Feedback</a>
           </div>
         </section>
 
-        <section id="quick-start" class="panel">
-          <p class="eyebrow">Quick Start</p>
-          <h2>Ten-minute user version</h2>
-          <div class="quick-grid">
-            <article class="quick-card">
-              <h3>1. Sign in</h3>
-              <p>Select your roster name and enter your 4-digit PIN.</p>
-            </article>
-            <article class="quick-card">
-              <h3>2. Find the location</h3>
-              <p>Tap <strong>Locate Me</strong>. If GPS is not usable, use manual lookup.</p>
-            </article>
-            <article class="quick-card">
-              <h3>3. Select units</h3>
-              <p>Choose one or more units at that mapped location, or one unmapped unit manually.</p>
-            </article>
-            <article class="quick-card">
-              <h3>4. Submit</h3>
-              <p>Tap <strong>Check In</strong> or <strong>Submit Manual Check-In</strong>.</p>
-            </article>
-            <article class="quick-card">
-              <h3>5. Review</h3>
-              <p>Check the confirmation details, points, and undo option.</p>
-            </article>
-            <article class="quick-card">
-              <h3>6. Move on</h3>
-              <p>Tap <strong>Done</strong>. The app should not slow down your actual visit rhythm.</p>
-            </article>
+        <section id="workspace" class="panel">
+          <p class="eyebrow">Select workspace</p>
+          <h2>Use the approved workspace slug or link</h2>
+          <div class="workflow-grid">
+            <div>
+              <img class="screenshot" src="assets/screenshots/01-workspace-activation.svg" alt="Scrubbed workspace activation screenshot" />
+              <p class="caption">Scrubbed demo screenshot. Do not capture real setup codes.</p>
+            </div>
+            <div class="stack">
+              <div class="screen-card"><strong>What you see</strong><p>Workspace setup with <strong>Select workspace</strong> and <strong>Activate workspace</strong>.</p></div>
+              <div class="screen-card"><strong>What you click</strong><p>Choose <strong>Select workspace</strong>, enter the approved slug, then click <strong>Use workspace</strong>.</p></div>
+              <div class="screen-card"><strong>Expected result</strong><p>The roster name picker appears when local setup is complete.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Entering the installation name instead of the workspace slug.</p></div>
+              <div class="guide-note safe"><strong>Safe-use reminder</strong><p>Do not screenshot workspace links that include sensitive context, setup codes, or passphrases.</p></div>
+            </div>
           </div>
         </section>
 
-        <section id="philosophy" class="panel">
-          <p class="eyebrow">Philosophy</p>
-          <h2>What the app is for</h2>
+        <section id="activate" class="panel">
+          <p class="eyebrow">Activate workspace</p>
+          <h2>One-time setup code, map center, local admin passphrase</h2>
           <div class="grid-two">
             <div>
-              <p>Deckplating is built around practical presence. The point is not to produce a perfect digital record. The point is to help a Religious Ministry Team see where ministry presence is happening, where it is stale, and where it needs to go next.</p>
-              <p>That is why the app emphasizes meaningful coverage, easy correction, safe-use limits, and a very short check-in flow.</p>
-            </div>
-            <div class="callout">
-              <strong>Not the mission</strong>
-              <ul class="section-list">
-                <li>Not a counseling record</li>
-                <li>Not case management</li>
-                <li>Not official recordkeeping</li>
-                <li>Not a place for CUI or sensitive operational data</li>
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        <section id="login" class="panel">
-          <p class="eyebrow">Login and status</p>
-          <h2>Start with identity and the sync bar</h2>
-          <div class="grid-two">
-            <div>
-              <h3>Signing in</h3>
-              <ol class="number-list">
-                <li>Select your own roster name.</li>
-                <li>Enter your 4-digit PIN.</li>
-                <li>Use the same PIN later if the app asks to refresh your session.</li>
+              <ol class="flow-list">
+                <li>Click <strong>Activate workspace</strong>.</li>
+                <li>Enter the one-time setup code from the operator.</li>
+                <li>Confirm workspace display name.</li>
+                <li>Use <strong>Find installation</strong> to set the public map center.</li>
+                <li>Set the local admin passphrase.</li>
+                <li>Click <strong>Activate workspace</strong>.</li>
               </ol>
-              <div class="guide-note">
-                <strong>Identity rule</strong>
-                <p>Do not share PINs or use another person's roster identity. The app blocks identity changes while that device has visits waiting to upload.</p>
-              </div>
             </div>
+            <div class="stack">
+              <div class="screen-card"><strong>Expected result</strong><p>The local lead enters Admin and finishes areas, locations, units, and roster.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Treating activation like public signup. Setup codes are centrally issued for approved workspaces.</p></div>
+              <div class="guide-note safe"><strong>Safe-use reminder</strong><p>Never paste setup codes or passphrases into forms, chat, docs, or screenshots.</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="name-pin" class="panel">
+          <p class="eyebrow">Choose name and PIN</p>
+          <h2>Register a normal user device</h2>
+          <div class="workflow-grid">
             <div>
-              <h3>Status bar meanings</h3>
-              <ul class="section-list">
-                <li><strong>Online and synced:</strong> no queued visits remain.</li>
-                <li><strong>Offline - cached data:</strong> the latest saved snapshot is being used.</li>
-                <li><strong>Visits waiting to upload:</strong> keep the app until they sync or intentionally undo them.</li>
-                <li><strong>Sync needs PIN refresh:</strong> enter the existing PIN. Do not create a new identity.</li>
-              </ul>
-              <div class="guide-note ok">
-                <strong>One online launch first</strong>
-                <p>Offline mode works after the app has launched online once and cached the app shell and recent coverage data.</p>
-              </div>
+              <img class="screenshot" src="assets/screenshots/02-name-pin.svg" alt="Scrubbed name and PIN screenshot" />
+            </div>
+            <div class="stack">
+              <div class="screen-card"><strong>What you see</strong><p>Roster dropdown, 4-digit PIN field, and safe-use reminder.</p></div>
+              <div class="screen-card"><strong>What you click</strong><p>Select your own name, enter your PIN, then click <strong>Continue</strong>.</p></div>
+              <div class="screen-card"><strong>Expected result</strong><p>The app opens for normal use and registers that device.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Sharing PINs or using another person's roster identity.</p></div>
             </div>
           </div>
         </section>
 
         <section id="checkin" class="panel">
           <p class="eyebrow">Check In</p>
-          <h2>The main working screen</h2>
-          <div class="grid-two">
-            <div class="diagram-wrap">
-              <div class="phone-frame">
-                <svg viewBox="0 0 420 860" aria-label="Annotated check-in screen">
-                  <rect x="18" y="18" width="384" height="824" rx="26" fill="#f8fbfd" stroke="#cfd8e1"/>
-                  <rect x="36" y="42" width="348" height="44" rx="12" fill="#e7f4ea" stroke="#bdd9c2"/>
-                  <text x="52" y="69" font-size="18" fill="#215c33" font-weight="700">Online and synced</text>
-                  <rect x="36" y="104" width="348" height="96" rx="14" fill="#fff" stroke="#d6dee6"/>
-                  <text x="52" y="130" font-size="13" fill="#255a82" font-weight="800">MISSION BRIEF</text>
-                  <text x="52" y="158" font-size="24" fill="#17212b" font-weight="800">Lt Grimes</text>
-                  <rect x="258" y="142" width="108" height="36" rx="10" fill="#fff" stroke="#d6dee6"/>
-                  <text x="284" y="165" font-size="15" fill="#17324d" font-weight="700">Locate Me</text>
-                  <rect x="36" y="220" width="348" height="300" rx="16" fill="#fff" stroke="#d6dee6"/>
-                  <text x="52" y="248" font-size="13" fill="#255a82" font-weight="800">62 AREA</text>
-                  <text x="52" y="282" font-size="28" fill="#17212b" font-weight="800">Building 412</text>
-                  <text x="52" y="310" font-size="16" fill="#5f6d7a">18 meters away</text>
-                  <rect x="52" y="334" width="316" height="58" rx="12" fill="#fffaf0" stroke="#ead6a0"/>
-                  <text x="68" y="366" font-size="18" fill="#17212b" font-weight="700">1st CEB</text>
-                  <text x="68" y="387" font-size="14" fill="#5f6d7a">Overdue • Last visit Jun 12</text>
-                  <rect x="52" y="406" width="316" height="58" rx="12" fill="#edf3f9" stroke="#d6dee6"/>
-                  <text x="68" y="438" font-size="18" fill="#17212b" font-weight="700">VFC-111</text>
-                  <text x="68" y="459" font-size="14" fill="#5f6d7a">Current • Last visit Jul 2</text>
-                  <rect x="52" y="480" width="316" height="52" rx="12" fill="#17324d"/>
-                  <text x="170" y="512" font-size="18" fill="#fff" font-weight="800">Check In</text>
-                  <rect x="36" y="548" width="348" height="218" rx="16" fill="#fff" stroke="#d6dee6"/>
-                  <text x="52" y="576" font-size="13" fill="#255a82" font-weight="800">CHECK-IN SAVED</text>
-                  <text x="52" y="610" font-size="24" fill="#17212b" font-weight="800">2 units checked in</text>
-                  <text x="52" y="642" font-size="16" fill="#5f6d7a">Date/time, points, undo, indicators, brief</text>
-                  <rect x="52" y="676" width="150" height="40" rx="10" fill="#fff" stroke="#d6dee6"/>
-                  <text x="74" y="701" font-size="15" fill="#17324d" font-weight="700">Undo this check-in</text>
-                  <rect x="218" y="676" width="150" height="40" rx="10" fill="#17324d"/>
-                  <text x="278" y="701" font-size="15" fill="#fff" font-weight="800">Done</text>
-                  <circle cx="392" cy="118" r="18" fill="#17324d"/><text x="385" y="124" font-size="16" fill="#fff" font-weight="800">1</text>
-                  <circle cx="392" cy="355" r="18" fill="#17324d"/><text x="385" y="361" font-size="16" fill="#fff" font-weight="800">2</text>
-                  <circle cx="392" cy="497" r="18" fill="#17324d"/><text x="385" y="503" font-size="16" fill="#fff" font-weight="800">3</text>
-                  <circle cx="392" cy="697" r="18" fill="#17324d"/><text x="385" y="703" font-size="16" fill="#fff" font-weight="800">4</text>
-                </svg>
-              </div>
-              <p class="diagram-caption">Annotated screen diagram based on the current phone workflow.</p>
-            </div>
+          <h2>Nearby mapped-location flow</h2>
+          <div class="workflow-grid">
             <div>
-              <ol class="number-list">
-                <li><strong>Locate Me</strong> tries to match your phone position to a saved mapped location.</li>
-                <li>Select one or more units only from that one physical location.</li>
-                <li>Submit the visit. If GPS is unavailable, use <strong>Manual unit lookup</strong>.</li>
-                <li>The confirmation screen is the correction window. Undo there if the visit was accidental.</li>
+              <img class="screenshot" src="assets/screenshots/03-check-in.svg" alt="Scrubbed check-in screenshot" />
+            </div>
+            <div class="stack">
+              <div class="screen-card"><strong>What you see</strong><p>Sync status, Mission Brief, <strong>Locate Me</strong>, nearby location, unit checkboxes, and <strong>Check In</strong>.</p></div>
+              <div class="screen-card"><strong>What you click</strong><p>Click <strong>Locate Me</strong>, select one or more units at that one location, click <strong>Check In</strong>, review confirmation, then click <strong>Done</strong>.</p></div>
+              <div class="screen-card"><strong>Expected result</strong><p>The visit saves and coverage/Mission Board context updates.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Closing the app before confirmation when the network is weak.</p></div>
+              <div class="guide-note safe"><strong>Safe-use reminder</strong><p>Do not enter notes, names, counseling details, or incident details.</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="manual" class="panel">
+          <p class="eyebrow">Manual check-in</p>
+          <h2>Fallback when GPS is unavailable or location stays unmapped</h2>
+          <div class="grid-two">
+            <div>
+              <ol class="flow-list">
+                <li>Click <strong>Manual unit lookup</strong>.</li>
+                <li>Choose one mapped location and attached units, or one unmapped unit by itself.</li>
+                <li>Submit the manual check-in.</li>
+                <li>Review confirmation and click <strong>Done</strong>.</li>
               </ol>
-              <div class="guide-note safe">
-                <strong>Optional visit indicators</strong>
-                <p>These are generic counts only. They are not tied to a person, department, counseling case, or referral detail.</p>
-              </div>
-              <div class="guide-note">
-                <strong>If Locate Me fails</strong>
-                <p>Check precise location permission, try again, then fall back to manual lookup. GPS failure should never stop ministry tracking.</p>
-              </div>
+            </div>
+            <div class="stack">
+              <div class="screen-card"><strong>Expected result</strong><p>The visit records without GPS verification.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Combining unrelated unmapped units into one visit.</p></div>
+              <div class="guide-note safe"><strong>Safe-use reminder</strong><p>If a location should not be shared, leave it unmapped and use manual check-in.</p></div>
             </div>
           </div>
         </section>
 
         <section id="coverage" class="panel">
-          <p class="eyebrow">Coverage</p>
-          <h2>Where attention should go next</h2>
-          <div class="grid-two">
+          <p class="eyebrow">Coverage Board</p>
+          <h2>Decide where attention should go next</h2>
+          <div class="workflow-grid">
             <div>
-              <p>Coverage Board is the main planning view. It sorts the work toward never-visited, overdue, and due-soon units, and it lets you drill into a command directly where you tapped it.</p>
-              <ul class="section-list">
-                <li>Use filters to narrow by area, type, overdue, never, or dates.</li>
-                <li>Tap a command card to open its detail drawer directly under that card.</li>
-                <li>Use the report section to review referral and confidential-care totals by mapped location over time.</li>
-              </ul>
+              <img class="screenshot" src="assets/screenshots/04-coverage-board.svg" alt="Scrubbed coverage board screenshot" />
             </div>
-            <div class="diagram-wrap">
-              <svg viewBox="0 0 760 460" aria-label="Annotated coverage board">
-                <rect x="18" y="18" width="724" height="424" rx="18" fill="#f8fbfd" stroke="#cfd8e1"/>
-                <rect x="36" y="38" width="688" height="88" rx="14" fill="#fff" stroke="#d6dee6"/>
-                <text x="54" y="64" font-size="13" fill="#255a82" font-weight="800">COVERAGE BOARD</text>
-                <text x="54" y="95" font-size="28" fill="#17212b" font-weight="800">Needs attention first</text>
-                <rect x="36" y="144" width="688" height="78" rx="14" fill="#fff" stroke="#d6dee6"/>
-                <text x="54" y="175" font-size="18" fill="#17212b" font-weight="700">Mission Board summary and top needs</text>
-                <rect x="36" y="240" width="688" height="72" rx="14" fill="#fffaf0" stroke="#ead6a0"/>
-                <text x="54" y="271" font-size="18" fill="#17212b" font-weight="700">1st CEB</text>
-                <text x="54" y="293" font-size="14" fill="#5f6d7a">Department • Overdue • Last visit Jun 12</text>
-                <rect x="36" y="322" width="688" height="102" rx="14" fill="#edf3f9" stroke="#d6dee6"/>
-                <text x="54" y="350" font-size="18" fill="#17212b" font-weight="700">Command detail drawer opens here</text>
-                <text x="54" y="378" font-size="14" fill="#5f6d7a">Recent check-ins, last visitor, indicator badges</text>
-                <circle cx="710" cy="176" r="18" fill="#17324d"/><text x="703" y="182" font-size="16" fill="#fff" font-weight="800">1</text>
-                <circle cx="710" cy="274" r="18" fill="#17324d"/><text x="703" y="280" font-size="16" fill="#fff" font-weight="800">2</text>
-                <circle cx="710" cy="352" r="18" fill="#17324d"/><text x="703" y="358" font-size="16" fill="#fff" font-weight="800">3</text>
-              </svg>
-              <ol class="legend">
-                <li><strong>1.</strong> Team-level status summary and top needs.</li>
-                <li><strong>2.</strong> Tap the command card you care about.</li>
-                <li><strong>3.</strong> Detail opens right there instead of forcing a long scroll.</li>
-              </ol>
-            </div>
-          </div>
-        </section>
-
-        <section id="reports" class="panel">
-          <p class="eyebrow">Reports</p>
-          <h2>Generic indicator trends</h2>
-          <div class="grid-two">
-            <div>
-              <p>Reports are for broad pattern awareness only. They show generic location-level counts for referral and confidential-care indicators over a date range.</p>
-              <ul class="section-list">
-                <li>Use them to see which mapped locations show more indicator activity over time.</li>
-                <li>Keep the interpretation general and non-sensitive.</li>
-                <li>Do not try to reconstruct counseling cases, referral details, names, or incidents.</li>
-              </ul>
-            </div>
-            <div class="callout">
-              <strong>What these counts are not</strong>
-              <ul class="section-list">
-                <li>Not unit-level counseling data.</li>
-                <li>Not a referral log.</li>
-                <li>Not a medical or case-management record.</li>
-                <li>Not tied to individuals or departments.</li>
-              </ul>
+            <div class="stack">
+              <div class="screen-card"><strong>What you see</strong><p>Filters, unit cards, status colors, detail drawers, and generic indicators.</p></div>
+              <div class="screen-card"><strong>What you click</strong><p>Filter by area/type/status/date, then click a unit card for details.</p></div>
+              <div class="screen-card"><strong>Expected result</strong><p>The team can prioritize overdue, never-visited, and due-soon units.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Using it only as a productivity leaderboard.</p></div>
+              <div class="guide-note safe"><strong>Safe-use reminder</strong><p>Indicator totals are generic counts, not case records.</p></div>
             </div>
           </div>
         </section>
 
         <section id="map" class="panel">
           <p class="eyebrow">Map</p>
-          <h2>Mapped public locations and offline fallback</h2>
-          <div class="grid-two">
-            <div class="diagram-wrap">
-              <svg viewBox="0 0 760 440" aria-label="Annotated map screen">
-                <rect x="18" y="18" width="724" height="404" rx="18" fill="#f8fbfd" stroke="#cfd8e1"/>
-                <rect x="36" y="38" width="688" height="48" rx="12" fill="#fff" stroke="#d6dee6"/>
-                <text x="54" y="69" font-size="24" fill="#17212b" font-weight="800">Mapped locations</text>
-                <rect x="36" y="104" width="688" height="156" rx="14" fill="#dbe9f5" stroke="#c0d3e2"/>
-                <circle cx="210" cy="184" r="48" fill="rgba(189,48,48,0.18)" stroke="#bd3030" stroke-width="3"/>
-                <circle cx="514" cy="176" r="36" fill="rgba(40,122,62,0.18)" stroke="#287a3e" stroke-width="3"/>
-                <rect x="36" y="278" width="688" height="58" rx="12" fill="#fff" stroke="#d6dee6"/>
-                <text x="54" y="311" font-size="18" fill="#17212b" font-weight="700">Building 412</text>
-                <text x="54" y="331" font-size="14" fill="#5f6d7a">62 Area • 120m • 2 units</text>
-                <rect x="36" y="346" width="688" height="58" rx="12" fill="#edf3f9" stroke="#d6dee6"/>
-                <text x="54" y="377" font-size="18" fill="#17212b" font-weight="700">Location detail drawer opens here</text>
-                <circle cx="710" cy="183" r="18" fill="#17324d"/><text x="703" y="189" font-size="16" fill="#fff" font-weight="800">1</text>
-                <circle cx="710" cy="308" r="18" fill="#17324d"/><text x="703" y="314" font-size="16" fill="#fff" font-weight="800">2</text>
-                <circle cx="710" cy="377" r="18" fill="#17324d"/><text x="703" y="383" font-size="16" fill="#fff" font-weight="800">3</text>
-              </svg>
-            </div>
+          <h2>Public mapped locations and offline fallback</h2>
+          <div class="workflow-grid">
             <div>
-              <ol class="number-list">
-                <li>Online mode shows the map and status circles for mapped public locations.</li>
-                <li>Each location card shows area, radius, and attached unit count.</li>
-                <li>Offline mode drops the map tiles and keeps the cached location list available.</li>
-              </ol>
-              <div class="guide-note">
-                <strong>Important limit</strong>
-                <p>Offline map view is intentionally simple. The list remains usable even when map tiles are unavailable.</p>
-              </div>
+              <img class="screenshot" src="assets/screenshots/05-map-and-mission.svg" alt="Scrubbed map and Mission Board screenshot" />
+            </div>
+            <div class="stack">
+              <div class="screen-card"><strong>What you see</strong><p>Mapped public locations, radius circles, location cards, and cached list fallback offline.</p></div>
+              <div class="screen-card"><strong>What you click</strong><p>Open <strong>Map</strong>, tap a location card, and review attached units.</p></div>
+              <div class="screen-card"><strong>Expected result</strong><p>Users understand mapped public/general locations and attached units.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Mapping sensitive rooms or spaces because they are operationally useful.</p></div>
+              <div class="guide-note safe"><strong>Safe-use reminder</strong><p>Map only publicly identifiable buildings or general areas.</p></div>
             </div>
           </div>
         </section>
 
-        <section id="mission-board" class="panel">
+        <section id="mission" class="panel">
           <p class="eyebrow">Mission Board</p>
           <h2>Recognition for meaningful coverage</h2>
           <div class="grid-two">
             <div>
-              <p>Mission Board keeps score as the main ranking metric, but it shows more useful context than raw visit count: meaningful visits, distinct units, recovered units, active days, and badges.</p>
-              <div class="grid-three">
-                <article class="mini-card"><strong>First Rounds</strong><p>First qualifying check-in this month.</p></article>
-                <article class="mini-card"><strong>Recovery Team</strong><p>Recovered an overdue or never-visited unit.</p></article>
-                <article class="mini-card"><strong>Gray to Green</strong><p>Completed a first-ever visit.</p></article>
-                <article class="mini-card"><strong>Wide Coverage</strong><p>Visited five distinct units this month.</p></article>
-                <article class="mini-card"><strong>Sustained Presence</strong><p>Worked four distinct days this month.</p></article>
-                <article class="mini-card"><strong>Coverage Sweep</strong><p>Helped clear overdue/never units from an area.</p></article>
-              </div>
-            </div>
-            <div class="callout">
-              <strong>What users should understand</strong>
-              <ul class="section-list">
-                <li>The app rewards recovery, breadth, and consistency.</li>
-                <li>One meaningful recovery is worth more than repetitive check-ins at an already current space.</li>
-                <li>Badges should encourage action, not pressure people to game the board.</li>
+              <ul class="flow-list">
+                <li>Open <strong>Scores</strong>.</li>
+                <li>Review score, meaningful visits, distinct units, recovered units, active days, and badges.</li>
+                <li>Use top needs to inform the next visit.</li>
               </ul>
             </div>
-          </div>
-        </section>
-
-        <section id="settings" class="panel">
-          <p class="eyebrow">Settings</p>
-          <h2>Refresh context, review safe use, and manage identity</h2>
-          <div class="grid-three">
-            <article class="quick-card">
-              <h3>Refresh</h3>
-              <p>Reload the latest roster, coverage, locations, and app context when online.</p>
-            </article>
-            <article class="quick-card">
-              <h3>Safe Use</h3>
-              <p>Review the data boundary: unclassified, non-sensitive coverage metadata only.</p>
-            </article>
-            <article class="quick-card">
-              <h3>Identity</h3>
-              <p>Change identity only after queued visits are synced or intentionally discarded.</p>
-            </article>
+            <div class="stack">
+              <div class="screen-card"><strong>Expected result</strong><p>The board rewards recovery, breadth, and consistency.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Chasing repeated easy check-ins instead of overdue or never-visited units.</p></div>
+              <div class="guide-note safe"><strong>Safe-use reminder</strong><p>Mission Board should never shame named people, ranks, faith groups, commands, or roles.</p></div>
+            </div>
           </div>
         </section>
 
         <section id="admin" class="panel">
-          <p class="eyebrow">Admin</p>
-          <h2>Local lead tools</h2>
+          <p class="eyebrow">Admin unlock</p>
+          <h2>Local workspace-admin configuration</h2>
+          <div class="workflow-grid">
+            <div>
+              <img class="screenshot" src="assets/screenshots/06-admin-setup.svg" alt="Scrubbed admin setup screenshot" />
+            </div>
+            <div class="stack">
+              <div class="screen-card"><strong>What you see</strong><p><strong>Admin</strong>, workspace name, and local admin passphrase.</p></div>
+              <div class="screen-card"><strong>What you click</strong><p>Enter the local admin passphrase and click <strong>Unlock</strong>.</p></div>
+              <div class="screen-card"><strong>Expected result</strong><p>Admin opens to <strong>Locations</strong>, <strong>Activity Log</strong>, and <strong>Admin settings</strong>.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Using the central operator passphrase or expecting an email account login.</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="build-local" class="panel">
+          <p class="eyebrow">Create local setup records</p>
+          <h2>Areas, locations, units, team members, and PIN reset</h2>
           <div class="grid-three">
+            <article class="quick-card">
+              <h3>Areas</h3>
+              <p>Create broad, non-sensitive groups for routing and scanning. Avoid making areas too granular.</p>
+            </article>
             <article class="quick-card">
               <h3>Locations</h3>
-              <p>Create mapped public locations, adjust coordinates, set radius, and attach units.</p>
+              <p>Create public/general mapped locations, set coordinates/radius, and attach units.</p>
             </article>
             <article class="quick-card">
+              <h3>Units</h3>
+              <p>Create departments, divisions, or tenant commands and set visit intervals.</p>
+            </article>
+            <article class="quick-card">
+              <h3>Team members</h3>
+              <p>Add roster names, then send the workspace link. There are no email invitations yet.</p>
+            </article>
+            <article class="quick-card">
+              <h3>Reset PIN</h3>
+              <p>Use <strong>Reset PIN and revoke devices</strong> when a member forgets a PIN or device access should be revoked.</p>
+            </article>
+            <article class="quick-card">
+              <h3>Checklist</h3>
+              <p>Hide or complete the onboarding checklist after local readiness items are done.</p>
+            </article>
+          </div>
+          <div class="guide-note safe">
+            <strong>Safe-use reminder</strong>
+            <p>Do not add sensitive mission details, phone numbers, email addresses, birth dates, family details, or precise sensitive locations.</p>
+          </div>
+        </section>
+
+        <section id="activity" class="panel">
+          <p class="eyebrow">Activity Log and Admin settings</p>
+          <h2>Correct records and configure local settings</h2>
+          <div class="grid-two">
+            <div class="quick-card">
               <h3>Activity Log</h3>
-              <p>Filter check-ins, correct unit/member/date mistakes, and soft-void invalid entries.</p>
-            </article>
-            <article class="quick-card">
-              <h3>Settings</h3>
-              <p>Set Mission Brief tone: Professional, Friendly, or Deckplate Banter.</p>
-            </article>
-          </div>
-          <div class="guide-note safe">
-            <strong>Mapping rule</strong>
-            <p>Map only publicly identifiable buildings or general areas. If there is any doubt, leave the location unmapped and use manual check-in.</p>
+              <p>Filter by date, member, area, or unit. Correct unit/member/time mistakes or soft-void duplicate and accidental records.</p>
+              <p><strong>Common mistake:</strong> trying to erase history. Voided records stay auditable and stop affecting score and coverage.</p>
+            </div>
+            <div class="quick-card">
+              <h3>Admin settings</h3>
+              <p>Set Mission Brief tone and rotate the local admin passphrase.</p>
+              <p><strong>Common mistake:</strong> confusing <strong>Admin settings</strong> with the user <strong>Account</strong> tab.</p>
+            </div>
           </div>
         </section>
 
-        <section id="workflows" class="panel">
-          <p class="eyebrow">Workflows</p>
-          <h2>Most common use cases</h2>
+        <section id="account" class="panel">
+          <p class="eyebrow">Account</p>
+          <h2>Switch workspace, sign out, and send feedback</h2>
+          <div class="workflow-grid">
+            <div>
+              <img class="screenshot" src="assets/screenshots/07-account-feedback.svg" alt="Scrubbed account and feedback screenshot" />
+            </div>
+            <div class="stack">
+              <div class="screen-card"><strong>What you see</strong><p>Bottom tab <strong>Account</strong>, identity controls, <strong>Sign out of this account</strong>, <strong>Switch workspace</strong>, <strong>Send feedback</strong>, and Safe Use.</p></div>
+              <div class="screen-card"><strong>What you click</strong><p>Use sign-out for the current name, switch workspace for another approved workspace, or send feedback to the setup-site form.</p></div>
+              <div class="screen-card"><strong>Expected result</strong><p>The user can leave a name or workspace without reinstalling the app.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Switching identity while visits are waiting to upload.</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="feedback" class="panel">
+          <p class="eyebrow">Feedback</p>
+          <h2>Send non-sensitive pilot feedback</h2>
           <div class="grid-two">
             <div>
-              <h3>Basic daily round</h3>
-              <ol class="number-list">
-                <li>Open the app.</li>
-                <li>Read the Mission Brief.</li>
-                <li>Locate the current building.</li>
-                <li>Select the unit or units there.</li>
-                <li>Check in.</li>
-                <li>Tap Done and move on.</li>
-              </ol>
-
-              <h3>Offline check-in</h3>
-              <ol class="number-list">
-                <li>Open the app after it has previously launched online.</li>
-                <li>Use cached coverage data.</li>
-                <li>Submit the visit.</li>
-                <li>Look for a status like <strong>Saved on this device</strong> or pending upload.</li>
-                <li>Reconnect later and use <strong>Sync Now</strong> if needed.</li>
+              <ol class="flow-list">
+                <li>Open <strong>Account</strong> &gt; <strong>Send feedback</strong>, or go to <a href="index.html#feedback">deckplatingsetup.netlify.app/#feedback</a>.</li>
+                <li>Choose setup, week one, closeout, or urgent blocker.</li>
+                <li>Choose onboarding confusion, operational blocker, feature request, or safe-use question.</li>
+                <li>Submit concrete, non-sensitive details.</li>
               </ol>
             </div>
-            <div>
-              <h3>Fixing a mistake</h3>
-              <ol class="number-list">
-                <li>If the error was immediate, use <strong>Undo this check-in</strong>.</li>
-                <li>If the check-in is older or more complex, use <strong>Admin &gt; Activity Log</strong>.</li>
-                <li>Edit only what needs correction. Voided records stay in history and stop affecting score and coverage.</li>
-              </ol>
-
-              <h3>Teaching a new teammate</h3>
-              <ol class="number-list">
-                <li>Start with one mapped location and one manual check-in.</li>
-                <li>Show the confirmation screen and undo.</li>
-                <li>Show the sync bar meanings.</li>
-                <li>Then show Coverage and Mission Board.</li>
-              </ol>
+            <div class="stack">
+              <div class="screen-card"><strong>Expected result</strong><p>Feedback is reviewed manually and used to choose the next fix or pilot step.</p></div>
+              <div class="screen-card"><strong>Common mistake</strong><p>Putting setup codes, passphrases, real names, or operational details in the form.</p></div>
             </div>
           </div>
         </section>
 
-        <section id="troubleshooting" class="panel">
-          <p class="eyebrow">Troubleshooting</p>
-          <h2>Fast fixes for common field problems</h2>
+        <section id="safe-use" class="panel">
+          <p class="eyebrow">Safe-use boundaries</p>
+          <h2>What never belongs in Deckplating</h2>
           <div class="grid-two">
             <div>
-              <h3>Locate Me is unreliable</h3>
-              <ul class="section-list">
-                <li>Confirm location permission is enabled for the browser or phone-home-screen app.</li>
-                <li>On iPhone, turn on Precise Location.</li>
-                <li>Try again after a few seconds if the phone reports poor accuracy.</li>
-                <li>Use manual lookup and ask an admin to check location coordinates and radius later.</li>
+              <p>Deckplating stores only the minimum unclassified, non-sensitive coverage metadata needed to track ministry presence.</p>
+              <ul class="safe-list">
+                <li>No CUI or classified information.</li>
+                <li>No counseling notes or medical details.</li>
+                <li>No incident details, family information, addresses, phone numbers, email addresses, or dates of birth.</li>
+                <li>No sensitive operational locations.</li>
+                <li>No setup codes, passphrases, hashes, service keys, or production secrets.</li>
               </ul>
             </div>
-            <div>
-              <h3>Offline or slow</h3>
-              <ul class="section-list">
-                <li>Read the sync/status bar before tapping repeatedly.</li>
-                <li>Use cached Coverage and manual lookup when map tiles are unavailable.</li>
-                <li>Do not change identity while visits are waiting to upload.</li>
-                <li>Use Sync Now when connectivity returns.</li>
-              </ul>
+            <div class="guide-note safe">
+              <strong>When uncertain</strong>
+              <p>Do not map the location, do not add the detail, and use command-approved channels outside Deckplating for urgent safety or operational matters.</p>
             </div>
-          </div>
-        </section>
-
-        <section id="training" class="panel">
-          <p class="eyebrow">Training plan</p>
-          <h2>How to spin up a new team</h2>
-          <div class="grid-three">
-            <article class="quick-card">
-              <h3>First 10 minutes</h3>
-              <p>Safe use, sign in, Locate Me, manual lookup, one check-in, confirmation, and sync bar.</p>
-            </article>
-            <article class="quick-card">
-              <h3>First 30 minutes</h3>
-              <p>Coverage, Map, Mission Board, offline behavior, Undo, and Activity Log correction paths.</p>
-            </article>
-            <article class="quick-card">
-              <h3>Local lead add-on</h3>
-              <p>Areas, locations, units, team members, Activity Log, and Mission Brief tone.</p>
-            </article>
-          </div>
-        </section>
-
-        <section id="screenshots" class="panel">
-          <p class="eyebrow">Annotated screenshot plan</p>
-          <h2>Future screenshots and video script list</h2>
-          <p>Use example data when capturing images. Do not capture sensitive locations, names, counseling details, medical information, or operationally sensitive spaces.</p>
-          <div class="two-col-text">
-            <ol class="number-list">
-              <li>Login identity selection.</li>
-              <li>Sync/status bar states.</li>
-              <li>Check In before Locate Me.</li>
-              <li>Nearby location result with selected units.</li>
-              <li>Manual unit lookup.</li>
-              <li>Check-in confirmation with Undo, indicators, and Deckplate Brief.</li>
-              <li>Coverage Board with a command detail drawer open.</li>
-              <li>Reports section with generic indicator totals.</li>
-              <li>Map page online with mapped public locations.</li>
-              <li>Map page offline/cached list fallback.</li>
-              <li>Mission Board with score, metrics, and badges.</li>
-              <li>Settings with Safe Use.</li>
-              <li>Admin location editing with mapping notice.</li>
-              <li>Admin Activity Log correction flow.</li>
-            </ol>
-          </div>
-          <div class="guide-note safe">
-            <strong>Annotation rule</strong>
-            <p>Mark the primary action, sync status, safe-use warning, where details open, and what not to enter.</p>
           </div>
         </section>
       </main>

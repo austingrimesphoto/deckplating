@@ -120,6 +120,7 @@ const locationMappingNotice =
 const identityKey = 'deckplate.identity';
 const workspaceKey = 'deckplate.workspace';
 const operatorKey = 'deckplate.operator';
+const feedbackUrl = 'https://deckplatingsetup.netlify.app/#feedback';
 
 const defaultWorkspace: WorkspaceContext = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -572,7 +573,7 @@ function WorkspaceEntry({
       onAdminToken(result.token);
       setSetupCode('');
       setAdminPassphrase('');
-      setMessage('Workspace activated. Open Admin Setup to build the roster, areas, locations, and units.');
+      setMessage('Workspace activated. Continue to local setup to build areas, locations, units, and the roster.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Workspace activation failed.');
     }
@@ -584,6 +585,9 @@ function WorkspaceEntry({
         <p className="eyebrow">Deckplating</p>
         <h1>Workspace setup</h1>
         <p className="muted">Current workspace: {workspace?.name ?? 'Default Workspace'}</p>
+        <p className="notice">
+          Managed pilot sequence: select or request your approved workspace, enter the one-time setup code, confirm the installation map center, set the local admin passphrase, then continue to local setup.
+        </p>
         <p className="safe-summary">{safeUseSummary}</p>
         {teamMembers.length > 0 && (
           <p className="notice">
@@ -605,6 +609,9 @@ function WorkspaceEntry({
         </div>
         {mode === 'choose' ? (
           <form className="stack" onSubmit={resolveWorkspace}>
+            <p className="muted">
+              Use this if your workspace has already been approved and you know its slug. New pilots should request access on the setup site before expecting a workspace slug or setup code.
+            </p>
             <label>
               Workspace slug
               <input
@@ -621,8 +628,11 @@ function WorkspaceEntry({
           </form>
         ) : (
           <form className="stack" onSubmit={activateWorkspace}>
+            <p className="muted">
+              Use the one-time setup code from the Deckplating operator. This does not create an email account or public signup; it activates the already approved workspace for local setup.
+            </p>
             <label>
-              Setup code
+              One-time setup code
               <input
                 value={setupCode}
                 autoCapitalize="characters"
@@ -636,6 +646,7 @@ function WorkspaceEntry({
             </label>
             <label>
               Installation name
+              <span className="admin-hint">Search for the public installation or command area that should center the map.</span>
               <input
                 value={installationQuery}
                 onChange={(event) => {
@@ -667,11 +678,12 @@ function WorkspaceEntry({
               </div>
             )}
             <label>
-              Lead label
+              Local lead label
               <input value={leadLabel} onChange={(event) => setLeadLabel(event.target.value)} placeholder="Optional" />
             </label>
             <label>
               Local admin passphrase
+              <span className="admin-hint">Keep this with the approved local lead. It unlocks Admin settings for this workspace only.</span>
               <input
                 type="password"
                 minLength={8}
@@ -698,7 +710,7 @@ function OnboardingChecklist({
   onComplete: () => void;
 }) {
   const steps = [
-    { label: 'Organization admin passphrase', done: Boolean(onboarding?.organizationAdminConfigured), detail: 'Protect local admin access.' },
+    { label: 'Local admin passphrase', done: Boolean(onboarding?.organizationAdminConfigured), detail: 'Protect this workspace admin area.' },
     { label: 'Areas', done: (onboarding?.areaCount ?? 0) > 0, detail: `${onboarding?.areaCount ?? 0} created` },
     { label: 'Locations', done: (onboarding?.locationCount ?? 0) > 0, detail: `${onboarding?.locationCount ?? 0} created` },
     { label: 'Units', done: (onboarding?.unitCount ?? 0) > 0, detail: `${onboarding?.unitCount ?? 0} active` },
@@ -710,7 +722,7 @@ function OnboardingChecklist({
       <p className="eyebrow">Guided onboarding</p>
       <h2>{onboarding?.readyForCheckins ? 'Workspace ready for sign-in' : 'Finish workspace setup'}</h2>
       <p className="muted">
-        Complete the local roster and mapping here before handing the app to the rest of the command.
+        Complete the local roster and mapping here before handing the workspace link to the rest of the command.
       </p>
       <div className="activity-list">
         {steps.map((step) => (
@@ -2707,7 +2719,7 @@ function AdminScreen({
 
   async function saveOrganizationAdminPassphrase() {
     if (organizationAdminPassphrase.length < 8) {
-      setMessage('Organization admin passphrase must be at least 8 characters.');
+      setMessage('Local admin passphrase must be at least 8 characters.');
       return;
     }
     const result = await api<{ authMethod: string }>('/api/admin/organization-admin/passphrase', {
@@ -2717,7 +2729,7 @@ function AdminScreen({
     });
     setAdminAuthMethod(result.authMethod);
     setOrganizationAdminPassphrase('');
-    setMessage('Organization admin passphrase saved. Future admin logins can use it.');
+    setMessage('Local admin passphrase saved. Future admin logins can use it.');
     await load();
   }
 
@@ -2847,8 +2859,9 @@ function AdminScreen({
           <h1>Admin</h1>
           <p className="muted">Workspace: {workspace?.name ?? 'Default Workspace'}</p>
           <form onSubmit={login} className="stack">
+            <p className="muted">Enter the local admin passphrase for this workspace. This is not a public account login.</p>
             <label>
-              Shared passphrase
+              Local admin passphrase
               <input type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} />
             </label>
             <button className="primary">Unlock</button>
@@ -2902,14 +2915,14 @@ function AdminScreen({
           </section>
           <section className="panel">
             <p className="eyebrow">Managed hosting foundation</p>
-            <h2>Organization admin passphrase</h2>
+            <h2>Local admin passphrase</h2>
             <p className="muted">
-              Current admin mode: {adminAuthMethod || 'environment passphrase'}. This keeps current beta installs working while preparing for organization-scoped admin access.
+              Current admin mode: {adminAuthMethod || 'environment passphrase'}. Managed workspaces should use a local admin passphrase scoped to this workspace.
             </p>
             {organizationAdminAvailable ? (
               <div className="stack">
                 <label>
-                  New organization admin passphrase
+                  New local admin passphrase
                   <input
                     type="password"
                     value={organizationAdminPassphrase}
@@ -2918,11 +2931,11 @@ function AdminScreen({
                   />
                 </label>
                 <button className="secondary" onClick={saveOrganizationAdminPassphrase}>
-                  Save organization passphrase
+                  Save local admin passphrase
                 </button>
               </div>
             ) : (
-              <p className="notice">Run migration 006 before using organization-scoped admin passphrases.</p>
+              <p className="notice">Run migration 006 before using workspace-scoped local admin passphrases.</p>
             )}
           </section>
         </>
@@ -3285,6 +3298,9 @@ function Settings({
           <button className="secondary" type="button" onClick={onSwitchWorkspace}>
             Switch workspace
           </button>
+          <a className="secondary link-button" href={feedbackUrl} target="_blank" rel="noreferrer">
+            Send feedback
+          </a>
         </div>
       </section>
       <section className="panel">

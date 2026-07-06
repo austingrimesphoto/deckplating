@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640" role="img" aria-labelledby="title desc">
+  <title id="title">Deckplating admin setup with demo data</title>
+  <desc id="desc">Scrubbed representative screenshot showing local admin setup checklist and creation forms.</desc>
+  <rect width="960" height="640" fill="#eef2f5"/>
+  <rect x="150" y="48" width="660" height="544" rx="16" fill="#f8fbfd" stroke="#d6dee6"/>
+  <text x="184" y="94" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#255a82">ADMIN</text>
+  <text x="184" y="130" font-family="Arial, sans-serif" font-size="32" font-weight="800" fill="#17212b">Manage mapping</text>
+  <rect x="184" y="156" width="592" height="118" rx="10" fill="#fff" stroke="#d6dee6"/>
+  <text x="204" y="188" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#255a82">GUIDED ONBOARDING</text>
+  <text x="204" y="222" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="#17212b">Finish workspace setup</text>
+  <text x="204" y="250" font-family="Arial, sans-serif" font-size="15" fill="#5f6d7a">Passphrase, areas, locations, units, team members</text>
+  <rect x="184" y="300" width="286" height="92" rx="10" fill="#fff" stroke="#d6dee6"/>
+  <text x="204" y="332" font-family="Arial, sans-serif" font-size="20" font-weight="800" fill="#17212b">Create area</text>
+  <text x="204" y="364" font-family="Arial, sans-serif" font-size="15" fill="#5f6d7a">Demo Area</text>
+  <rect x="490" y="300" width="286" height="92" rx="10" fill="#fff" stroke="#d6dee6"/>
+  <text x="510" y="332" font-family="Arial, sans-serif" font-size="20" font-weight="800" fill="#17212b">Create location</text>
+  <text x="510" y="364" font-family="Arial, sans-serif" font-size="15" fill="#5f6d7a">Public buildings only</text>
+  <rect x="184" y="414" width="286" height="92" rx="10" fill="#fff" stroke="#d6dee6"/>
+  <text x="204" y="446" font-family="Arial, sans-serif" font-size="20" font-weight="800" fill="#17212b">Create unit</text>
+  <text x="204" y="478" font-family="Arial, sans-serif" font-size="15" fill="#5f6d7a">Department, division, tenant</text>
+  <rect x="490" y="414" width="286" height="92" rx="10" fill="#fff" stroke="#d6dee6"/>
+  <text x="510" y="446" font-family="Arial, sans-serif" font-size="20" font-weight="800" fill="#17212b">Create team member</text>
+  <text x="510" y="478" font-family="Arial, sans-serif" font-size="15" fill="#5f6d7a">Roster name, role, active status</text>
+</svg>

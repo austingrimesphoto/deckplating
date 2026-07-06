@@ -3,11 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Deckplating Setup</title>
+    <title>Deckplating Managed Pilot</title>
     <style>
       :root {
         --bg: #eef2f5;
         --surface: #ffffff;
+        --surface-2: #f7fafc;
         --text: #17212b;
         --muted: #5f6d7a;
         --line: #d6dee6;
@@ -15,6 +16,7 @@
         --brand-2: #255a82;
         --green: #287a3e;
         --yellow: #b47b13;
+        --red: #bd3030;
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         color: var(--text);
         background: var(--bg);
@@ -22,6 +24,10 @@
 
       * {
         box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
       }
 
       body {
@@ -77,7 +83,8 @@
       }
 
       .brand span,
-      .muted {
+      .muted,
+      .helper {
         color: var(--muted);
       }
 
@@ -112,7 +119,7 @@
       }
 
       main {
-        width: min(100%, 980px);
+        width: min(100%, 1040px);
         padding: 28px;
       }
 
@@ -127,7 +134,7 @@
 
       .hero {
         display: grid;
-        gap: 12px;
+        gap: 14px;
         padding: 22px;
       }
 
@@ -146,6 +153,7 @@
 
       h1,
       h2,
+      h3,
       p {
         margin-top: 0;
       }
@@ -161,14 +169,23 @@
         font-size: 1.2rem;
       }
 
-      .actions,
-      .grid-two,
-      .fields {
-        display: grid;
-        gap: 10px;
+      h3 {
+        margin-bottom: 6px;
+        font-size: 1rem;
       }
 
-      .actions {
+      .actions,
+      .grid-two,
+      .grid-three,
+      .fields,
+      .stack,
+      .feedback-form {
+        display: grid;
+        gap: 12px;
+      }
+
+      .actions,
+      .grid-three {
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
 
@@ -197,6 +214,25 @@
         color: var(--brand);
       }
 
+      .card,
+      .warning,
+      .ok {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-2);
+      }
+
+      .warning {
+        border-left: 6px solid var(--yellow);
+        background: #fffaf0;
+      }
+
+      .ok {
+        border-left: 6px solid var(--green);
+        background: #eef8f0;
+      }
+
       label {
         display: grid;
         gap: 6px;
@@ -218,24 +254,15 @@
       }
 
       textarea {
-        min-height: 220px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 0.82rem;
+        min-height: 132px;
         line-height: 1.45;
       }
 
-      .checklist {
-        display: grid;
-        gap: 8px;
-        margin: 12px 0 0;
-      }
-
-      .checklist label {
+      .checkline {
         display: flex;
-        min-height: 42px;
-        align-items: center;
+        align-items: flex-start;
         gap: 10px;
-        padding: 9px 10px;
+        padding: 10px;
         border: 1px solid var(--line);
         border-radius: 8px;
         background: #fff;
@@ -243,51 +270,18 @@
         font-weight: 700;
       }
 
-      .checklist input {
+      .checkline input {
         width: 18px;
         min-height: 18px;
-      }
-
-      .notice {
-        display: none;
-        margin: 8px 0 0;
-        color: var(--green);
-        font-weight: 900;
+        margin-top: 2px;
       }
 
       .helper {
-        margin: 6px 0 0;
-        color: var(--muted);
+        margin: 4px 0 0;
         font-size: 0.88rem;
       }
 
-      .stack {
-        display: grid;
-        gap: 12px;
-      }
-
-      .feedback-form {
-        display: grid;
-        gap: 12px;
-      }
-
-      .warning {
-        border-left: 6px solid var(--yellow);
-        padding: 12px;
-        border-radius: 8px;
-        background: #fffaf0;
-      }
-
-      .lookup-result {
-        display: none;
-        padding: 12px;
-        border-radius: 8px;
-        background: #eef8f0;
-        color: var(--green);
-        font-weight: 800;
-      }
-
-      @media (max-width: 860px) {
+      @media (max-width: 900px) {
         .app-shell {
           grid-template-columns: 1fr;
         }
@@ -301,7 +295,8 @@
 
         .steps,
         .actions,
-        .grid-two {
+        .grid-two,
+        .grid-three {
           grid-template-columns: 1fr;
         }
 
@@ -318,217 +313,153 @@
           <img src="assets/deckplate-coverage-app-icon-192.png" alt="" />
           <div>
             <strong>Deckplating</strong>
-            <span>Setup Wizard</span>
+            <span>Managed Pilot</span>
           </div>
         </div>
-        <nav class="steps" aria-label="Setup steps">
-          <a class="step-link" href="#accounts"><span>1</span>Accounts</a>
-          <a class="step-link" href="#copy"><span>2</span>App Copy</a>
-          <a class="step-link" href="#database"><span>3</span>Database</a>
-          <a class="step-link" href="#variables"><span>4</span>App Settings</a>
-          <a class="step-link" href="#deploy"><span>5</span>Deploy</a>
-          <a class="step-link" href="#launch"><span>6</span>Launch</a>
-          <a class="step-link" href="#feedback"><span>7</span>Feedback</a>
-          <a class="step-link" href="user-guide.html"><span>?</span>User Guide</a>
+        <nav class="steps" aria-label="Setup sections">
+          <a class="step-link" href="#start"><span>1</span>Start</a>
+          <a class="step-link" href="#request"><span>2</span>Request Access</a>
+          <a class="step-link" href="#approved"><span>3</span>After Approval</a>
+          <a class="step-link" href="user-guide.html"><span>4</span>User Guide</a>
+          <a class="step-link" href="#feedback"><span>5</span>Feedback</a>
         </nav>
       </aside>
 
       <main>
-        <section class="hero">
-          <p class="eyebrow">Self-hosted RMT setup</p>
-          <h1>Start here. Do these steps in order.</h1>
+        <section id="start" class="hero">
+          <p class="eyebrow">Managed pilot access</p>
+          <h1>Use Deckplating at deckplating.netlify.app.</h1>
           <p class="muted">
-            This page walks you through making your own Deckplating app. Keep this tab open. Open each button in a new tab, finish that task, then come back here for the next step.
+            Deckplating pilots use the centrally hosted app. This site explains how to request access, learn the app, and send feedback. New pilot teams do not need to create GitHub, Supabase, or Netlify accounts for the managed pilot.
           </p>
-          <div class="warning">
-            Do not skip ahead. You need accounts first, then your app copy, then the database, then Netlify.
-          </div>
           <div class="actions">
-            <a class="button" href="user-guide.html">Open User Guide</a>
-            <a class="button secondary" href="#feedback">Open Feedback Form</a>
-            <a class="button secondary" href="https://github.com/austingrimesphoto/deckplating" target="_blank" rel="noreferrer">Open Repository</a>
-          </div>
-        </section>
-
-        <section id="accounts" class="panel">
-          <p class="eyebrow">Step 1</p>
-          <h2>Start with GitHub</h2>
-          <p>
-            Start by creating or opening your GitHub account. Then use GitHub sign-in when Supabase and Netlify offer it. That keeps the setup simpler and makes turnover easier.
-          </p>
-          <div class="warning">
-            Use the name <strong>Deckplating</strong> everywhere normal users will see it. Recommended project names: GitHub repository <strong>deckplating</strong>, Supabase project <strong>deckplating</strong>, and Netlify site <strong>deckplating</strong> or <strong>deckplating-your-command</strong>.
-          </div>
-          <div class="grid-two">
-            <a class="button secondary" href="https://github.com/signup" target="_blank" rel="noreferrer">Create GitHub Account</a>
-            <a class="button secondary" href="https://github.com/login" target="_blank" rel="noreferrer">Open GitHub Login</a>
-            <a class="button secondary" href="https://supabase.com/dashboard/sign-up" target="_blank" rel="noreferrer">Open Supabase Sign Up</a>
-            <a class="button secondary" href="https://app.netlify.com/signup" target="_blank" rel="noreferrer">Open Netlify Sign Up</a>
-          </div>
-          <div class="checklist">
-            <label><input type="checkbox" /> I can sign in to GitHub</label>
-            <label><input type="checkbox" /> I used GitHub sign-in for Supabase or created a Supabase account</label>
-            <label><input type="checkbox" /> I used GitHub sign-in for Netlify or created a Netlify account</label>
+            <a class="button" href="https://deckplating.netlify.app" target="_blank" rel="noreferrer">Open Deckplating</a>
+            <a class="button secondary" href="#request">Request Workspace</a>
+            <a class="button secondary" href="user-guide.html">Read User Guide</a>
           </div>
           <div class="warning">
-            Save these logins somewhere approved. Do not make the whole setup depend on one person’s personal account.
+            Do not submit secrets, setup codes, passphrases, real production data, counseling details, medical details, personal contact lists, or sensitive operational locations through this site.
           </div>
         </section>
 
-        <section id="copy" class="panel">
-          <p class="eyebrow">Step 2</p>
-          <h2>Make your own copy of the app</h2>
-          <p>
-            This gives your RMT its own copy of the code. Keep your copy private unless your command intentionally wants it public.
-          </p>
-          <a class="button" href="https://github.com/austingrimesphoto/deckplating/generate" target="_blank" rel="noreferrer">Create My App Copy</a>
-          <div class="checklist">
-            <label><input type="checkbox" /> GitHub opened the template page</label>
-            <label><input type="checkbox" /> I chose the correct owner or command account</label>
-            <label><input type="checkbox" /> I named the repository `deckplating`</label>
-            <label><input type="checkbox" /> I selected Private</label>
-            <label><input type="checkbox" /> I clicked Create repository</label>
-          </div>
-          <div class="warning">
-            If GitHub asks you to sign in, sign in and continue.
-          </div>
-        </section>
-
-        <section id="database" class="panel">
-          <p class="eyebrow">Step 3</p>
-          <h2>Create your Supabase database</h2>
-          <p>
-            Open Supabase, click <strong>New project</strong>, then run the schema/migrations block and the starter-data block below.
-          </p>
-          <a class="button secondary" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Supabase Projects</a>
-          <div class="checklist">
-            <label><input type="checkbox" /> I clicked New project in Supabase</label>
-            <label><input type="checkbox" /> I named the project `deckplating`</label>
-            <label><input type="checkbox" /> I saved the database password somewhere approved</label>
-            <label><input type="checkbox" /> I waited for Supabase to finish creating the project</label>
-            <label><input type="checkbox" /> I opened SQL Editor</label>
-          </div>
-          <label>
-            First SQL block: create and update the database tables
-            <textarea id="schemaSql" readonly></textarea>
-          </label>
-          <button type="button" data-copy="schemaSql">Copy Schema/Migrations Block</button>
-          <p class="notice">Copied.</p>
-          <label>
-            Second SQL block: load one example area, team member, and unit
-            <textarea id="seedSql" readonly></textarea>
-          </label>
-          <button type="button" data-copy="seedSql">Copy Starter-Data Block</button>
-          <p class="notice">Copied.</p>
-          <div class="checklist">
-            <label><input type="checkbox" /> I ran the schema/migrations block</label>
-            <label><input type="checkbox" /> I ran the starter-data block and understand it only adds example starter rows</label>
+        <section class="panel">
+          <p class="eyebrow">How managed onboarding works</p>
+          <h2>Manual approval first, then local setup</h2>
+          <div class="grid-three">
+            <article class="card">
+              <h3>1. Request</h3>
+              <p>Submit the workspace request form with non-sensitive command and lead information.</p>
+            </article>
+            <article class="card">
+              <h3>2. Approval</h3>
+              <p>The operator reviews the request, creates the workspace, and issues a one-time setup code.</p>
+            </article>
+            <article class="card">
+              <h3>3. Local setup</h3>
+              <p>The approved lead opens the workspace link, enters the setup code, sets the local admin passphrase, and creates roster/map data.</p>
+            </article>
           </div>
         </section>
 
-        <section id="variables" class="panel">
-          <p class="eyebrow">Step 4</p>
-          <h2>Generate the secret settings for Netlify</h2>
-          <p>
-            Supabase gives you two values Netlify needs. Paste them here. This runs only in your browser and does not send values anywhere.
+        <section id="request" class="panel">
+          <p class="eyebrow">Workspace request</p>
+          <h2>Request managed pilot access</h2>
+          <p class="muted">
+            Requests are reviewed manually. If approved, the lead will be contacted outside this form with the workspace link and one-time setup code.
           </p>
-          <div class="fields">
-            <label>
-              Supabase Project URL
-              <input id="supabaseUrl" placeholder="https://your-project.supabase.co" />
-            </label>
-            <label>
-              Supabase service_role key
-              <input id="serviceRoleKey" placeholder="Paste the service_role key from Supabase" />
-            </label>
-            <div class="warning">
-              In Supabase, find these under Project Settings, then API. Use the service_role key, not the anon key.
-            </div>
-            <label>
-              Admin passphrase
-              <input id="adminPassphrase" placeholder="The passphrase admins type in the Admin tab" />
-            </label>
-            <label>
-              Installation or unit
-              <input id="installationName" placeholder="Example: Marine Corps Base Camp Lejeune" />
-            </label>
-            <button id="lookupInstallation" class="secondary" type="button">Look Up Map Center</button>
-            <p id="lookupResult" class="lookup-result"></p>
+          <form
+            name="deckplating-workspace-request"
+            method="POST"
+            action="workspace-request-thanks.html"
+            data-netlify="true"
+            netlify-honeypot="bot-field"
+            class="feedback-form"
+          >
+            <input type="hidden" name="form-name" value="deckplating-workspace-request" />
+            <p hidden>
+              <label>Do not fill this out: <input name="bot-field" /></label>
+            </p>
             <div class="grid-two">
               <label>
-                Default map latitude
-                <input id="mapDefaultLatitude" placeholder="24.57" />
+                Installation or command name
+                <input name="installation_or_command" required />
               </label>
               <label>
-                Default map longitude
-                <input id="mapDefaultLongitude" placeholder="-81.78" />
+                Preferred workspace slug, if known
+                <input name="preferred_workspace_slug" placeholder="example-rmt" />
+              </label>
+            </div>
+            <div class="grid-two">
+              <label>
+                Lead name
+                <input name="lead_name" required />
+              </label>
+              <label>
+                Lead role
+                <input name="lead_role" placeholder="Example: command chaplain, RP lead" required />
+              </label>
+            </div>
+            <div class="grid-two">
+              <label>
+                Official contact email
+                <input name="official_contact_email" type="email" required />
+              </label>
+              <label>
+                RMT size
+                <input name="rmt_size" inputmode="numeric" required />
               </label>
             </div>
             <label>
-              Map tile/style URL, optional
-              <input id="mapTileUrl" placeholder="Leave blank for basic map tiles" />
+              Expected pilot start date
+              <input name="expected_pilot_start_date" type="date" required />
             </label>
             <label>
-              Map tile key, optional
-              <input id="mapTileKey" placeholder="Leave blank unless your map provider gives you a key" />
+              Short use case
+              <textarea name="short_use_case" required placeholder="Describe the non-sensitive coverage workflow you want to test."></textarea>
             </label>
-            <button id="generate" type="button">Generate Netlify Values</button>
-            <label>
-              Netlify values
-              <textarea id="envOutput" readonly></textarea>
+            <label class="checkline">
+              <input name="safe_use_boundaries_confirmed" type="checkbox" required />
+              I understand Deckplating is only for unclassified, non-sensitive coverage tracking and is not for CUI, classified information, counseling notes, medical details, personal data, or sensitive operational locations.
             </label>
-            <button type="button" data-copy="envOutput">Copy Netlify Values</button>
-            <p class="notice">Copied.</p>
-            <div class="warning">
-              Keep this copied text ready. You will paste each line into Netlify in Step 6.
+            <label class="checkline">
+              <input name="no_sensitive_data_acknowledged" type="checkbox" required />
+              I understand this form should not include secrets, setup codes, passphrases, production data, or sensitive personal/operational details.
+            </label>
+            <button type="submit">Send Workspace Request</button>
+          </form>
+        </section>
+
+        <section id="approved" class="panel">
+          <p class="eyebrow">After approval</p>
+          <h2>What the local lead does next</h2>
+          <div class="stack">
+            <div class="ok">
+              <strong>Approved lead package</strong>
+              <p>The operator sends the workspace link on <strong>deckplating.netlify.app</strong>, the one-time setup code, the user guide, and the feedback link.</p>
             </div>
-          </div>
-        </section>
-
-        <section id="deploy" class="panel">
-          <p class="eyebrow">Step 5</p>
-          <h2>Deploy your app to Netlify</h2>
-          <p>
-            Netlify turns your GitHub copy into a live website. Click <strong>Import an existing project</strong>, choose GitHub, add the values from Step 4, then deploy.
-          </p>
-          <a class="button secondary" href="https://app.netlify.com/start" target="_blank" rel="noreferrer">Open Netlify Import</a>
-          <div class="checklist">
-            <label><input type="checkbox" /> I chose Import an existing project</label>
-            <label><input type="checkbox" /> I selected GitHub</label>
-            <label><input type="checkbox" /> I selected my Deckplating repository</label>
-            <label><input type="checkbox" /> I added all environment variables from Step 4</label>
-            <label><input type="checkbox" /> Build command is `npm run build`</label>
-            <label><input type="checkbox" /> Publish directory is `dist`</label>
-            <label><input type="checkbox" /> I clicked Deploy site</label>
-          </div>
-        </section>
-
-        <section id="launch" class="panel">
-          <p class="eyebrow">Step 6</p>
-          <h2>Launch and finish setup</h2>
-          <p>
-            When Netlify says the deploy is published, open the site URL. Then finish your real local setup inside the app.
-          </p>
-          <div class="checklist">
-            <label><input type="checkbox" /> Opened the Netlify site URL</label>
-            <label><input type="checkbox" /> Selected my name and created a 4-digit PIN</label>
-            <label><input type="checkbox" /> Opened Admin and entered the admin passphrase</label>
-            <label><input type="checkbox" /> Edited team members, units, locations, and mapped areas</label>
-            <label><input type="checkbox" /> Added the app to my phone home screen</label>
+            <ol>
+              <li>Open the workspace link from the operator.</li>
+              <li>Select <strong>Activate workspace</strong>.</li>
+              <li>Enter the one-time setup code.</li>
+              <li>Confirm the workspace display name and installation/map center.</li>
+              <li>Set the local admin passphrase for this workspace.</li>
+              <li>Continue to local setup and create areas, locations, units, and team members.</li>
+              <li>Send the same workspace link to team members after the roster is ready.</li>
+            </ol>
           </div>
         </section>
 
         <section id="feedback" class="panel">
-          <p class="eyebrow">Step 7</p>
-          <h2>Send pilot feedback back to the app owner</h2>
+          <p class="eyebrow">Pilot feedback</p>
+          <h2>Send feedback during setup, week one, and closeout</h2>
           <p>
-            Use this form during or after the pilot. Submissions are stored by Netlify Forms on this setup site, so the app owner can review them without copy and paste.
+            Use this form for managed pilots. Feedback is reviewed in three buckets: onboarding confusion, operational blockers, and feature requests.
           </p>
           <div class="warning">
-            Keep feedback unclassified and non-sensitive. Do not include counseling details, medical details, home addresses, personal identifying information, or sensitive operational locations.
+            Keep feedback unclassified and non-sensitive. Do not include counseling details, medical details, home addresses, personal identifying information, setup codes, passphrases, or sensitive operational locations.
           </div>
           <p class="helper">
-            Direct feedback link for pilots: <a href="#feedback">https://deckplatingsetup.netlify.app/#feedback</a>
+            Direct feedback link: <a href="#feedback">https://deckplatingsetup.netlify.app/#feedback</a>
           </p>
           <form
             name="deckplating-pilot-feedback"
@@ -554,48 +485,40 @@
             </div>
             <div class="grid-two">
               <label>
-                Pilot start date
-                <input name="pilot_start_date" type="date" />
+                Feedback checkpoint
+                <select name="feedback_checkpoint" required>
+                  <option value="">Choose one</option>
+                  <option>Setup</option>
+                  <option>Week one</option>
+                  <option>Closeout</option>
+                  <option>Urgent blocker</option>
+                </select>
               </label>
               <label>
-                Pilot end date
-                <input name="pilot_end_date" type="date" />
+                Main bucket
+                <select name="feedback_bucket" required>
+                  <option value="">Choose one</option>
+                  <option>Onboarding confusion</option>
+                  <option>Operational blocker</option>
+                  <option>Feature request</option>
+                  <option>Safe-use question</option>
+                </select>
               </label>
             </div>
-            <label>
-              Phone types used
-              <select name="phone_types_used" multiple>
-                <option>iPhone 17e</option>
-                <option>iPhone 17</option>
-                <option>iPhone 17 Pro</option>
-                <option>iPhone 17 Pro Max</option>
-                <option>iPhone Air</option>
-                <option>iPhone 15</option>
-                <option>iPhone 15 Pro</option>
-                <option>iPhone 15 Pro Max</option>
-                <option>Samsung Galaxy S24</option>
-                <option>Samsung Galaxy S23</option>
-              </select>
-              <p class="helper">Hold Command on Mac or Ctrl on Windows to select more than one.</p>
-            </label>
-            <label>
-              Other phone type, if needed
-              <input name="other_phone_type" placeholder="Example: Google Pixel 8" />
-            </label>
             <div class="grid-two">
               <label>
                 Number of users
                 <input name="number_of_users" inputmode="numeric" />
               </label>
               <label>
-                How the app was opened
-                <input name="browser_or_pwa_used" placeholder="Example: from Safari, from Chrome, or from the phone home screen" />
+                Phone/browser used
+                <input name="browser_or_pwa_used" placeholder="Example: iPhone Safari home-screen app" />
               </label>
             </div>
             <div class="grid-two">
               <label>
-                Did setup make sense?
-                <select name="setup_made_sense" required>
+                Did onboarding make sense?
+                <select name="onboarding_made_sense" required>
                   <option value="">Choose one</option>
                   <option>Yes</option>
                   <option>Mostly</option>
@@ -603,31 +526,8 @@
                 </select>
               </label>
               <label>
-                Hardest step
-                <select name="hardest_step" required>
-                  <option value="">Choose one</option>
-                  <option>GitHub</option>
-                  <option>Supabase</option>
-                  <option>Netlify</option>
-                  <option>SQL steps</option>
-                  <option>Phone home-screen app setup</option>
-                  <option>Admin setup</option>
-                </select>
-              </label>
-            </div>
-            <div class="grid-two">
-              <label>
-                Did Locate Me work reliably?
-                <select name="locate_me_reliable" required>
-                  <option value="">Choose one</option>
-                  <option>Yes</option>
-                  <option>Mostly</option>
-                  <option>No</option>
-                </select>
-              </label>
-              <label>
-                Did offline sync work?
-                <select name="offline_sync_worked" required>
+                Did core check-in work?
+                <select name="core_checkin_worked" required>
                   <option value="">Choose one</option>
                   <option>Yes</option>
                   <option>Mostly</option>
@@ -636,570 +536,26 @@
                 </select>
               </label>
             </div>
-            <div class="grid-two">
-              <label>
-                Was Mission Board useful?
-                <select name="mission_board_useful" required>
-                  <option value="">Choose one</option>
-                  <option>Yes</option>
-                  <option>Somewhat</option>
-                  <option>No</option>
-                </select>
-              </label>
-              <label>
-                Mission Brief tone used
-                <select name="mission_brief_tone">
-                  <option value="">Choose one</option>
-                  <option>Professional</option>
-                  <option>Friendly</option>
-                  <option>Deckplate Banter</option>
-                  <option>Did not notice</option>
-                </select>
-              </label>
-            </div>
             <label>
-              Top setup friction
-              <textarea name="top_setup_friction" placeholder="What slowed your team down the most?"></textarea>
+              What confused the team during onboarding?
+              <textarea name="onboarding_confusion" placeholder="Workspace link, setup code, local admin passphrase, roster, map setup, etc."></textarea>
             </label>
             <label>
-              Check-in and map issues
-              <textarea name="checkin_and_map_issues" placeholder="What made normal phone use difficult?"></textarea>
+              What blocked or slowed real use?
+              <textarea name="operational_blockers" placeholder="Check-in, GPS/map, offline sync, account switching, admin setup, performance, etc."></textarea>
             </label>
             <label>
-              Offline and sync issues
-              <textarea name="offline_and_sync_issues" placeholder="What happened when connectivity was weak or absent?"></textarea>
+              What should be improved or added?
+              <textarea name="feature_requests" placeholder="Keep this focused on one workflow or adoption problem."></textarea>
             </label>
             <label>
-              Admin and reporting issues
-              <textarea name="admin_and_reporting_issues" placeholder="What was unclear in setup, corrections, or reports?"></textarea>
+              Top issue before another RMT tries it
+              <textarea name="top_issue_before_next_team" required></textarea>
             </label>
-            <label>
-              Top issues before another team should try it
-              <textarea name="top_issues_before_next_team" required placeholder="List the main blockers or rough edges."></textarea>
-            </label>
-            <div class="grid-two">
-              <label>
-                Would this team keep using it?
-                <select name="would_keep_using" required>
-                  <option value="">Choose one</option>
-                  <option>Yes</option>
-                  <option>Maybe</option>
-                  <option>No</option>
-                </select>
-              </label>
-              <label>
-                Would centralized hosting make adoption easier?
-                <select name="central_hosting_helpful" required>
-                  <option value="">Choose one</option>
-                  <option>Yes</option>
-                  <option>Maybe</option>
-                  <option>No</option>
-                </select>
-              </label>
-            </div>
             <button type="submit">Send Pilot Feedback</button>
           </form>
         </section>
       </main>
     </div>
-
-    <script>
-      const schemaSql = `create extension if not exists pgcrypto;
-
-create table if not exists areas (
-  id uuid primary key default gen_random_uuid(),
-  name text not null unique,
-  sort_order integer not null default 0
-);
-
-create table if not exists team_members (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  role text,
-  active boolean not null default true,
-  pin_hash text,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists devices (
-  id uuid primary key default gen_random_uuid(),
-  team_member_id uuid not null references team_members(id),
-  device_token_hash text not null unique,
-  device_label text,
-  active boolean not null default true,
-  last_seen_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists locations (
-  id uuid primary key default gen_random_uuid(),
-  area_id uuid not null references areas(id),
-  name text not null,
-  latitude double precision not null,
-  longitude double precision not null,
-  radius_meters integer not null default 120,
-  active boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists units (
-  id uuid primary key default gen_random_uuid(),
-  location_id uuid references locations(id),
-  name text not null unique,
-  unit_type text not null check (unit_type in ('department', 'division', 'tenant')),
-  visit_interval_days integer not null default 30,
-  active boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists checkins (
-  id uuid primary key default gen_random_uuid(),
-  unit_id uuid not null references units(id),
-  location_id uuid references locations(id),
-  team_member_id uuid not null references team_members(id),
-  device_id uuid references devices(id),
-  checked_in_at timestamptz not null default now(),
-  geofence_verified boolean not null default false,
-  distance_meters integer,
-  score_awarded integer not null default 0,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_areas_sort_order on areas(sort_order);
-create index if not exists idx_locations_area_id on locations(area_id);
-create index if not exists idx_units_location_id on units(location_id);
-create index if not exists idx_units_type_active on units(unit_type, active);
-create index if not exists idx_checkins_unit_time on checkins(unit_id, checked_in_at desc);
-create index if not exists idx_checkins_member_time on checkins(team_member_id, checked_in_at desc);
-
-create or replace function set_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql;
-
-drop trigger if exists locations_set_updated_at on locations;
-create trigger locations_set_updated_at
-before update on locations
-for each row execute function set_updated_at();
-
-drop trigger if exists units_set_updated_at on units;
-create trigger units_set_updated_at
-before update on units
-for each row execute function set_updated_at();
-
-alter table areas enable row level security;
-alter table team_members enable row level security;
-alter table devices enable row level security;
-alter table locations enable row level security;
-alter table units enable row level security;
-alter table checkins enable row level security;
-
-alter table checkins
-  add column if not exists voided_at timestamptz null,
-  add column if not exists voided_by_team_member_id uuid null references team_members(id),
-  add column if not exists void_reason text null,
-  add column if not exists updated_at timestamptz not null default now(),
-  add column if not exists updated_by_team_member_id uuid null references team_members(id);
-
-create index if not exists idx_checkins_active_unit_time
-  on checkins(unit_id, checked_in_at desc)
-  where voided_at is null;
-
-drop trigger if exists checkins_set_updated_at on checkins;
-create trigger checkins_set_updated_at
-before update on checkins
-for each row execute function set_updated_at();
-
-create table if not exists checkin_batches (
-  id uuid primary key default gen_random_uuid(),
-  client_batch_id uuid not null unique,
-  location_id uuid null references locations(id),
-  team_member_id uuid not null references team_members(id),
-  device_id uuid not null references devices(id),
-  occurred_at timestamptz not null,
-  received_at timestamptz not null default now(),
-  confidential_care_provided boolean null,
-  referral_provided boolean null,
-  outcomes_recorded_at timestamptz null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  updated_by_team_member_id uuid null references team_members(id)
-);
-
-alter table checkin_batches enable row level security;
-
-drop trigger if exists checkin_batches_set_updated_at on checkin_batches;
-create trigger checkin_batches_set_updated_at
-before update on checkin_batches
-for each row execute function set_updated_at();
-
-alter table checkins
-  add column if not exists batch_id uuid null references checkin_batches(id);
-
-create index if not exists idx_checkins_batch_id on checkins(batch_id);
-
-create unique index if not exists idx_checkins_unique_batch_unit
-  on checkins(batch_id, unit_id)
-  where batch_id is not null;
-
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'checkin_batches_confidential_care_true_or_null'
-      and conrelid = 'checkin_batches'::regclass
-  ) then
-    alter table checkin_batches
-      add constraint checkin_batches_confidential_care_true_or_null
-      check (confidential_care_provided is null or confidential_care_provided is true)
-      not valid;
-    alter table checkin_batches validate constraint checkin_batches_confidential_care_true_or_null;
-  end if;
-end $$;
-
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'checkin_batches_referral_true_or_null'
-      and conrelid = 'checkin_batches'::regclass
-  ) then
-    alter table checkin_batches
-      add constraint checkin_batches_referral_true_or_null
-      check (referral_provided is null or referral_provided is true)
-      not valid;
-    alter table checkin_batches validate constraint checkin_batches_referral_true_or_null;
-  end if;
-end $$;
-
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'checkins_void_reason_allowed'
-      and conrelid = 'checkins'::regclass
-  ) then
-    alter table checkins
-      add constraint checkins_void_reason_allowed
-      check (
-        void_reason is null
-        or void_reason in (
-          'immediate_undo',
-          'accidental',
-          'wrong_unit',
-          'duplicate',
-          'incorrect_datetime',
-          'incorrect_member'
-        )
-      )
-      not valid;
-    alter table checkins validate constraint checkins_void_reason_allowed;
-  end if;
-end $$;
-
-create table if not exists app_settings (
-  key text primary key,
-  value text not null,
-  updated_at timestamptz not null default now()
-);
-
-alter table app_settings enable row level security;
-
-drop trigger if exists app_settings_set_updated_at on app_settings;
-create trigger app_settings_set_updated_at
-before update on app_settings
-for each row execute function set_updated_at();
-
-insert into app_settings (key, value)
-values ('gamification_tone', 'professional')
-on conflict (key) do nothing;
-
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'app_settings_gamification_tone_allowed'
-      and conrelid = 'app_settings'::regclass
-  ) then
-    alter table app_settings
-      add constraint app_settings_gamification_tone_allowed
-      check (
-        key <> 'gamification_tone'
-        or value in ('professional', 'friendly', 'banter')
-      )
-      not valid;
-    alter table app_settings validate constraint app_settings_gamification_tone_allowed;
-  end if;
-end $$;
-
-create table if not exists organizations (
-  id uuid primary key default gen_random_uuid(),
-  slug text not null unique,
-  name text not null,
-  active boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-alter table organizations enable row level security;
-
-drop trigger if exists organizations_set_updated_at on organizations;
-create trigger organizations_set_updated_at
-before update on organizations
-for each row execute function set_updated_at();
-
-insert into organizations (id, slug, name, active)
-values (
-  '00000000-0000-4000-8000-000000000001',
-  'default',
-  coalesce(nullif(current_setting('app.installation_name', true), ''), 'Default Organization'),
-  true
-)
-on conflict (slug) do nothing;
-
-alter table areas
-  add column if not exists organization_id uuid not null default '00000000-0000-4000-8000-000000000001' references organizations(id);
-
-alter table team_members
-  add column if not exists organization_id uuid not null default '00000000-0000-4000-8000-000000000001' references organizations(id);
-
-alter table devices
-  add column if not exists organization_id uuid not null default '00000000-0000-4000-8000-000000000001' references organizations(id);
-
-alter table locations
-  add column if not exists organization_id uuid not null default '00000000-0000-4000-8000-000000000001' references organizations(id);
-
-alter table units
-  add column if not exists organization_id uuid not null default '00000000-0000-4000-8000-000000000001' references organizations(id);
-
-alter table checkins
-  add column if not exists organization_id uuid not null default '00000000-0000-4000-8000-000000000001' references organizations(id);
-
-alter table checkin_batches
-  add column if not exists organization_id uuid not null default '00000000-0000-4000-8000-000000000001' references organizations(id);
-
-alter table app_settings
-  add column if not exists organization_id uuid not null default '00000000-0000-4000-8000-000000000001' references organizations(id);
-
-update areas set organization_id = '00000000-0000-4000-8000-000000000001' where organization_id is null;
-update team_members set organization_id = '00000000-0000-4000-8000-000000000001' where organization_id is null;
-update devices set organization_id = '00000000-0000-4000-8000-000000000001' where organization_id is null;
-update locations set organization_id = '00000000-0000-4000-8000-000000000001' where organization_id is null;
-update units set organization_id = '00000000-0000-4000-8000-000000000001' where organization_id is null;
-update checkins set organization_id = '00000000-0000-4000-8000-000000000001' where organization_id is null;
-update checkin_batches set organization_id = '00000000-0000-4000-8000-000000000001' where organization_id is null;
-update app_settings set organization_id = '00000000-0000-4000-8000-000000000001' where organization_id is null;
-
-alter table areas drop constraint if exists areas_name_key;
-alter table units drop constraint if exists units_name_key;
-alter table devices drop constraint if exists devices_device_token_hash_key;
-alter table checkin_batches drop constraint if exists checkin_batches_client_batch_id_key;
-
-create unique index if not exists idx_areas_org_name_unique
-  on areas(organization_id, name);
-
-create unique index if not exists idx_units_org_name_unique
-  on units(organization_id, name);
-
-create unique index if not exists idx_devices_org_token_unique
-  on devices(organization_id, device_token_hash);
-
-create unique index if not exists idx_checkin_batches_org_client_unique
-  on checkin_batches(organization_id, client_batch_id);
-
-create unique index if not exists idx_app_settings_org_key_unique
-  on app_settings(organization_id, key);
-
-create index if not exists idx_locations_org_area_id on locations(organization_id, area_id);
-create index if not exists idx_units_org_location_id on units(organization_id, location_id);
-create index if not exists idx_checkins_org_unit_time on checkins(organization_id, unit_id, checked_in_at desc);
-create index if not exists idx_checkins_org_member_time on checkins(organization_id, team_member_id, checked_in_at desc);
-create index if not exists idx_checkins_org_active_time on checkins(organization_id, checked_in_at desc) where voided_at is null;
-create index if not exists idx_checkin_batches_org_location_time on checkin_batches(organization_id, location_id, occurred_at desc);
-
-insert into app_settings (organization_id, key, value)
-values ('00000000-0000-4000-8000-000000000001', 'gamification_tone', 'professional')
-on conflict (organization_id, key) do nothing;
-
-create table if not exists organization_admin_credentials (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organizations(id),
-  passphrase_hash text not null,
-  active boolean not null default true,
-  last_used_at timestamptz null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-alter table organization_admin_credentials enable row level security;
-
-drop trigger if exists organization_admin_credentials_set_updated_at on organization_admin_credentials;
-create trigger organization_admin_credentials_set_updated_at
-before update on organization_admin_credentials
-for each row execute function set_updated_at();
-
-create unique index if not exists idx_org_admin_credentials_org_unique
-  on organization_admin_credentials(organization_id);
-
-create index if not exists idx_org_admin_credentials_active
-  on organization_admin_credentials(organization_id, active);
-
-create table if not exists organization_setup_codes (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organizations(id),
-  code_hash text not null unique,
-  label text,
-  purpose text not null default 'workspace_setup',
-  active boolean not null default true,
-  expires_at timestamptz null,
-  used_at timestamptz null,
-  used_by_label text null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  check (purpose in ('workspace_setup', 'pilot_setup'))
-);
-
-alter table organization_setup_codes enable row level security;
-
-drop trigger if exists organization_setup_codes_set_updated_at on organization_setup_codes;
-create trigger organization_setup_codes_set_updated_at
-before update on organization_setup_codes
-for each row execute function set_updated_at();
-
-create index if not exists idx_org_setup_codes_org_active
-  on organization_setup_codes(organization_id, active);
-
-create index if not exists idx_org_setup_codes_unused
-  on organization_setup_codes(organization_id, expires_at)
-  where active is true and used_at is null;`;
-
-      const seedSql = `insert into areas (name, sort_order) values
-  ('Ex: Truman Annex or 62 Area', 1)
-on conflict (organization_id, name) do update set sort_order = excluded.sort_order;
-
-insert into team_members (name, role, active) values
-  ('Ex: Chaplain or RP1 Smith', 'RMT member', true)
-on conflict do nothing;
-
-insert into units (name, unit_type, visit_interval_days, active) values
-  ('Ex: VFC-111 or 1st CEB', 'department', 30, true)
-on conflict (organization_id, name) do update set
-  unit_type = excluded.unit_type,
-  visit_interval_days = excluded.visit_interval_days,
-  active = excluded.active;`;
-
-      const field = (id) => document.getElementById(id);
-      field('schemaSql').value = schemaSql;
-      field('seedSql').value = seedSql;
-
-      function randomHex(bytes) {
-        const data = new Uint8Array(bytes);
-        crypto.getRandomValues(data);
-        return Array.from(data, (byte) => byte.toString(16).padStart(2, '0')).join('');
-      }
-
-      async function sha256(value) {
-        const encoded = new TextEncoder().encode(value);
-        const digest = await crypto.subtle.digest('SHA-256', encoded);
-        return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-      }
-
-      async function copyText(id, button) {
-        const target = field(id);
-        const notice = button.nextElementSibling?.classList.contains('notice') ? button.nextElementSibling : null;
-        try {
-          await navigator.clipboard.writeText(target.value);
-          if (notice) notice.textContent = 'Copied.';
-        } catch {
-          target.focus();
-          target.select();
-          if (notice) notice.textContent = 'Copy was blocked. The text is selected. Press Ctrl+C or Command+C.';
-        }
-        if (notice) {
-          notice.style.display = 'block';
-          setTimeout(() => {
-            notice.style.display = 'none';
-          }, 3000);
-        }
-      }
-
-      document.querySelectorAll('[data-copy]').forEach((button) => {
-        button.addEventListener('click', () => copyText(button.dataset.copy, button));
-      });
-
-      field('generate').addEventListener('click', async () => {
-        const supabaseUrl = field('supabaseUrl').value.trim();
-        const serviceRoleKey = field('serviceRoleKey').value.trim();
-        const adminPassphrase = field('adminPassphrase').value;
-        const installationName = field('installationName').value.trim();
-        const mapDefaultLatitude = field('mapDefaultLatitude').value.trim();
-        const mapDefaultLongitude = field('mapDefaultLongitude').value.trim();
-        const mapTileUrl = field('mapTileUrl').value.trim();
-        const mapTileKey = field('mapTileKey').value.trim();
-
-        if (!supabaseUrl || !serviceRoleKey || !adminPassphrase || !installationName || !mapDefaultLatitude || !mapDefaultLongitude) {
-          alert('Fill in Supabase Project URL, service_role key, admin passphrase, installation name, latitude, and longitude.');
-          return;
-        }
-
-        const lines = [
-          `SUPABASE_URL=${supabaseUrl}`,
-          `SUPABASE_SERVICE_ROLE_KEY=${serviceRoleKey}`,
-          `ADMIN_PASSPHRASE_HASH=${await sha256(adminPassphrase)}`,
-          `ADMIN_SESSION_SECRET=${randomHex(32)}`,
-          `MAP_TILE_URL=${mapTileUrl}`,
-          `MAP_TILE_KEY=${mapTileKey}`,
-          `MAP_DEFAULT_LATITUDE=${mapDefaultLatitude}`,
-          `MAP_DEFAULT_LONGITUDE=${mapDefaultLongitude}`,
-          `INSTALLATION_NAME=${installationName}`,
-        ];
-        field('envOutput').value = lines.join('\n');
-      });
-
-      field('lookupInstallation').addEventListener('click', async () => {
-        const installationName = field('installationName').value.trim();
-        const result = field('lookupResult');
-        if (!installationName) {
-          alert('Type an installation or unit name first.');
-          return;
-        }
-
-        result.style.display = 'block';
-        result.textContent = 'Looking up map center...';
-
-        try {
-          const params = new URLSearchParams({
-            q: installationName,
-            format: 'jsonv2',
-            limit: '1',
-          });
-          const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-            headers: { accept: 'application/json' },
-          });
-          if (!response.ok) throw new Error('Lookup failed.');
-          const matches = await response.json();
-          const match = matches[0];
-          if (!match) {
-            result.textContent = 'No match found. Enter latitude and longitude manually.';
-            return;
-          }
-
-          field('mapDefaultLatitude').value = Number(match.lat).toFixed(6);
-          field('mapDefaultLongitude').value = Number(match.lon).toFixed(6);
-          result.textContent = `Found: ${match.display_name}`;
-        } catch {
-          result.textContent = 'Lookup failed. Enter latitude and longitude manually.';
-        }
-      });
-    </script>
   </body>
 </html>

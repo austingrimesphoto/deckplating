@@ -1,25 +1,25 @@
-# Deckplating Pilot Packet
+# Deckplating Managed Pilot Packet
 
-Use this packet for the first two outside-team beta pilots.
+Use this packet for the first outside RMT pilots using the centrally hosted app.
 
 ## Who This Is For
 
-Send this to one RMT lead who is willing to run a 2-4 week beta pilot for unclassified, non-sensitive ministry coverage awareness.
+Send this to one RMT lead who is willing to run a 2-4 week managed pilot for unclassified, non-sensitive ministry coverage awareness.
 
 Best fit:
 
-- one command chaplain or RMT leader who can own setup,
+- one command chaplain or RMT leader who can own local setup,
 - at least one chaplain or RP who will use the app on a phone,
 - a manageable list of departments, divisions, or tenant commands,
 - permission to use a local beta tool for non-sensitive coverage metadata only,
-- willingness to submit setup feedback once and usage feedback again after real use.
+- willingness to submit feedback after setup, after week one, and at closeout.
 
-Do not start the pilot if the team expects centrally hosted onboarding, wants to store sensitive data, or cannot identify durable owners for GitHub, Supabase, and Netlify.
+Do not start the pilot if the team wants public signup, sensitive data storage, counseling/case management, automated email invitations, or official-record workflows.
 
 ## Send This Message
 
 ```text
-Subject: Deckplating outside-team beta pilot
+Subject: Deckplating managed pilot
 
 I am testing Deckplating, a mobile web app for unclassified, non-sensitive ministry coverage awareness.
 
@@ -31,86 +31,95 @@ It helps an RMT:
 - keep working when connectivity is poor,
 - review Mission Board progress without storing counseling or sensitive operational data.
 
-This is a beta pilot. It is not for CUI, classified information, counseling notes, medical details, home addresses, family information, phone numbers, email addresses, dates of birth, or sensitive operational locations.
+This is a managed beta pilot. Your team uses the centrally hosted app at:
+https://deckplating.netlify.app
 
-Start here:
-https://deckplatingsetup.netlify.app
+Start by requesting workspace access here:
+https://deckplatingsetup.netlify.app/#request
 
-How to use the app after setup:
+After manual approval, I will send the approved lead a workspace link and one-time setup code. The lead will activate the workspace, set the local admin passphrase, and create the local roster, areas, locations, and units.
+
+User guide:
 https://deckplatingsetup.netlify.app/user-guide.html
-
-Source repository:
-https://github.com/austingrimesphoto/deckplating
 
 Feedback form:
 https://deckplatingsetup.netlify.app/#feedback
 
+This is not for CUI, classified information, counseling notes, medical details, home addresses, family information, phone numbers, email addresses, dates of birth, setup codes, passphrases, or sensitive operational locations.
+
 Suggested pilot:
 - use it for 2 to 4 weeks,
-- start with GitHub first, then use GitHub login for Supabase and Netlify when available,
-- one RMT lead handles setup,
+- one approved local lead handles workspace activation and local setup,
 - at least one chaplain or RP uses it on a phone,
-- use normal deckplating only,
+- use normal deckplating/check-in workflows only,
 - do not enter sensitive details,
-- submit feedback once after setup and again after real use,
-- report setup friction, phone issues, GPS/map issues, offline behavior, admin workflow, reporting usefulness, safe-use clarity, Mission Board usefulness, and anything that would stop another team from adopting it.
+- submit feedback after setup, after week one, and at closeout,
+- report onboarding confusion, operational blockers, safe-use questions, and feature requests.
 ```
 
 ## Links To Include
 
-- Setup wizard: <https://deckplatingsetup.netlify.app>
+- Managed app: <https://deckplating.netlify.app>
+- Workspace request form: <https://deckplatingsetup.netlify.app/#request>
 - User guide: <https://deckplatingsetup.netlify.app/user-guide.html>
 - Feedback form: <https://deckplatingsetup.netlify.app/#feedback>
-- Source repository: <https://github.com/austingrimesphoto/deckplating>
 - Safe-use policy: [SAFE_USE.md](SAFE_USE.md)
-- Setup guide: [SETUP_GUIDE.md](SETUP_GUIDE.md)
-- Pilot readiness guide: [PILOT_READINESS_GUIDE.md](PILOT_READINESS_GUIDE.md)
-- Pilot support playbook: [PILOT_SUPPORT_PLAYBOOK.md](PILOT_SUPPORT_PLAYBOOK.md)
-- Pilot dry-run checklist: [PILOT_DRY_RUN_CHECKLIST.md](PILOT_DRY_RUN_CHECKLIST.md)
-- Latest dry-run results: [PILOT_DRY_RUN_RESULTS_2026-07-04.md](PILOT_DRY_RUN_RESULTS_2026-07-04.md)
-- Pilot feedback review workflow: [PILOT_FEEDBACK_REVIEW.md](PILOT_FEEDBACK_REVIEW.md)
+- Administrator runbook: [ADMINISTRATOR_RUNBOOK.md](ADMINISTRATOR_RUNBOOK.md)
+- Central operator guide: [CENTRAL_OPERATOR_GUIDE.md](CENTRAL_OPERATOR_GUIDE.md)
+- Feedback review workflow: [PILOT_FEEDBACK_REVIEW.md](PILOT_FEEDBACK_REVIEW.md)
 
-## Ask Before They Start
+## Ask Before Approval
 
-- Who will own the GitHub, Supabase, and Netlify accounts?
-- Will they use a command/team account instead of one person's personal account?
-- Who will perform initial setup?
-- How many phone users will test?
-- What installation or command will they use as the map center?
-- Are they comfortable testing the current self-hosted beta before centralized hosting exists?
-- When will they submit setup feedback?
-- When will they submit 2-4 week usage feedback?
+- Who will be the approved local lead?
+- What official contact email should be used for coordination?
+- What installation or command should identify the workspace?
+- What preferred workspace slug should be used, if any?
+- How many RMT members will use the pilot?
+- What public/general location should be used as the initial map center?
+- When will they submit setup, week-one, and closeout feedback?
+- Do they understand the safe-use boundaries and that no sensitive data belongs in the app or forms?
+
+## Operator Approval Steps
+
+1. Review the workspace request form submission in Netlify Forms.
+2. If approved, open `https://deckplating.netlify.app/?operator=1`.
+3. Create the approved workspace.
+4. Issue a one-time setup code.
+5. Send the local lead:
+   - workspace link,
+   - one-time setup code,
+   - user guide link,
+   - feedback link,
+   - safe-use reminder.
+6. Do not send setup codes through public channels or record them in docs.
 
 ## First 30 Minutes
 
-Ask the pilot lead to complete this first-session checklist:
+Ask the local lead to complete this first-session checklist:
 
-1. Read the safe-use policy.
-2. Open the hosted setup wizard.
-3. Create the GitHub template copy.
-4. Create the Supabase project.
-5. Run the schema/migrations block.
-6. Run the starter-data block.
-7. Generate and copy Netlify environment variables.
-8. Deploy the app to Netlify.
-9. Open the app on a phone.
-10. Select the example team member and create a 4-digit PIN.
-11. Open Admin and enter the admin passphrase.
-12. Replace the example area, unit, and team member.
-13. Add one real mapped public building or general area.
-14. Attach one or more departments, divisions, or tenant commands to that location.
-15. Return to Check In and test a normal check-in.
-16. Open Coverage and confirm the unit status changed.
-17. Open Mission Board and confirm the check-in appears.
-18. Open Reports and confirm the generic indicator counts are understandable.
-19. Submit the setup feedback form before ending the session.
+1. Read the safe-use boundary.
+2. Open the workspace link.
+3. Select `Activate workspace`.
+4. Enter the one-time setup code.
+5. Confirm the workspace display name.
+6. Find the public installation/map center.
+7. Set the local admin passphrase.
+8. Open `Admin` and review the onboarding checklist.
+9. Create at least one area.
+10. Create at least one public/general location.
+11. Create at least one unit.
+12. Create at least one team member.
+13. Have a member select their name and create a PIN.
+14. Complete one non-sensitive test check-in.
+15. Open Coverage, Map, Mission Board, Account, and Admin settings.
+16. Submit setup feedback before ending the session.
 
 ## Pilot Timeline
 
-- Day 0: setup call, smoke test, and immediate setup feedback submission.
-- Week 1: at least one real phone check-in during normal work and a short owner follow-up.
+- Day 0: workspace request, approval, activation, smoke test, setup feedback.
+- Week 1: at least one real phone check-in during normal work and one week-one feedback response.
 - Week 2: checkpoint on offline behavior, admin workflow, reports, and Mission Board usefulness.
-- Week 3-4: final feedback submission and go/no-go assessment.
+- Week 3-4: closeout feedback and go/no-go assessment.
 
 ## Pilot Boundaries
 
@@ -126,6 +135,7 @@ Do not use Deckplating for:
 - phone numbers,
 - email addresses,
 - dates of birth,
+- setup codes or passphrases,
 - sensitive operational locations,
 - official records.
 
@@ -133,26 +143,36 @@ If a location should not be broadly shared, leave it unmapped and use manual che
 
 ## Feedback Expectations
 
-Ask the pilot team to submit feedback at least twice:
+Ask the pilot team to submit feedback at least three times:
 
 - once immediately after setup,
+- once after week one,
 - once after 2-4 weeks of real use.
 
 Feedback link:
 
 <https://deckplatingsetup.netlify.app/#feedback>
 
+Ask them to classify feedback into:
+
+- onboarding confusion,
+- operational blockers,
+- feature requests.
+
 Ask them to focus on:
 
-- setup friction,
+- workspace request clarity,
+- setup-code and activation clarity,
+- local admin passphrase clarity,
+- roster and map setup,
 - phone type and browser/home-screen mode,
 - GPS precision problems,
 - map-radius problems,
+- manual check-in,
 - offline and sync behavior,
 - admin workflow clarity,
 - reporting usefulness,
 - safe-use clarity,
-- whether manual check-in made sense,
 - whether Coverage and Mission Board helped them decide where to go,
 - what would stop another RMT from adopting it.
 
@@ -160,24 +180,25 @@ Ask them to focus on:
 
 After sending this packet:
 
-- confirm the RMT lead received the setup link,
+- confirm the lead received the request link,
+- confirm they understand manual approval is required,
 - confirm they understand the safe-use boundary,
-- confirm they know this is self-hosted and beta,
-- confirm they can create or access GitHub, Supabase, and Netlify accounts,
-- schedule a 30-minute setup support window,
-- ask them to submit the feedback form after setup,
-- schedule one midpoint check-in and one final closeout check-in,
-- check Netlify Forms for their feedback submission,
-- capture any blockers in the project roadmap.
+- create the workspace only after approval,
+- send setup code only to the approved lead,
+- schedule a setup support window,
+- ask for setup feedback before the setup call ends,
+- schedule one week-one check-in and one final closeout check-in,
+- check Netlify Forms for workspace request and feedback submissions,
+- capture blockers in the project roadmap.
 
 ## Stop Conditions
 
 Pause the pilot if:
 
-- they want to enter CUI, counseling notes, medical information, or sensitive location data,
-- they cannot identify an account owner for GitHub/Supabase/Netlify,
-- setup cannot be completed without you doing every step for them,
+- they want to enter CUI, counseling notes, medical information, sensitive location data, or official records,
+- the approved lead cannot complete activation/local setup with bounded support,
 - phone use is too slow or unreliable for normal check-ins,
 - offline sync fails in a way that could lose real work,
 - admin workflow or reports are too confusing for normal local ownership,
-- feedback indicates the safe-use boundary is not understood.
+- feedback indicates the safe-use boundary is not understood,
+- any cross-workspace data exposure or auth-boundary concern appears.

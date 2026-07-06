@@ -4,62 +4,64 @@ Branch: `main`
 
 `git status --short` at managed-pilot administration start: clean.
 
-What changed in this handoff session:
+What changed in this continuation session:
 
-- Completed **Managed Pilot Administration v1** for `https://deckplating.netlify.app`.
-- Added `scripts/bootstrap-central-operator.sh` so the central operator passphrase can be securely bootstrapped or rotated from the linked repo without printing the plaintext passphrase or its SHA-256 hash.
-- Added operator workspace lifecycle controls in `netlify/functions/api.ts` and `src/App.tsx`:
-  - suspend workspace
-  - reactivate workspace
-  - emergency local-admin passphrase recovery
-- Bound user and admin sessions to live workspace state so suspended workspaces block:
-  - workspace resolution
-  - setup activation
-  - device registration
-  - existing member/admin sessions
-- Added local-admin `Reset PIN and revoke devices` for same-workspace roster members.
-- Made `System Administration` reachable from normal `Settings` and reliable via `?operator=1` without clearing the normal stored user identity.
-- Added `docs/ADMINISTRATOR_RUNBOOK.md`.
-- Updated `scripts/tenant-isolation-check.mjs` for the new authorization and inactive-workspace guarantees.
-- Updated the durable plan to mark the pilot-administration milestone complete and move the next work to managed self-service hardening.
+- Completed local implementation of **Managed Pilot Onboarding And Launch Readiness v1**.
+- Tightened `src/App.tsx` activation/admin wording around approved workspace selection, one-time setup code, installation/map center, local admin passphrase, local setup, and roster creation.
+- Added a low-profile `Account` > `Send feedback` link to `https://deckplatingsetup.netlify.app/#feedback`.
+- Rewrote `setup-site/index.html` from self-host-first setup to managed pilot access, workspace request, user guide, and feedback.
+- Added Netlify Forms request form `deckplating-workspace-request` and thank-you page `workspace-request-thanks.html`.
+- Preserved feedback form `deckplating-pilot-feedback` and updated thank-you copy for manual managed-pilot review.
+- Rebuilt `docs/USER_GUIDE.md` and `setup-site/user-guide.html` around concrete workflows and scrubbed demo screenshot assets.
+- Updated feedback and pilot docs for managed-pilot reality:
+  - `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`
+  - `docs/PILOT_FEEDBACK_REVIEW.md`
+  - `docs/PILOT_PACKET.md`
+- Added `docs/AI/NEXT_SESSION_START_HERE.md` for human/agent continuation.
+- Updated `docs/ADMINISTRATOR_RUNBOOK.md` labels for `Account`, `Admin settings`, and the hide/complete onboarding checklist.
 
 Working tree expectation after the handoff commit: clean.
 
 No root `AGENTS.md` file was present when checked.
 
-Changed files in the milestone:
+Changed files in this continuation:
 
-- `netlify/functions/api.ts`
 - `src/App.tsx`
-- `scripts/bootstrap-central-operator.sh`
-- `scripts/tenant-isolation-check.mjs`
+- `src/styles.css`
 - `docs/ADMINISTRATOR_RUNBOOK.md`
 - `docs/AI/DECKPLATING_PLAN.md`
 - `docs/AI/HANDOFF.md`
+- `docs/AI/NEXT_SESSION_START_HERE.md`
+- `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`
+- `docs/PILOT_FEEDBACK_REVIEW.md`
+- `docs/PILOT_PACKET.md`
+- `docs/USER_GUIDE.md`
+- `setup-site/README.md`
+- `setup-site/index.html`
+- `setup-site/user-guide.html`
+- `setup-site/pilot-feedback-thanks.html`
+- `setup-site/workspace-request-thanks.html`
+- `setup-site/assets/screenshots/`
 
 Verification completed before this handoff update:
 
+- `npm run test:tenant-isolation` passed with 22 checks.
 - `npm run typecheck` passed.
 - `npm run build` passed.
+- `npm run build --prefix setup-site` passed.
 - `git diff --check` passed.
-- live Netlify production deploy succeeded.
-- live managed dry run succeeded end to end after one fix redeploy.
 
-Smallest relevant verification command for docs-only follow-up edits:
-
-```bash
-git diff --check
-```
+No deployment was performed in this continuation session.
 
 Exact next task:
 
-Follow `docs/AI/DECKPLATING_PLAN.md`, section `Next exact task`. Start by reading the current plan, handoff, runbook, operator guide, onboarding doc, `netlify/functions/api.ts`, `src/App.tsx`, and `scripts/tenant-isolation-check.mjs`. Then explicitly gate or remove the environment-wide admin fallback for managed hosted production, tighten suspended-workspace UX around stale cached sessions, and add only the smallest remaining safeguards needed before broader managed self-service.
+Review the **Managed Pilot Onboarding And Launch Readiness v1** diff for pilot wording, Netlify Forms attributes, secret leakage, and auth/workspace boundary regressions. If accepted, deploy the app and setup site using `docs/AI/NEXT_SESSION_START_HERE.md`. After deployment, return to backend hardening: managed-host admin fallback, stale suspended/deleted workspace UX, live two-organization integration tests, performance review, reliability, and pilot-feedback-driven feature planning.
 
 Current readiness assessment for a real outside chaplain:
 
 - the hosted app is now usable for a small managed pilot through Deckplating itself
-- the central operator can create a workspace, issue/revoke setup codes, suspend/reactivate a pilot, recover a forgotten local-admin passphrase, and leave routine roster/PIN handling to the local lead
+- the central operator can create/delete/suspend/reactivate workspaces, issue/revoke setup codes, recover a forgotten local-admin passphrase, reset member PINs, and leave routine roster handling to the local lead
 - the main remaining gaps before broader self-service rollout are:
-  - managed-host admin fallback guardrails
-  - cleaner stale-session UX when a workspace is suspended
-  - feedback capture still lives on the setup-site form rather than inside `deckplating.netlify.app`
+  - onboarding-launch changes still need human review and production deployment
+  - feedback capture still lives mostly on the setup-site form
+  - managed-host admin fallback guardrails and stale-session UX still need a hardening pass after onboarding is clear

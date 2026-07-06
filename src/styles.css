@@ -291,6 +291,17 @@ small,
   color: var(--brand);
 }
 
+.link-button {
+  min-height: 44px;
+  display: inline-grid;
+  place-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+
 .error,
 .notice,
 .warning-notice,
