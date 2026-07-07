@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test:tenant-isolation": "node scripts/tenant-isolation-check.mjs",
-    "test:integration:two-workspace": "node scripts/two-workspace-integration-check.mjs"
+    "test:integration:two-workspace": "node scripts/two-workspace-integration-check.mjs",
+    "test:smoke:first-pilot": "node scripts/first-pilot-smoke-check.mjs"
   },
   "dependencies": {
     "@netlify/functions": "^2.8.2",
