@@ -71,6 +71,7 @@ check('Admin routes require signed admin context and use its organization scope'
 check('Managed hosts fail closed when organization schema checks error', has(api, 'managedHostEnabled') && has(api, 'if (managedHostEnabled || !isMissingRelationError(error)) throw error'));
 check('Managed host disables environment admin fallback for workspace admin login', has(api, 'if (managedHostEnabled && organizationId) return null'));
 check('Admin correction validates all referenced member/unit IDs inside organization', has(adminCorrection, 'validateTeamMemberReferences') && has(adminCorrection, 'scoped(unitQuery, organizationId)') && has(adminCorrection, 'scoped(checkinUpdateQuery, organizationId)'));
+check('Admin correction updates visit indicators only through the scoped check-in batch', has(adminCorrection, 'normalizeIndicator(body.confidentialCareProvided)') && has(adminCorrection, 'normalizeIndicator(body.referralProvided)') && has(adminCorrection, "from('checkin_batches')") && has(adminCorrection, 'scoped(batchUpdate, organizationId)'));
 check('Admin location mutations validate area and assigned units inside organization', has(adminLocations, 'validateLocationReferences') && has(adminLocations, 'validateUnitAssignment') && has(adminLocations, 'scoped(locationUpdate, organizationId)') && has(adminLocations, 'scoped(unitUpdate, organizationId)'));
 check('Admin unit mutations validate referenced locations inside organization', has(adminUnits, 'validateUnitReferences') && has(adminUnits, 'scoped(unitUpdate, organizationId)'));
 check(

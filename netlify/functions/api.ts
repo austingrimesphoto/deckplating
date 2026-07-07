@@ -2005,6 +2005,8 @@ async function route(event: HandlerEvent) {
       team_member_id?: string;
       voided?: boolean;
       void_reason?: FixedVoidReason;
+      confidentialCareProvided?: unknown;
+      referralProvided?: unknown;
       adminTeamMemberId?: string;
     }>(event);
     if (!body.adminTeamMemberId) return json(400, { error: 'adminTeamMemberId is required.' });
@@ -2017,12 +2019,41 @@ async function route(event: HandlerEvent) {
 
     const existingQuery = supabase
       .from('checkins')
-      .select('id, unit_id, voided_at')
+      .select('id, unit_id, voided_at, batch_id')
       .eq('id', adminCheckinMatch[1]);
     const { data: existing, error: existingError } = await scoped(existingQuery, organizationId).single();
     if (existingError || !existing) return json(404, { error: 'Check-in not found.' });
 
     const update: Record<string, unknown> = { updated_by_team_member_id: body.adminTeamMemberId };
+    const indicatorFieldsProvided =
+      Object.prototype.hasOwnProperty.call(body, 'confidentialCareProvided') ||
+      Object.prototype.hasOwnProperty.call(body, 'referralProvided');
+    let indicatorUpdate: Record<string, unknown> | null = null;
+    if (indicatorFieldsProvided) {
+      if (
+        !Object.prototype.hasOwnProperty.call(body, 'confidentialCareProvided') ||
+        !Object.prototype.hasOwnProperty.call(body, 'referralProvided')
+      ) {
+        return json(400, { error: 'Both indicator fields are required when editing visit indicators.' });
+      }
+      if (!existing.batch_id) {
+        return json(400, { error: 'This check-in does not have an editable visit batch.' });
+      }
+      let confidentialCareProvided: IndicatorValue;
+      let referralProvided: IndicatorValue;
+      try {
+        confidentialCareProvided = normalizeIndicator(body.confidentialCareProvided);
+        referralProvided = normalizeIndicator(body.referralProvided);
+      } catch (error) {
+        return json(400, { error: errorMessage(error) });
+      }
+      indicatorUpdate = {
+        confidential_care_provided: confidentialCareProvided,
+        referral_provided: referralProvided,
+        outcomes_recorded_at: confidentialCareProvided || referralProvided ? new Date().toISOString() : null,
+        updated_by_team_member_id: body.adminTeamMemberId,
+      };
+    }
 
     if (body.unit_id && body.unit_id !== existing.unit_id) {
       const unitQuery = supabase
@@ -2067,6 +2098,14 @@ async function route(event: HandlerEvent) {
     const { data, error } = await scoped(checkinUpdateQuery, organizationId).select('id').maybeSingle();
     if (error) return json(500, { error: error.message });
     if (!data) return json(404, { error: 'Check-in not found.' });
+    if (indicatorUpdate) {
+      const batchUpdate = supabase
+        .from('checkin_batches')
+        .update(indicatorUpdate)
+        .eq('id', existing.batch_id);
+      const { error: batchUpdateError } = await scoped(batchUpdate, organizationId);
+      if (batchUpdateError) return json(500, { error: batchUpdateError.message });
+    }
     return json(200, { checkin: data, coverage: await getCoverage(organizationId) });
   }
 

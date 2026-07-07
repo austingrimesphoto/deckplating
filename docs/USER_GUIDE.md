@@ -316,14 +316,15 @@ What they click:
 
 1. Open `Admin` > `Activity Log`.
 2. Apply filters.
-3. Correct unit, member, or date/time mistakes.
-4. Void accidental, duplicate, or incorrect records when needed.
+3. Correct unit, member, date/time, counseling indicator, or referral indicator mistakes.
+4. Click `Save edit`.
+5. Void accidental, duplicate, or incorrect records when needed.
 
-Expected result: corrected records stay auditable; voided records stop affecting coverage and score.
+Expected result: corrected records stay auditable; indicator changes update the generic reports; voided records stop affecting coverage and score.
 
 Common mistake: using Activity Log to erase history. It is for correction and soft-voiding.
 
-Safe-use reminder: do not add sensitive explanations. Use the allowed correction reason only.
+Safe-use reminder: counseling and referral indicators are yes/no counts only. Do not enter notes, circumstances, names, medical information, referral details, or sensitive explanations. Use the allowed correction reason only.
 
 ## Admin Settings
 

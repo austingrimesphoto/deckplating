@@ -2586,6 +2586,8 @@ function AdminCheckinRow({
   const [unitId, setUnitId] = useState(checkin.unit_id);
   const [teamMemberId, setTeamMemberId] = useState(checkin.team_member_id);
   const [checkedInAt, setCheckedInAt] = useState(datetimeLocalValue(checkin.checked_in_at));
+  const [confidentialCareProvided, setConfidentialCareProvided] = useState(checkin.confidential_care_provided === true);
+  const [referralProvided, setReferralProvided] = useState(checkin.referral_provided === true);
   const [voidReason, setVoidReason] = useState('accidental');
   const voided = Boolean(checkin.voided_at);
 
@@ -2595,6 +2597,8 @@ function AdminCheckinRow({
       unit_id: unitId,
       team_member_id: teamMemberId,
       checked_in_at: localDateTimeToIso(checkedInAt),
+      confidentialCareProvided: confidentialCareProvided ? true : null,
+      referralProvided: referralProvided ? true : null,
     });
   }
 
@@ -2646,6 +2650,26 @@ function AdminCheckinRow({
             ))}
           </select>
           <input type="datetime-local" value={checkedInAt} onChange={(event) => setCheckedInAt(event.target.value)} />
+          <section className="optional-indicators admin-indicators">
+            <h3>Optional visit indicators</h3>
+            <p className="muted">Counts only. Do not add counseling notes, referral details, names, or sensitive information.</p>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={confidentialCareProvided}
+                onChange={(event) => setConfidentialCareProvided(event.target.checked)}
+              />
+              Counseling or confidential care happened
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={referralProvided}
+                onChange={(event) => setReferralProvided(event.target.checked)}
+              />
+              Referral happened
+            </label>
+          </section>
           <button className="secondary" onClick={saveCorrections} disabled={!actingTeamMemberId}>
             Save edit
           </button>
