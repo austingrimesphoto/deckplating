@@ -126,7 +126,9 @@ The intended setup order is:
 4. `supabase/migrations/004_mission_board_settings.sql`
 5. `supabase/migrations/005_multi_site_foundation.sql`
 6. `supabase/migrations/006_org_admin_and_invitations.sql`
-7. `supabase/seed.sql`
+7. `supabase/migrations/007_app_settings_workspace_key.sql`
+8. `supabase/migrations/008_operator_audit_events.sql`
+9. `supabase/seed.sql`
 
 Migration `005` adds:
 
@@ -142,6 +144,10 @@ Migration `006` adds:
 - RLS enabled on both tables
 - indexes for active credentials and unused setup codes
 
+Migration `007` removes the old global `app_settings.key` primary key so workspace settings are unique by `(organization_id, key)`.
+
+Migration `008` adds `operator_audit_events` for central-operator and superuser support events.
+
 ## Current API Groundwork
 
 Public/setup routes now include:
@@ -156,6 +162,7 @@ Central-operator routes now include:
 - `POST /api/operator/login`
 - `GET /api/operator/organizations`
 - `POST /api/operator/organizations`
+- `POST /api/operator/organizations/:id/admin-session`
 - `POST /api/operator/organizations/:id/setup-codes`
 - `POST /api/operator/setup-codes/:id/revoke`
 
@@ -211,7 +218,7 @@ Verification results:
 
 Harness limits:
 
-The tenant-isolation harness is a static/contract check. It verifies that the route guards, scoped query/update calls, related-ID validators, setup-code protections, operator hash omissions, schema support for organization-scoped check-in batch idempotency, and offline organization filters are present in the code. It does not replace a future live database integration suite that seeds two organizations and executes HTTP requests against Netlify Functions.
+The tenant-isolation harness is a static/contract check. It verifies that the route guards, scoped query/update calls, related-ID validators, setup-code protections, operator hash omissions, schema support for organization-scoped check-in batch idempotency, managed-host fail-closed behavior, audited superuser entry, and offline organization filters are present in the code. It does not replace running the live two-workspace integration script against a safe API target.
 
 ## Completed Task: Stage 2 Outside-Team Pilot Validation Preparation
 
@@ -334,18 +341,28 @@ Validation and live verification completed:
   - first member sign-in
   - first live check-in with score `3`
 
-## Next Task: Managed Production Guardrails v1
+## Current Task: Managed Production Guardrails v1
 
-Status: deferred until managed-pilot onboarding, setup-site, guide, and feedback materials are clear enough for first RMT pilots.
+Status: partially implemented in the quality-control checkpoint for audit items `1`, `2`, `3`, `5`, and `7`.
 
 Objective: reduce the remaining managed-host risk before broader self-service managed rollout.
 
-Scope:
+Completed in the checkpoint:
 
-- Disable or explicitly gate the environment-wide admin fallback for managed hosted production.
-- Add the smallest operator-side lifecycle controls still missing for safe pilot support, starting with workspace deactivate/archive or equivalent containment.
-- Tighten the operator/support runbook around passphrase rotation, dry-run cleanup, live incident recovery, and managed-pilot feedback collection.
-- Keep public signup, backup/export/delete workflows, and broad service hardening out of scope for this pass.
+- workspace-scoped `app_settings` uniqueness
+- managed-host schema checks that fail closed on unexpected database errors
+- managed-host gating of the old environment admin fallback for workspace admin login
+- audited operator superuser admin sessions scoped to one active workspace
+- no-roster local Admin re-entry
+- organization-scoped offline bootstrap fallback
+- static tenant-isolation updates and a live two-workspace integration script
+
+Still out of scope for this pass:
+
+- public signup
+- backup/export workflows
+- broad service hardening
+- in-app audit review/export surfaces
 
 Likely files to start with:
 
@@ -371,7 +388,7 @@ Stage 2 - managed hosted small-command pilot:
 - Objective: validate real command use through one centrally hosted app with controlled workspace onboarding.
 - Scope: a small number of approved commands use `deckplating.netlify.app`; the system administrator creates/approves workspaces and monitors workspace health; local command leads complete guided setup and run normal operations inside their tenant sandbox.
 - Exit criteria: at least two commands activate managed workspaces, complete local setup without GitHub/Supabase/Netlify exposure, complete real check-ins, and report whether the hosted flow is viable.
-- Current next work: finish onboarding clarity, setup-site relaunch, screenshot guide, and feedback loop, then add the remaining managed-production guardrails.
+- Current next work: deploy reviewed hardening, execute the live two-workspace integration script against a safe target, and continue stale-session UX, performance, reliability, backup/export posture, and audit review surfaces.
 
 Stage 3 - managed service hardening and sustainment:
 
@@ -383,11 +400,11 @@ Stage 3 - managed service hardening and sustainment:
 ## Known Security Work Still Required
 
 - PIN hashing includes organization context, with a legacy beta hash upgrade path on successful PIN use.
-- Environment-wide admin fallback must be disabled before managed production; it may remain only for self-hosted/default-organization beta compatibility.
+- Environment-wide admin fallback remains only for self-hosted/default-organization beta compatibility; managed workspace admin login is gated to organization admin credentials or audited superuser entry.
 - Organization-aware session refresh behavior needs hardening.
 - Offline pending batches are partitioned for active sync/count/indicator paths by organization and team member; a future IndexedDB schema migration can add a dedicated organization index if volume requires it.
-- Backup/export/delete boundaries must become organization-specific.
-- The static tenant-isolation harness passes; a future live two-organization API integration suite is still recommended before production managed scale.
+- Backup/export boundaries must become organization-specific.
+- The static tenant-isolation harness passes; the live two-workspace integration script should be run against a safe target before production managed scale.
 
 ## Validation Pattern For Future Changes
 

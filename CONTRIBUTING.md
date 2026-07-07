@@ -33,6 +33,8 @@ Keep `package-lock.json` committed so installs are reproducible.
 Before proposing a release, run:
 
 ```bash
+npm run test:tenant-isolation
 npm run typecheck
 npm run build
+npm run build --prefix setup-site
 ```

@@ -36,6 +36,8 @@ Use this as the draft release note for the current beta build.
   - `004_mission_board_settings.sql`
   - `005_multi_site_foundation.sql`
   - `006_org_admin_and_invitations.sql`
+  - `007_app_settings_workspace_key.sql`
+  - `008_operator_audit_events.sql`
   - `seed.sql`
 
 ## Environment Variable Changes

@@ -98,6 +98,23 @@ Deactivate a roster entry:
 3. Enter a new value under `New local admin passphrase`.
 4. Select `Save local admin passphrase`.
 
+## Open Workspace Admin As System Administrator
+
+Use this only for support, recovery, or quality-control work where the central administrator needs to inspect or fix one workspace.
+
+1. Open `System Administration`.
+2. Find the active workspace card.
+3. Select `Open admin as system administrator`.
+4. Confirm the prompt.
+5. Make the needed Admin change.
+6. Use `Lock Admin`, `Back and lock`, or sign out when finished.
+
+Result:
+
+- the admin session is scoped to that one workspace
+- the session starts only after an operator audit event is recorded
+- the Admin screen shows a system administrator mode warning while active
+
 ## Onboarding Checklist
 
 The local admin checklist appears in `Admin` > `Locations` while setup is incomplete. It tracks local admin passphrase, areas, locations, units, and team members.

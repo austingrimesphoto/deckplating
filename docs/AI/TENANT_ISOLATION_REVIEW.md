@@ -10,7 +10,7 @@ npm run test:tenant-isolation
 
 - Public workspace/setup routes may accept a workspace slug, organization UUID, or setup code because no session exists yet.
 - User routes derive organization scope from the signed user token created during device registration.
-- Admin routes derive organization scope from the signed admin token created during workspace activation or admin login.
+- Admin routes derive organization scope from the signed admin token created during workspace activation, admin login, or audited superuser operator entry.
 - Operator routes are global management routes and require the central operator token.
 
 ## Route Review
@@ -20,6 +20,7 @@ npm run test:tenant-isolation
 | `POST /operator/login` | Central operator passphrase hash | Issues only a central operator token; no organization data returned. |
 | `GET /operator/organizations` | Central operator token | Returns organization and setup-code metadata only; stored setup-code hashes and admin credential hashes are not selected. |
 | `POST /operator/organizations` | Central operator token | Creates organization records only. |
+| `POST /operator/organizations/:id/admin-session` | Central operator token plus organization path ID | Verifies the target workspace is active, records an operator audit event, and returns an admin token scoped only to that workspace. |
 | `POST /operator/organizations/:id/setup-codes` | Central operator token plus organization path ID | Verifies the target organization exists and is active; returns the generated setup code once, never the stored hash. |
 | `POST /operator/setup-codes/:id/revoke` | Central operator token | Revokes unused setup codes without returning hashes. |
 | `GET /workspaces/resolve` | Client-provided slug or organization UUID | Public discovery returns only active workspace summary. |
@@ -52,4 +53,6 @@ npm run test:tenant-isolation
 
 ## Harness Limits
 
-The current harness is static and contract-oriented. It proves that the route guards, scoped query/update calls, related-ID validators, setup-code protections, hash omissions, and offline organization filters are present in the code. It does not replace a future live database integration suite that seeds two organizations and executes HTTP requests against Netlify Functions.
+The current static harness is contract-oriented. It proves that the route guards, scoped query/update calls, related-ID validators, setup-code protections, hash omissions, managed-host fail-closed checks, audited superuser entry, and offline organization filters are present in the code.
+
+The live two-workspace integration script seeds two temporary organizations and executes HTTP requests against Netlify Functions. Run it only against a safe non-production target unless production testing has been explicitly approved.

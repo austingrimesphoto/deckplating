@@ -21,9 +21,9 @@ The current self-hosted template path should remain available only as an advance
 
 ## Organization Model
 
-Managed hosting should use an `organizations` or `workspaces` table and treat every customer command/RMT as one workspace. Migration `005_multi_site_foundation.sql` adds the first default-organization groundwork while preserving current single-site behavior.
+Managed hosting uses an `organizations` table and treats every customer command/RMT as one workspace. Migrations `005` through `008` add the multi-site foundation, organization admin credentials/setup codes, workspace-scoped settings uniqueness, and operator audit events while preserving current single-site behavior.
 
-Required future schema changes:
+Current schema foundation:
 
 - `organizations` - foundation added in `005_multi_site_foundation.sql`
 - `organization_id` on `areas` - foundation added
@@ -35,6 +35,8 @@ Required future schema changes:
 - `organization_id` on `checkin_batches` - foundation added
 - `organization_id` on settings - foundation added for `app_settings`
 - `organization_id` on setup codes/invitations - foundation added in `006_org_admin_and_invitations.sql`
+- workspace-scoped settings uniqueness - added in `007_app_settings_workspace_key.sql`
+- operator audit events - added in `008_operator_audit_events.sql`
 
 ## Migration Sequence
 
@@ -42,9 +44,9 @@ Required future schema changes:
 2. Create a default organization for existing single-organization data. Done in foundation migration.
 3. Backfill `organization_id` on existing rows. Done in foundation migration.
 4. Add not-null constraints and indexes. Done for current organization-owned tables.
-5. Update every server API route to enforce organization scope. Started for default-organization scope.
-6. Replace environment-wide admin access with organization-scoped admin access. Started in migration `006` and API groundwork.
-7. Introduce invitation/setup flow for controlled onboarding. Started with setup-code schema, activation endpoint, and protected central-operator API groundwork.
+5. Update every server API route to enforce organization scope. Static tenant-isolation checks cover the current route contracts.
+6. Replace environment-wide admin access with organization-scoped admin access. Managed workspace admin login now uses organization credentials or audited superuser entry.
+7. Introduce invitation/setup flow for controlled onboarding. Implemented with setup-code schema, activation endpoint, and protected central-operator API groundwork.
 
 ## Controlled Managed Onboarding
 
@@ -59,8 +61,9 @@ Current foundation status:
 - Setup-code records can exist in the database.
 - Protected central-operator API routes can create approved organizations and one-time setup codes when `CENTRAL_OPERATOR_PASSPHRASE_HASH` is configured.
 - `POST /api/workspaces/activate` can consume a valid setup code and establish an organization-scoped admin passphrase.
+- The central operator can open an audited superuser admin session scoped to one active workspace for support or quality control.
 - The app still has no unrestricted public self-service signup.
-- Current self-hosted teams can continue using the environment admin passphrase while optionally setting an organization admin passphrase from Admin Settings.
+- Current self-hosted teams can continue using the environment admin passphrase while optionally setting an organization admin passphrase from Admin Settings. Managed workspace admin login does not accept the environment passphrase when central operator mode is enabled.
 
 ## Self-Hosted Support
 

@@ -8,7 +8,7 @@ type IndicatorValue = true | null;
 type GamificationTone = 'professional' | 'friendly' | 'banter';
 type AdminContext = {
   organizationId: string | null;
-  authMethod: 'organization' | 'environment' | 'legacy';
+  authMethod: 'organization' | 'environment' | 'legacy' | 'superuser';
   organizationUpdatedAt: string | null;
   adminCredentialUpdatedAt: string | null;
 };
@@ -38,6 +38,7 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const adminPassphraseHash = process.env.ADMIN_PASSPHRASE_HASH ?? '';
 const adminSessionSecret = process.env.ADMIN_SESSION_SECRET ?? serviceRoleKey;
 const centralOperatorPassphraseHash = process.env.CENTRAL_OPERATOR_PASSPHRASE_HASH ?? '';
+const managedHostEnabled = Boolean(centralOperatorPassphraseHash);
 const defaultOrganizationId =
   process.env.DECKPLATING_DEFAULT_ORGANIZATION_ID ?? '00000000-0000-4000-8000-000000000001';
 
@@ -80,10 +81,21 @@ const pinHash = (teamMemberId: string, pin: string, organizationId: string | nul
 let organizationSchemaEnabledCache: boolean | null = null;
 let organizationAdminSchemaEnabledCache: boolean | null = null;
 
+const isMissingRelationError = (error: unknown) => {
+  const value = error as { code?: string; message?: string } | null;
+  const message = value?.message?.toLowerCase() ?? '';
+  return value?.code === '42P01' || value?.code === 'PGRST205' || message.includes('does not exist');
+};
+
 async function organizationSchemaEnabled() {
   if (organizationSchemaEnabledCache !== null) return organizationSchemaEnabledCache;
   const { error } = await supabase.from('organizations').select('id').limit(1);
-  organizationSchemaEnabledCache = !error;
+  if (error) {
+    if (managedHostEnabled || !isMissingRelationError(error)) throw error;
+    organizationSchemaEnabledCache = false;
+    return organizationSchemaEnabledCache;
+  }
+  organizationSchemaEnabledCache = true;
   return organizationSchemaEnabledCache;
 }
 
@@ -143,7 +155,12 @@ async function organizationSummary(organizationId: string | null) {
 async function organizationAdminSchemaEnabled() {
   if (organizationAdminSchemaEnabledCache !== null) return organizationAdminSchemaEnabledCache;
   const { error } = await supabase.from('organization_admin_credentials').select('id').limit(1);
-  organizationAdminSchemaEnabledCache = !error;
+  if (error) {
+    if (managedHostEnabled || !isMissingRelationError(error)) throw error;
+    organizationAdminSchemaEnabledCache = false;
+    return organizationAdminSchemaEnabledCache;
+  }
+  organizationAdminSchemaEnabledCache = true;
   return organizationAdminSchemaEnabledCache;
 }
 
@@ -491,7 +508,12 @@ async function requireAdmin(event: HandlerEvent): Promise<AdminContext | null> {
   }
   return {
     organizationId,
-    authMethod: parsed.authMethod === 'organization' ? 'organization' : 'environment',
+    authMethod:
+      parsed.authMethod === 'organization'
+        ? 'organization'
+        : parsed.authMethod === 'superuser'
+          ? 'superuser'
+          : 'environment',
     organizationUpdatedAt: organizationState?.updated_at ?? null,
     adminCredentialUpdatedAt:
       parsed.authMethod === 'organization' ? parsed.adminCredentialUpdatedAt ?? null : null,
@@ -522,6 +544,7 @@ async function tryOrganizationAdminLogin(organizationId: string | null, passphra
 }
 
 function tryEnvironmentAdminLogin(passphrase: string, organizationId: string | null): AdminContext | null {
+  if (managedHostEnabled && organizationId) return null;
   if (!adminPassphraseHash || sha256(passphrase) !== adminPassphraseHash) return null;
   return {
     organizationId,
@@ -560,6 +583,32 @@ async function requireOperator(event: HandlerEvent): Promise<OperatorContext | n
   }
   if (parsed.authMethod !== 'central_operator' || !parsed.expires || parsed.expires < Date.now()) return null;
   return { authMethod: 'central_operator' };
+}
+
+async function recordOperatorAudit(
+  organizationId: string | null,
+  action: string,
+  detail: Record<string, unknown> = {},
+) {
+  const { error } = await supabase.from('operator_audit_events').insert({
+    organization_id: organizationId,
+    actor: 'central_operator',
+    action,
+    detail,
+  });
+  if (error) throw error;
+}
+
+async function tryRecordOperatorAudit(
+  organizationId: string | null,
+  action: string,
+  detail: Record<string, unknown> = {},
+) {
+  try {
+    await recordOperatorAudit(organizationId, action, detail);
+  } catch {
+    // Audit table is introduced in migration 008. Do not block older self-hosted support paths.
+  }
 }
 
 const slugify = (value: string) =>
@@ -921,7 +970,27 @@ async function route(event: HandlerEvent) {
       if (error.code === '23505') return json(409, { error: 'An organization with that slug already exists.' });
       return json(500, { error: error.message });
     }
+    await tryRecordOperatorAudit(data.id, 'workspace_created', { slug: data.slug });
     return json(201, { organization: data });
+  }
+
+  const operatorAdminSessionMatch = path.match(/^\/operator\/organizations\/([^/]+)\/admin-session$/);
+  if (method === 'POST' && operatorAdminSessionMatch) {
+    const organizationId = operatorAdminSessionMatch[1];
+    if (!isUuid(organizationId)) return json(400, { error: 'Organization ID must be a UUID.' });
+    const { data: organization, error: orgError } = await supabase
+      .from('organizations')
+      .select('id, slug, name, active, created_at, updated_at')
+      .eq('id', organizationId)
+      .maybeSingle();
+    if (orgError) return json(500, { error: orgError.message });
+    if (!organization || !organization.active) return json(404, { error: 'Active organization not found.' });
+    await recordOperatorAudit(organizationId, 'superuser_admin_session_started', { slug: organization.slug });
+    return json(200, {
+      token: await createAdminToken({ organizationId, authMethod: 'superuser' }),
+      organization: await organizationSummary(organizationId),
+      authMethod: 'superuser',
+    });
   }
 
   const operatorSetupCodeMatch = path.match(/^\/operator\/organizations\/([^/]+)\/setup-codes$/);
@@ -958,6 +1027,11 @@ async function route(event: HandlerEvent) {
       .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
       .single();
     if (error) return json(500, { error: error.message });
+    await tryRecordOperatorAudit(organizationId, 'setup_code_issued', {
+      setupCodeId: data.id,
+      slug: organization.slug,
+      expiresAt,
+    });
     return json(201, { organization, code, setupCode: { ...data, code } });
   }
 
@@ -974,6 +1048,7 @@ async function route(event: HandlerEvent) {
       .maybeSingle();
     if (error) return json(500, { error: error.message });
     if (!data) return json(404, { error: 'Unused setup code not found.' });
+    await tryRecordOperatorAudit(data.organization_id, 'setup_code_revoked', { setupCodeId: data.id });
     return json(200, { setupCode: data });
   }
 
@@ -991,6 +1066,9 @@ async function route(event: HandlerEvent) {
       .maybeSingle();
     if (error) return json(500, { error: error.message });
     if (!data) return json(404, { error: 'Organization not found.' });
+    await tryRecordOperatorAudit(organizationId, body.active ? 'workspace_reactivated' : 'workspace_suspended', {
+      slug: data.slug,
+    });
     return json(200, { organization: data });
   }
 
@@ -1018,6 +1096,7 @@ async function route(event: HandlerEvent) {
       { onConflict: 'organization_id' },
     );
     if (error) return json(500, { error: error.message });
+    await tryRecordOperatorAudit(organizationId, 'local_admin_recovery_passphrase_set', { slug: organization.slug });
     return json(200, { organization });
   }
 
@@ -1057,6 +1136,7 @@ async function route(event: HandlerEvent) {
 
     const { error } = await supabase.from('organizations').delete().eq('id', organizationId);
     if (error) return json(500, { error: error.message });
+    await tryRecordOperatorAudit(null, 'workspace_deleted', { organizationId, slug: organization.slug });
     return json(200, { deletedOrganization: organization });
   }
 

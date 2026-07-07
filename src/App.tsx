@@ -482,12 +482,14 @@ function WorkspaceEntry({
   onBack,
   onWorkspace,
   onAdminToken,
+  onOpenAdmin,
 }: {
   workspace: WorkspaceContext | null;
   teamMembers: TeamMember[];
   onBack: () => void;
   onWorkspace: (workspace: WorkspaceContext | null) => void;
   onAdminToken: (token: string) => void;
+  onOpenAdmin: () => void;
 }) {
   const [mode, setMode] = useState<'choose' | 'activate'>('choose');
   const [workspaceSlug, setWorkspaceSlug] = useState('');
@@ -594,9 +596,19 @@ function WorkspaceEntry({
             This workspace already has a roster. Go back and select your name, or change workspaces below.
           </p>
         )}
+        {teamMembers.length === 0 && workspace && (
+          <p className="notice">
+            If this workspace is already activated but the roster is not ready yet, open local Admin and enter the workspace admin passphrase.
+          </p>
+        )}
         {teamMembers.length > 0 && (
           <button className="secondary" type="button" onClick={onBack}>
             Back to names
+          </button>
+        )}
+        {teamMembers.length === 0 && workspace && (
+          <button className="secondary" type="button" onClick={onOpenAdmin}>
+            Open local Admin
           </button>
         )}
         <div className="tab-row">
@@ -744,7 +756,13 @@ function OnboardingChecklist({
   );
 }
 
-function OperatorConsole({ onClose }: { onClose: () => void }) {
+function OperatorConsole({
+  onClose,
+  onSuperuserAdmin,
+}: {
+  onClose: () => void;
+  onSuperuserAdmin: (token: string, organization: WorkspaceContext) => void;
+}) {
   const [token, setToken] = useState(sessionStorage.getItem(operatorKey) ?? '');
   const [passphrase, setPassphrase] = useState('');
   const [organizations, setOrganizations] = useState<OperatorOrganization[]>([]);
@@ -929,6 +947,27 @@ function OperatorConsole({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function openSuperuserAdmin(organization: OperatorOrganization) {
+    setError('');
+    setMessage('');
+    const confirmed = window.confirm(
+      `Open ${organization.name} as system administrator?\n\nThis starts an audited superuser admin session scoped to this workspace.`,
+    );
+    if (!confirmed) return;
+    try {
+      const result = await api<{ token: string; organization: WorkspaceContext | null; authMethod: string }>(
+        `/api/operator/organizations/${organization.id}/admin-session`,
+        {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}` },
+        },
+      );
+      onSuperuserAdmin(result.token, result.organization ?? organization);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to open workspace admin.');
+    }
+  }
+
   useEffect(() => {
     if (!token) return;
     void loadOrganizations(token).catch((err) => {
@@ -1061,6 +1100,13 @@ function OperatorConsole({ onClose }: { onClose: () => void }) {
                   onClick={() => void setWorkspaceActiveState(organization, !organization.active)}
                 >
                   {organization.active ? 'Suspend workspace' : 'Reactivate workspace'}
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => void openSuperuserAdmin(organization)}
+                  disabled={!organization.active}
+                >
+                  Open admin as system administrator
                 </button>
                 <button className="secondary danger-text" onClick={() => void deleteWorkspace(organization)}>
                   Delete workspace and data
@@ -2665,16 +2711,21 @@ function AdminScreen({
 
   async function login(event: FormEvent) {
     event.preventDefault();
-    const result = await api<{ token: string; authMethod?: string; organization?: WorkspaceContext | null }>('/api/admin/login', {
-      method: 'POST',
-      body: JSON.stringify({ passphrase, organizationId: workspace?.id ?? null }),
-    });
-    sessionStorage.setItem('deckplate.admin', result.token);
-    if (result.organization) {
-      localStorage.setItem(workspaceKey, JSON.stringify(result.organization));
+    setMessage('');
+    try {
+      const result = await api<{ token: string; authMethod?: string; organization?: WorkspaceContext | null }>('/api/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({ passphrase, organizationId: workspace?.id ?? null }),
+      });
+      sessionStorage.setItem('deckplate.admin', result.token);
+      if (result.organization) {
+        localStorage.setItem(workspaceKey, JSON.stringify(result.organization));
+      }
+      setToken(result.token);
+      setAdminAuthMethod(result.authMethod ?? '');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Admin unlock failed.');
     }
-    setToken(result.token);
-    setAdminAuthMethod(result.authMethod ?? '');
   }
 
   async function loadAdminSettings() {
@@ -2691,20 +2742,33 @@ function AdminScreen({
   }
 
   async function load() {
-    const [result, settings] = await Promise.all([
-      api<AdminData>('/api/admin/locations', { headers: { authorization: `Bearer ${token}` } }),
-      loadAdminSettings(),
-    ]);
-    setData(result);
-    setGamificationTone(settings.gamificationTone);
-    setAdminAuthMethod(settings.adminAuthMethod ?? adminAuthMethod);
-    setOrganizationAdminAvailable(Boolean(settings.organizationAdminAvailable));
-    setOnboardingSummary(settings.onboarding ?? null);
-    if (!settings.onboarding?.readyForCheckins) {
-      setShowOnboardingChecklist(true);
+    try {
+      const [result, settings] = await Promise.all([
+        api<AdminData>('/api/admin/locations', { headers: { authorization: `Bearer ${token}` } }),
+        loadAdminSettings(),
+      ]);
+      setData(result);
+      setGamificationTone(settings.gamificationTone);
+      setAdminAuthMethod(settings.adminAuthMethod ?? adminAuthMethod);
+      setOrganizationAdminAvailable(Boolean(settings.organizationAdminAvailable));
+      setOnboardingSummary(settings.onboarding ?? null);
+      if (!settings.onboarding?.readyForCheckins) {
+        setShowOnboardingChecklist(true);
+      }
+      setLocationForm((current) => ({ ...current, area_id: result.areas[0]?.id ?? current.area_id }));
+      setActingTeamMemberId((current) => current || result.teamMembers[0]?.id || '');
+    } catch (err) {
+      const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
+      if (status === 403) {
+        sessionStorage.removeItem('deckplate.admin');
+        setToken('');
+        setData(null);
+        setAdminAuthMethod('');
+        setMessage('Admin session expired. Unlock Admin again.');
+        return;
+      }
+      setMessage(err instanceof Error ? err.message : 'Unable to load Admin.');
     }
-    setLocationForm((current) => ({ ...current, area_id: result.areas[0]?.id ?? current.area_id }));
-    setActingTeamMemberId((current) => current || result.teamMembers[0]?.id || '');
   }
 
   async function saveSettings() {
@@ -2866,6 +2930,7 @@ function AdminScreen({
             </label>
             <button className="primary">Unlock</button>
           </form>
+          {message && <p className="notice">{message}</p>}
         </section>
       </main>
     );
@@ -2880,6 +2945,11 @@ function AdminScreen({
         </div>
       </div>
       {message && <p className="notice">{message}</p>}
+      {adminAuthMethod === 'superuser' && (
+        <p className="warning-notice">
+          System administrator mode is active for {workspace?.name ?? 'this workspace'}. Changes are scoped to this workspace.
+        </p>
+      )}
       <div className="tab-row">
         <button className={adminSection === 'setup' ? 'active' : ''} onClick={() => setAdminSection('setup')}>
           Locations
@@ -3402,6 +3472,35 @@ export default function App() {
     setOperatorQueryParam(false);
   }
 
+  function openWorkspaceAdminFromOperator(adminToken: string, organization: WorkspaceContext) {
+    localStorage.setItem(workspaceKey, JSON.stringify(organization));
+    sessionStorage.setItem('deckplate.admin', adminToken);
+    setWorkspace(organization);
+    setShowOperatorConsole(false);
+    setOperatorQueryParam(false);
+    setShowAdminSetup(true);
+    setShowWorkspaceEntry(false);
+    setTeamMembers([]);
+    setBootstrap(null);
+    setCachedAt(null);
+    setCachedMode(false);
+    setScreen('admin');
+    const currentIdentity = localStorage.getItem(identityKey);
+    if (currentIdentity) {
+      try {
+        const parsed = JSON.parse(currentIdentity) as Identity;
+        if ((parsed.organizationId ?? defaultWorkspace.id) !== organization.id) {
+          localStorage.removeItem(identityKey);
+          setIdentity(null);
+        }
+      } catch {
+        localStorage.removeItem(identityKey);
+        setIdentity(null);
+      }
+    }
+    void loadTeamMembers(organization);
+  }
+
   function signOutIdentity(showWorkspacePicker = false) {
     localStorage.removeItem(identityKey);
     sessionStorage.removeItem('deckplate.admin');
@@ -3672,7 +3771,7 @@ export default function App() {
   }, [screen]);
 
   if (showOperatorConsole) {
-    return <OperatorConsole onClose={closeOperatorConsole} />;
+    return <OperatorConsole onClose={closeOperatorConsole} onSuperuserAdmin={openWorkspaceAdminFromOperator} />;
   }
   if (error) return <main className="center-shell"><p className="error">{error}</p></main>;
   if (!identity) {
@@ -3688,10 +3787,11 @@ export default function App() {
           <nav className="bottom-nav">
             <button className="active">Admin</button>
             <button onClick={() => {
+              sessionStorage.removeItem('deckplate.admin');
               setShowAdminSetup(false);
               void loadTeamMembers(workspace);
             }}>
-              Sign In
+              Lock Admin
             </button>
           </nav>
         </>
@@ -3705,6 +3805,9 @@ export default function App() {
           onBack={() => setShowWorkspaceEntry(false)}
           onWorkspace={setActiveWorkspace}
           onAdminToken={() => {
+            setShowAdminSetup(true);
+          }}
+          onOpenAdmin={() => {
             setShowAdminSetup(true);
           }}
         />

@@ -103,13 +103,21 @@ Activation stores only an organization-scoped admin passphrase hash and marks th
 
 Use this when a code was sent to the wrong recipient, expired operationally, or is no longer needed.
 
+### 6. Open Workspace Admin As System Administrator
+
+`POST /api/operator/organizations/{organizationId}/admin-session`
+
+Use this only for support, recovery, or quality-control work where the central system administrator needs to inspect or fix one workspace. The returned admin session is scoped to that one workspace and records an operator audit event before the session starts.
+
+In the app, use `Open admin as system administrator` on an active workspace card.
+
 ## Operator Guardrails
 
 - Create workspaces only for approved pilot teams.
 - Use short setup-code expiration windows.
 - Send setup codes directly to the intended local RMT lead.
 - Never post setup codes publicly.
-- Never use operator access for routine local administration.
+- Do not use superuser admin mode for routine work that belongs to the local lead.
 - Use operator access for workspace lifecycle, setup-code state, activity health, access posture, and support visibility.
 - Do not use operator access to bypass tenant boundaries or expose one command's operational data to another command.
 - Do not use this flow for CUI, classified information, counseling records, case management, or official records.
@@ -137,8 +145,8 @@ Today, feedback collection still uses the hosted Netlify Form on `deckplatingset
 
 ## Current Limitations
 
-- The operator console is intentionally minimal. It supports workspace creation, setup-code issuance/revocation, and readiness summaries, not full lifecycle management.
+- The operator console is intentionally focused on pilot support. It supports workspace creation, setup-code issuance/revocation, lifecycle controls, local-admin recovery, audited superuser admin entry, and readiness summaries.
 - The app can remember one selected workspace per device and can resolve workspace links by slug.
 - The app does not provide a full public workspace directory or unrestricted self-service signup.
-- Environment-wide admin fallback still exists for self-hosted beta compatibility.
-- Static tenant-isolation checks exist; a future live two-workspace integration suite is still recommended before broad managed expansion.
+- Environment-wide admin fallback remains only for self-hosted beta compatibility; managed workspace admin login uses organization-scoped admin credentials or audited superuser entry.
+- Static tenant-isolation checks exist, and a live two-workspace integration script is available for safe non-production targets.

@@ -218,7 +218,9 @@ Run these files in Supabase SQL Editor, in order:
 4. `supabase/migrations/004_mission_board_settings.sql`
 5. `supabase/migrations/005_multi_site_foundation.sql`
 6. `supabase/migrations/006_org_admin_and_invitations.sql`
-7. `supabase/seed.sql`
+7. `supabase/migrations/007_app_settings_workspace_key.sql`
+8. `supabase/migrations/008_operator_audit_events.sql`
+9. `supabase/seed.sql`
 
 The schema enables row level security on all tables. Browser code never talks directly to Supabase. All database access goes through Netlify Functions using the server-side service-role key.
 
@@ -293,6 +295,7 @@ Central-operator protected:
 - `POST /api/operator/login`
 - `GET /api/operator/organizations`
 - `POST /api/operator/organizations`
+- `POST /api/operator/organizations/:id/admin-session`
 - `POST /api/operator/organizations/:id/setup-codes`
 - `POST /api/operator/setup-codes/:id/revoke`
 

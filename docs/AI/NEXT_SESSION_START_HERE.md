@@ -36,6 +36,7 @@ The central operator can:
 - issue one-time setup codes
 - revoke unused setup codes
 - recover a local admin passphrase by setting a temporary replacement
+- open an audited superuser admin session scoped to one active workspace
 - reset a member PIN and revoke that member's devices
 - enter System Administration from `Account` when an operator token exists, or directly with `?operator=1`
 
@@ -52,7 +53,7 @@ Local workspace admins can:
 1. Review the onboarding-launch diff for confusing pilot wording, Netlify Forms attributes, secret leakage, workspace isolation, and auth boundary regressions.
 2. If accepted, deploy `deckplating.netlify.app` and `deckplatingsetup.netlify.app` using the commands below.
 3. Onboard the first RMT pilot through workspace request, manual approval, setup-code activation, local setup, and feedback.
-4. Return to backend hardening: managed-host admin fallback, stale suspended/deleted workspace UX, live two-organization integration tests, performance review, and reliability.
+4. Return to remaining hardening: stale suspended/deleted workspace UX, live two-workspace integration execution, performance review, reliability, backup/export posture, and audit review surfaces.
 5. Plan new feature work from actual pilot feedback, not speculation.
 
 ## Verification Commands
@@ -64,6 +65,14 @@ npm run test:tenant-isolation
 npm run typecheck
 npm run build
 git diff --check
+```
+
+For a safe live non-production API target, also run:
+
+```bash
+DECKPLATING_INTEGRATION_BASE_URL=https://example-preview.netlify.app \
+DECKPLATING_INTEGRATION_OPERATOR_PASSPHRASE='central operator passphrase' \
+npm run test:integration:two-workspace
 ```
 
 For setup-site-only edits, also run:

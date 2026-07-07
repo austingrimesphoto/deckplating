@@ -40,7 +40,9 @@ export async function saveBootstrapSnapshot(bootstrap: Bootstrap) {
 
 export async function getBootstrapSnapshot(organizationId?: string | null) {
   const db = await dbPromise;
-  return (await db.get('bootstrap', bootstrapKey(organizationId))) ?? (await db.get('bootstrap', 'latest')) ?? null;
+  const scopedSnapshot = await db.get('bootstrap', bootstrapKey(organizationId));
+  if (scopedSnapshot || organizationId != null) return scopedSnapshot ?? null;
+  return (await db.get('bootstrap', 'latest')) ?? null;
 }
 
 export async function savePendingBatch(batch: PendingVisitBatch) {

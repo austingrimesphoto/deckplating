@@ -22,6 +22,7 @@ The API adds:
 - `POST /api/operator/login`
 - `GET /api/operator/organizations`
 - `POST /api/operator/organizations`
+- `POST /api/operator/organizations/:id/admin-session`
 - `POST /api/operator/organizations/:id/setup-codes`
 - `POST /api/operator/setup-codes/:id/revoke`
 - `GET /api/workspaces/resolve`
@@ -35,7 +36,7 @@ Current self-hosted teams can keep using the environment admin passphrase. Organ
 
 The hosted app now includes:
 
-- a minimal operator console from the workspace setup screen
+- an operator console from the workspace setup screen
 - local admin onboarding checklist state
 - tenant-scoped area, location, unit, and team-member creation from inside the app
 
@@ -65,6 +66,7 @@ The live managed stack successfully completed this sequence on `2026-07-05`:
 - setup-code issuance
 - workspace activation
 - local admin onboarding from zero to ready
+- audited system-administrator admin entry
 - first member device registration
 - bootstrap
 - first live check-in
@@ -204,6 +206,7 @@ The setup code table stores:
 - Do not post setup codes in public docs, screenshots, group chats, or tickets.
 - Do not allow unrestricted public workspace creation.
 - Monitor workspace activation and basic activity health.
+- Use audited system-administrator admin entry only for support, recovery, or quality-control work.
 - Maintain support, backup, migration, and incident-response posture while the service is centrally operated.
 
 ## Future Work
@@ -211,7 +214,6 @@ The setup code table stores:
 Still needed before broader managed expansion:
 
 - organization admin session refresh behavior,
-- removal or disabling of environment admin fallback in managed production,
-- organization-scoped backup/export/delete operations,
-- workspace deactivate/archive/delete lifecycle,
-- scripted live integration coverage for multi-workspace flows.
+- operator audit review/export surfaces,
+- organization-scoped backup/export operations,
+- repeated live integration coverage for multi-workspace flows.

@@ -76,17 +76,17 @@ Today, another chaplain at another installation can be onboarded into the manage
 
 What still prevents a clean "send one link and let them self-start" handoff:
 
-- environment-wide admin fallback is still present and needs managed-host gating or removal
 - stale-session UX around suspended/deleted workspaces needs more polish
 - feedback capture still lives on the setup-site Netlify Form rather than inside a hosted-app workflow
 - workspace request approval is manual and has no automated email notification
+- live two-workspace integration coverage still needs to be run repeatedly against safe targets
 
 ## Recommended Next Follow-Up
 
 After the first RMT onboarding materials are reviewed, the next hardening pass should:
 
-- gate or remove the environment-wide admin fallback for managed hosted production
 - improve stale-session UX for suspended/deleted workspaces
-- add live two-organization integration tests
+- run the live two-workspace integration script against a safe target
+- add operator audit review/export surfaces
 - review performance on bootstrap, map, coverage, and admin activity routes
 - keep the existing Netlify Form and review workflow unless pilot feedback proves it is too clumsy

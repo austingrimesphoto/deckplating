@@ -84,7 +84,7 @@ Remaining intentional state:
 
 ## Remaining Managed-Production Gaps
 
-- environment-wide admin fallback still exists and should be disabled for managed production
-- there is still no operator-side workspace deactivate/archive/delete flow
+- Current note: a later hardening pass gated environment-wide admin fallback for managed workspace admin login and added audited superuser admin entry.
+- Current note: a later hardening pass added operator-side suspend/reactivate/delete support.
 - backup/export/delete boundaries remain future work
-- a scripted live integration suite is still preferable to manual curl-based verification before broader rollout
+- the live two-workspace integration script should be run against a safe target before broader rollout

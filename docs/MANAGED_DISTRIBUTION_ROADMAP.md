@@ -62,7 +62,8 @@ Scope:
 - stronger central operator console
 - workspace lifecycle administration
 - backup, export, and deletion boundaries by organization
-- tenant-isolation integration tests with seeded workspaces
+- repeated tenant-isolation integration checks with seeded workspaces
+- operator audit review/export surfaces
 - incident response and rollback process
 - operational documentation for system administrator duties
 - handoff-oriented documentation for future Navy ownership or a self-sustaining support model
@@ -76,6 +77,7 @@ Exclusions:
 Exit criteria:
 
 - automated tenant-isolation tests pass
+- live two-workspace integration checks pass against approved targets
 - workspaces can be created, activated, monitored, suspended, and supported without developer intervention
 - current self-hosted template remains available as advanced/local-control
 - rollback, incident response, backup, and ownership-transfer plans exist before broader release

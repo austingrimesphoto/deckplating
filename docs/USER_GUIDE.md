@@ -205,6 +205,8 @@ Expected result: Admin opens to `Locations`, `Activity Log`, and `Admin settings
 
 Common mistake: using the central operator passphrase or expecting an email account login.
 
+When finished, use `Lock Admin` or sign out so the device does not keep an unlocked Admin session.
+
 Safe-use reminder: local admin passphrases are workspace-scoped. Do not store them in docs, forms, screenshots, or browser notes.
 
 ## Create Areas

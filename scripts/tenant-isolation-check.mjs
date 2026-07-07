@@ -5,6 +5,8 @@ const files = {
   app: fs.readFileSync('src/App.tsx', 'utf8'),
   offline: fs.readFileSync('src/offline.ts', 'utf8'),
   migration005: fs.readFileSync('supabase/migrations/005_multi_site_foundation.sql', 'utf8'),
+  migration007: fs.readFileSync('supabase/migrations/007_app_settings_workspace_key.sql', 'utf8'),
+  migration008: fs.readFileSync('supabase/migrations/008_operator_audit_events.sql', 'utf8'),
 };
 
 const checks = [];
@@ -31,6 +33,7 @@ const undoRoute = section(api, "if (method === 'POST' && path === '/checkins/und
 const indicatorRoute = section(api, 'const indicatorMatch', "if (method === 'GET' && path === '/dashboard')");
 const operatorRoutes = section(api, "if (method === 'GET' && path === '/operator/organizations')", "if (method === 'GET' && path === '/workspaces/resolve')");
 const operatorOrganizations = section(api, "if (method === 'GET' && path === '/operator/organizations')", "if (method === 'POST' && path === '/operator/organizations')");
+const operatorAdminSession = section(api, 'const operatorAdminSessionMatch', 'const operatorSetupCodeMatch');
 const operatorSetupCodeCreate = section(api, 'const operatorSetupCodeMatch', 'const operatorCodeRevokeMatch');
 const operatorSetupCodeRevoke = section(api, 'const operatorCodeRevokeMatch', 'const operatorOrganizationStatusMatch');
 const operatorStatusRoute = section(api, 'const operatorOrganizationStatusMatch', 'const operatorAdminRecoveryMatch');
@@ -59,11 +62,14 @@ check('Bootstrap/dashboard/leaderboard use token organization scope', has(api, "
 check('Check-in creation validates units and idempotency inside organization', has(checkinRoute, 'scoped(unitsQuery, user.organizationId)') && has(checkinRoute, 'scoped(batchLookupQuery, user.organizationId)') && has(checkinRoute, 'withOrganization({') && has(checkinRoute, 'scoped(existingQuery, user.organizationId)') && has(checkinRoute, 'scoped(retryQuery, user.organizationId)'));
 check('Check-in scoring history stays organization scoped', has(checkinRoute, 'scoped(recentQuery, user.organizationId)') && has(checkinRoute, 'scoped(priorQuery, user.organizationId)'));
 check('Check-in batch idempotency is organization-unique in schema', has(files.migration005, 'drop constraint if exists checkin_batches_client_batch_id_key') && has(files.migration005, 'on checkin_batches(organization_id, client_batch_id)'));
+check('App settings are unique by workspace instead of globally by key', has(files.migration007, 'drop constraint app_settings_pkey') && has(files.migration007, 'on app_settings(organization_id, key)'));
 check('Indicator updates cannot cross organizations or devices', has(indicatorRoute, 'scoped(batchQuery, user.organizationId)') && has(indicatorRoute, 'batch.team_member_id !== user.teamMemberId') && has(indicatorRoute, 'batch.device_id !== user.deviceId') && has(indicatorRoute, 'scoped(indicatorQuery, user.organizationId)'));
 check('Immediate undo is scoped to user and organization', has(undoRoute, 'scoped(ownedQuery, user.organizationId)') && has(undoRoute, 'eq(\'team_member_id\', user.teamMemberId)') && has(undoRoute, 'scoped(undoQuery, user.organizationId)'));
 check('Device registration only targets the selected active workspace', has(registerDevice, 'resolveOrganizationId(body.organizationId)') && has(registerDevice, 'scoped(memberQuery, organizationId)') && has(registerDevice, "onConflict: organizationId ? 'organization_id,device_token_hash' : 'device_token_hash'"));
 check('Identity change reuses authenticated organization only', has(changeIdentity, 'requireUser(event)') && has(changeIdentity, 'scoped(currentQuery, user.organizationId)') && has(changeIdentity, 'organizationId: user.organizationId'));
 check('Admin routes require signed admin context and use its organization scope', has(adminRoutes, 'await requireAdmin(event)') && has(adminRoutes, 'adminContext!.organizationId'));
+check('Managed hosts fail closed when organization schema checks error', has(api, 'managedHostEnabled') && has(api, 'if (managedHostEnabled || !isMissingRelationError(error)) throw error'));
+check('Managed host disables environment admin fallback for workspace admin login', has(api, 'if (managedHostEnabled && organizationId) return null'));
 check('Admin correction validates all referenced member/unit IDs inside organization', has(adminCorrection, 'validateTeamMemberReferences') && has(adminCorrection, 'scoped(unitQuery, organizationId)') && has(adminCorrection, 'scoped(checkinUpdateQuery, organizationId)'));
 check('Admin location mutations validate area and assigned units inside organization', has(adminLocations, 'validateLocationReferences') && has(adminLocations, 'validateUnitAssignment') && has(adminLocations, 'scoped(locationUpdate, organizationId)') && has(adminLocations, 'scoped(unitUpdate, organizationId)'));
 check('Admin unit mutations validate referenced locations inside organization', has(adminUnits, 'validateUnitReferences') && has(adminUnits, 'scoped(unitUpdate, organizationId)'));
@@ -80,6 +86,15 @@ check(
     !has(operatorStatusRoute, 'passphrase_hash') &&
     !has(operatorAdminRecovery, '.select(\'passphrase_hash') &&
     !has(operatorDeleteRoute, 'passphrase_hash'),
+);
+check(
+  'Operator superuser admin sessions are scoped and audited',
+  has(operatorAdminSession, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/admin-session$/)") &&
+    has(operatorAdminSession, 'recordOperatorAudit') &&
+    has(operatorAdminSession, 'superuser_admin_session_started') &&
+    has(operatorAdminSession, "authMethod: 'superuser'") &&
+    has(operatorAdminSession, 'createAdminToken({ organizationId, authMethod:') &&
+    has(files.migration008, 'operator_audit_events')
 );
 check(
   'Operator workspace lifecycle controls update only intended workspace state',
