@@ -80,7 +80,25 @@ https://deckplating.netlify.app/?workspace=example-rmt
 
 The app resolves that slug, stores the workspace on the device, and loads the roster/admin context for that workspace.
 
-### 4. Local RMT Lead Activates the Workspace
+### 4. Review Workspace Health
+
+In the operator console, use workspace search when the managed host has more than a few commands or departments. Search matches workspace name, slug, status, readiness, setup-code state, and latest check-in context.
+
+Each workspace card shows readiness counts and the latest non-voided check-in, if one exists. Use this as a health signal only: it tells you whether the workspace is alive and recently used; it is not a counseling record or performance judgment.
+
+### 5. Review Operator Audit Events
+
+Use `Operator audit` in `System Administration` to review recent central-operator actions, including workspace creation, setup-code changes, workspace suspend/reactivate/delete actions, local-admin recovery, and superuser admin entry.
+
+Audit search matches action, workspace, timestamp, and action detail. Treat audit details as operational metadata. Do not paste secrets, setup codes, passphrases, or sensitive command information into audit-related notes.
+
+API fallback:
+
+`GET /api/operator/audit-events`
+
+Returns recent operator audit rows and the associated workspace summary when available.
+
+### 6. Local RMT Lead Activates the Workspace
 
 The local lead uses:
 
@@ -97,19 +115,27 @@ The local lead uses:
 
 Activation stores only an organization-scoped admin passphrase hash and marks the setup code used. The lead can continue directly into guided setup to create the roster, areas, locations, units, and local safe-use posture before any team member identity exists.
 
-### 5. Revoke an Unused Setup Code
+### 7. Revoke an Unused Setup Code
 
 `POST /api/operator/setup-codes/{setupCodeId}/revoke`
 
 Use this when a code was sent to the wrong recipient, expired operationally, or is no longer needed.
 
-### 6. Open Workspace Admin As System Administrator
+### 8. Open Workspace Admin As System Administrator
 
 `POST /api/operator/organizations/{organizationId}/admin-session`
 
 Use this only for support, recovery, or quality-control work where the central system administrator needs to inspect or fix one workspace. The returned admin session is scoped to that one workspace and records an operator audit event before the session starts.
 
 In the app, use `Open admin as system administrator` on an active workspace card.
+
+## Export Boundary
+
+The operator console still does not provide a full downloadable workspace export. That is intentional until the export format is reviewed against the safe-use boundary.
+
+Any future operator export should include only operational metadata needed for backup or migration, such as workspace summary, areas, public/general locations, units, roster display names, visit timestamps, scores, void status, and generic care/referral counts.
+
+Any future operator export must exclude setup-code plaintext, setup-code hashes, passphrase hashes, PIN hashes, device-token hashes, service keys, counseling notes, referral details, medical details, personal details, and sensitive operational locations.
 
 ## Operator Guardrails
 

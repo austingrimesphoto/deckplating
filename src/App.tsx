@@ -48,6 +48,9 @@ type OnboardingSummary = {
   teamMemberCount: number;
   organizationAdminConfigured: boolean;
   readyForCheckins: boolean;
+  lastCheckinAt: string | null;
+  lastCheckinTeamMemberName: string | null;
+  lastCheckinUnitName: string | null;
 };
 
 type OperatorSetupCode = {
@@ -73,6 +76,16 @@ type OperatorOrganization = WorkspaceContext & {
     activeUnused: number;
     used: number;
   };
+};
+
+type OperatorAuditEvent = {
+  id: string;
+  organization_id: string | null;
+  actor: string;
+  action: string;
+  detail: Record<string, unknown> | null;
+  created_at: string;
+  organization: Pick<WorkspaceContext, 'id' | 'slug' | 'name'> | null;
 };
 
 type InstallationSearchResult = {
@@ -198,6 +211,12 @@ const statusLabel = (unit: UnitSummary) => {
 const niceDate = (date: string | null) => (date ? new Date(date).toLocaleDateString() : 'Never');
 
 const niceDateTime = (date: string | null) => (date ? new Date(date).toLocaleString() : 'Never');
+
+const matchesSearch = (query: string, values: unknown[]) => {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return values.some((value) => String(value ?? '').toLowerCase().includes(needle));
+};
 
 const datetimeLocalValue = (date: string) => {
   const parsed = new Date(date);
@@ -479,6 +498,7 @@ function IdentitySetup({
 function WorkspaceEntry({
   workspace,
   teamMembers,
+  notice,
   onBack,
   onWorkspace,
   onAdminToken,
@@ -486,6 +506,7 @@ function WorkspaceEntry({
 }: {
   workspace: WorkspaceContext | null;
   teamMembers: TeamMember[];
+  notice?: string;
   onBack: () => void;
   onWorkspace: (workspace: WorkspaceContext | null) => void;
   onAdminToken: (token: string) => void;
@@ -590,6 +611,7 @@ function WorkspaceEntry({
         <p className="notice">
           Managed pilot sequence: select or request your approved workspace, enter the one-time setup code, confirm the installation map center, set the local admin passphrase, then continue to local setup.
         </p>
+        {notice && <p className="warning-notice">{notice}</p>}
         <p className="safe-summary">{safeUseSummary}</p>
         {teamMembers.length > 0 && (
           <p className="notice">
@@ -766,6 +788,10 @@ function OperatorConsole({
   const [token, setToken] = useState(sessionStorage.getItem(operatorKey) ?? '');
   const [passphrase, setPassphrase] = useState('');
   const [organizations, setOrganizations] = useState<OperatorOrganization[]>([]);
+  const [workspaceSearch, setWorkspaceSearch] = useState('');
+  const [auditEvents, setAuditEvents] = useState<OperatorAuditEvent[]>([]);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditMessage, setAuditMessage] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [organizationForm, setOrganizationForm] = useState({ name: '', slug: '' });
@@ -780,6 +806,15 @@ function OperatorConsole({
     setOrganizations(result.organizations);
   }
 
+  async function loadAuditEvents(currentToken = token) {
+    setAuditMessage('');
+    const result = await api<{ events: OperatorAuditEvent[] }>('/api/operator/audit-events', {
+      headers: { authorization: `Bearer ${currentToken}` },
+    });
+    setAuditEvents(result.events);
+    if (!result.events.length) setAuditMessage('No operator audit events found.');
+  }
+
   async function login(event: FormEvent) {
     event.preventDefault();
     setError('');
@@ -792,6 +827,7 @@ function OperatorConsole({
       setToken(result.token);
       setPassphrase('');
       await loadOrganizations(result.token);
+      await loadAuditEvents(result.token);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Operator login failed.');
     }
@@ -970,10 +1006,42 @@ function OperatorConsole({
 
   useEffect(() => {
     if (!token) return;
-    void loadOrganizations(token).catch((err) => {
-      setError(err instanceof Error ? err.message : 'Unable to load approved workspaces.');
+    void Promise.all([loadOrganizations(token), loadAuditEvents(token)]).catch((err) => {
+      setError(err instanceof Error ? err.message : 'Unable to load operator console.');
     });
   }, [token]);
+
+  const filteredOrganizations = useMemo(
+    () =>
+      organizations.filter((organization) =>
+        matchesSearch(workspaceSearch, [
+          organization.name,
+          organization.slug,
+          organization.active ? 'active' : 'suspended',
+          organization.onboarding?.readyForCheckins ? 'ready' : 'setup in progress',
+          organization.onboarding?.lastCheckinTeamMemberName,
+          organization.onboarding?.lastCheckinUnitName,
+          organization.setupCodeSummary.activeUnused ? 'active setup code' : '',
+        ]),
+      ),
+    [organizations, workspaceSearch],
+  );
+
+  const filteredAuditEvents = useMemo(
+    () =>
+      auditEvents.filter((event) =>
+        matchesSearch(auditSearch, [
+          event.action,
+          event.actor,
+          event.organization?.name,
+          event.organization?.slug,
+          event.organization_id,
+          event.created_at,
+          JSON.stringify(event.detail ?? {}),
+        ]),
+      ),
+    [auditEvents, auditSearch],
+  );
 
   if (!token) {
     return (
@@ -1032,8 +1100,54 @@ function OperatorConsole({
           <button className="primary">Create workspace</button>
         </form>
       </section>
+      <section className="filters">
+        <input
+          placeholder="Search workspaces by name, slug, status, or latest activity"
+          value={workspaceSearch}
+          onChange={(event) => setWorkspaceSearch(event.target.value)}
+        />
+        <button className="secondary" onClick={() => void loadOrganizations()}>
+          Refresh workspaces
+        </button>
+      </section>
+      <section className="panel">
+        <div className="screen-title inline-title">
+          <div>
+            <p className="eyebrow">Operator audit</p>
+            <h2>Recent system administration actions</h2>
+          </div>
+          <button className="secondary" onClick={() => void loadAuditEvents()}>
+            Refresh audit
+          </button>
+        </div>
+        <div className="filters">
+          <input
+            placeholder="Search audit by action, workspace, or detail"
+            value={auditSearch}
+            onChange={(event) => setAuditSearch(event.target.value)}
+          />
+        </div>
+        {auditMessage && <p className="notice">{auditMessage}</p>}
+        <div className="activity-list">
+          {filteredAuditEvents.slice(0, 40).map((event) => (
+            <article key={event.id} className="activity-row">
+              <div className="activity-summary">
+                <div>
+                  <strong>{event.action.replace(/_/g, ' ')}</strong>
+                  <small>
+                    {event.organization?.name ?? 'System'} - {niceDateTime(event.created_at)}
+                  </small>
+                  {event.detail && <small>{JSON.stringify(event.detail)}</small>}
+                </div>
+                <span className="status-pill">{event.actor}</span>
+              </div>
+            </article>
+          ))}
+          {auditEvents.length > 0 && !filteredAuditEvents.length && <p className="notice">No audit events match that search.</p>}
+        </div>
+      </section>
       <section className="coverage-list">
-        {organizations.map((organization) => {
+        {filteredOrganizations.map((organization) => {
           const form = setupForms[organization.id] ?? { label: '', expiresInDays: '14' };
           const issued = lastIssuedCode[organization.id];
           return (
@@ -1069,6 +1183,14 @@ function OperatorConsole({
                 Status: {organization.active ? 'active' : 'suspended'}. Admin passphrase:{' '}
                 {organization.onboarding?.organizationAdminConfigured ? 'configured' : 'not configured'}. Setup codes:{' '}
                 {organization.setupCodeSummary.activeUnused} active unused, {organization.setupCodeSummary.used} used.
+              </p>
+              <p className="muted">
+                Last check-in:{' '}
+                {organization.onboarding?.lastCheckinAt
+                  ? `${niceDateTime(organization.onboarding.lastCheckinAt)} by ${
+                      organization.onboarding.lastCheckinTeamMemberName ?? 'unknown member'
+                    } at ${organization.onboarding.lastCheckinUnitName ?? 'unknown command'}`
+                  : 'none recorded yet'}.
               </p>
               <div className="filters">
                 <input
@@ -1182,6 +1304,7 @@ function OperatorConsole({
             </article>
           );
         })}
+        {organizations.length > 0 && !filteredOrganizations.length && <p className="notice">No workspaces match that search.</p>}
       </section>
       <nav className="bottom-nav">
         <button className="active">Operator</button>
@@ -1508,6 +1631,16 @@ function CheckInScreen({
   }, []);
 
   const activeLocation = matches[0];
+  const manualLocationMatches = locationSummaries.filter((location) =>
+    matchesSearch(manualQuery, [
+      location.name,
+      location.area_name,
+      ...location.units.flatMap((unit) => [unit.name, unitTypeLabel[unit.unit_type], statusLabel(unit)]),
+    ]),
+  );
+  const manualUnmappedMatches = unmappedUnits.filter((unit) =>
+    matchesSearch(manualQuery, [unit.name, unit.area_name, unit.location_name, unitTypeLabel[unit.unit_type], statusLabel(unit)]),
+  );
 
   return (
     <main className="screen">
@@ -1561,7 +1694,7 @@ function CheckInScreen({
           {manualMode && (
             <div className="unit-picker">
               <input
-                placeholder="Search locations or units"
+                placeholder="Search command, department, building, or area"
                 value={manualQuery}
                 onChange={(event) => setManualQuery(event.target.value)}
               />
@@ -1570,13 +1703,11 @@ function CheckInScreen({
                 setSelected([]);
               }}>
                 <option value="">Choose mapped location</option>
-                {locationSummaries
-                  .filter((location) => `${location.name} ${location.area_name}`.toLowerCase().includes(manualQuery.toLowerCase()))
-                  .map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name} - {location.area_name}
-                    </option>
-                  ))}
+                {manualLocationMatches.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name} - {location.area_name}
+                  </option>
+                ))}
                 <option value="unmapped">Unmapped unit</option>
               </select>
               {manualLocationId && manualLocationId !== 'unmapped' &&
@@ -1598,22 +1729,20 @@ function CheckInScreen({
                   </label>
                 ))}
               {manualLocationId === 'unmapped' &&
-                unmappedUnits
-                  .filter((unit) => unit.name.toLowerCase().includes(manualQuery.toLowerCase()))
-                  .map((unit) => (
-                    <label key={unit.id} className={`check-row ${unit.status}`}>
-                      <input
-                        type="radio"
-                        name="unmapped-unit"
-                        checked={selected.includes(unit.id)}
-                        onChange={() => setSelected([unit.id])}
-                      />
-                      <span>
-                        <strong>{unit.name}</strong>
-                        <small>Unmapped - manual</small>
-                      </span>
-                    </label>
-                  ))}
+                manualUnmappedMatches.map((unit) => (
+                  <label key={unit.id} className={`check-row ${unit.status}`}>
+                    <input
+                      type="radio"
+                      name="unmapped-unit"
+                      checked={selected.includes(unit.id)}
+                      onChange={() => setSelected([unit.id])}
+                    />
+                    <span>
+                      <strong>{unit.name}</strong>
+                      <small>Unmapped - manual</small>
+                    </span>
+                  </label>
+                ))}
               <button className="primary big" onClick={() => submit(true)} disabled={!selected.length || loading}>
                 Submit Manual Check-In
               </button>
@@ -1839,6 +1968,7 @@ function CoverageBoard({
 }) {
   const [area, setArea] = useState('');
   const [unitType, setUnitType] = useState('');
+  const [unitSearch, setUnitSearch] = useState('');
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [neverOnly, setNeverOnly] = useState(false);
   const [from, setFrom] = useState('');
@@ -1848,6 +1978,7 @@ function CoverageBoard({
   const [detailMessage, setDetailMessage] = useState('');
   const [reportRows, setReportRows] = useState<IndicatorReportRow[]>([]);
   const [reportMessage, setReportMessage] = useState('');
+  const [reportSearch, setReportSearch] = useState('');
   const [reportFrom, setReportFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
   const [reportTo, setReportTo] = useState(new Date().toISOString().slice(0, 10));
 
@@ -1859,11 +1990,29 @@ function CoverageBoard({
       .filter((unit) => !neverOnly || unit.status === 'gray')
       .filter((unit) => !from || (unit.last_visit_at && unit.last_visit_at >= from))
       .filter((unit) => !to || (unit.last_visit_at && unit.last_visit_at <= `${to}T23:59:59`))
+      .filter((unit) =>
+        matchesSearch(unitSearch, [
+          unit.name,
+          unit.location_name,
+          unit.area_name,
+          unitTypeLabel[unit.unit_type],
+          statusLabel(unit),
+          unit.last_visitor,
+        ]),
+      )
       .sort((a, b) => {
         const rank = { gray: 4, red: 3, yellow: 2, green: 1 };
         return rank[b.status] - rank[a.status] || a.name.localeCompare(b.name);
       });
-  }, [area, from, neverOnly, overdueOnly, to, unitType, units]);
+  }, [area, from, neverOnly, overdueOnly, to, unitSearch, unitType, units]);
+
+  const filteredReportRows = useMemo(
+    () =>
+      reportRows.filter((row) =>
+        matchesSearch(reportSearch, [row.location_name, row.area_name, row.visits, row.confidential_care_count, row.referral_count]),
+      ),
+    [reportRows, reportSearch],
+  );
 
   const missionSummary = useMemo(() => {
     const neverVisited = units.filter((unit) => unit.status === 'gray').length;
@@ -1998,6 +2147,11 @@ function CoverageBoard({
         </div>
       </div>
       <section className="filters">
+        <input
+          placeholder="Search command, department, building, area, or visitor"
+          value={unitSearch}
+          onChange={(event) => setUnitSearch(event.target.value)}
+        />
         <select value={area} onChange={(event) => setArea(event.target.value)}>
           <option value="">All areas</option>
           {areas.map((candidate) => (
@@ -2082,6 +2236,11 @@ function CoverageBoard({
           <h2>Referrals and confidential care</h2>
           <p className="muted">Generic location-level counts only. Multi-unit visits are not attributed to each selected command.</p>
           <div className="filters">
+            <input
+              placeholder="Search report rows"
+              value={reportSearch}
+              onChange={(event) => setReportSearch(event.target.value)}
+            />
             <input type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
             <input type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
             <button className="secondary" onClick={loadReport}>Load referral/care report</button>
@@ -2089,7 +2248,7 @@ function CoverageBoard({
           {reportMessage && <p className="notice">{reportMessage}</p>}
           {reportRows.length > 0 && (
             <div className="report-list">
-              {reportRows.map((row) => (
+              {filteredReportRows.map((row) => (
                 <article key={row.key} className="report-row">
                   <div>
                     <strong>{row.location_name}</strong>
@@ -2115,6 +2274,7 @@ function CoverageBoard({
                   </dl>
                 </article>
               ))}
+              {!filteredReportRows.length && <p className="notice">No report rows match that search.</p>}
             </div>
           )}
         </section>
@@ -2197,6 +2357,7 @@ function MapScreen({
   const container = useRef<HTMLDivElement | null>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [expandedLocationId, setExpandedLocationId] = useState<string | null>(null);
+  const [mapSearch, setMapSearch] = useState('');
   const locations = useMemo(() => {
     const grouped = new Map<string, LocationSummary>();
     for (const unit of units) {
@@ -2222,6 +2383,19 @@ function MapScreen({
     }
     return Array.from(grouped.values());
   }, [units]);
+  const filteredLocations = useMemo(
+    () =>
+      locations.filter((location) =>
+        matchesSearch(mapSearch, [
+          location.name,
+          location.area_name,
+          location.radius_meters,
+          location.status,
+          ...location.units.flatMap((unit) => [unit.name, unitTypeLabel[unit.unit_type], statusLabel(unit), unit.last_visitor]),
+        ]),
+      ),
+    [locations, mapSearch],
+  );
 
   useEffect(() => {
     if (offlineMode || !container.current || map.current) return;
@@ -2254,7 +2428,7 @@ function MapScreen({
     const drawRadii = () => {
       const sourceData = {
         type: 'FeatureCollection' as const,
-        features: locations.map((location) => ({
+        features: filteredLocations.map((location) => ({
           type: 'Feature' as const,
           properties: { status: location.status },
           geometry: {
@@ -2311,7 +2485,7 @@ function MapScreen({
     };
     if (map.current.isStyleLoaded()) drawRadii();
     else map.current.once('load', drawRadii);
-    locations.forEach((location) => {
+    filteredLocations.forEach((location) => {
       const marker = new maplibregl.Marker({ color: statusColor[location.status] })
         .setLngLat([location.longitude, location.latitude])
         .setPopup(
@@ -2325,7 +2499,7 @@ function MapScreen({
       markers.push(marker);
     });
     return () => markers.forEach((marker) => marker.remove());
-  }, [locations]);
+  }, [filteredLocations]);
 
   return (
     <main className="screen map-screen">
@@ -2343,8 +2517,15 @@ function MapScreen({
       ) : (
         <div ref={container} className="map-canvas" />
       )}
+      <section className="filters">
+        <input
+          placeholder="Search mapped locations, areas, or commands"
+          value={mapSearch}
+          onChange={(event) => setMapSearch(event.target.value)}
+        />
+      </section>
       <div className="map-list">
-        {locations.map((location) => (
+        {filteredLocations.map((location) => (
           <div key={location.id} className="card-with-detail">
             <button
               className={`unit-card unit-button ${location.status}`}
@@ -2396,6 +2577,7 @@ function MapScreen({
             )}
           </div>
         ))}
+        {!filteredLocations.length && <p className="notice">No mapped locations match that search.</p>}
       </div>
     </main>
   );
@@ -2716,8 +2898,10 @@ function AdminScreen({
   const [memberForm, setMemberForm] = useState({ name: '', role: '' });
   const [attachUnitIds, setAttachUnitIds] = useState<string[]>([]);
   const [adminSection, setAdminSection] = useState<'setup' | 'activity' | 'settings'>('setup');
+  const [setupSearch, setSetupSearch] = useState('');
   const [activity, setActivity] = useState<AdminCheckin[]>([]);
   const [activityFilters, setActivityFilters] = useState({
+    search: '',
     from: '',
     to: '',
     teamMemberId: '',
@@ -2936,6 +3120,61 @@ function AdminScreen({
     await loadActivity();
   }
 
+  const filteredActivity = useMemo(
+    () =>
+      activity.filter((checkin) =>
+        matchesSearch(activityFilters.search, [
+          checkin.unit_name,
+          checkin.location_name,
+          checkin.area_name,
+          checkin.team_member_name,
+          checkin.checked_in_at,
+          checkin.geofence_verified ? 'geofence verified' : 'manual unverified',
+          checkin.void_reason,
+          checkin.confidential_care_provided ? 'care counseling confidential' : '',
+          checkin.referral_provided ? 'referral' : '',
+        ]),
+      ),
+    [activity, activityFilters.search],
+  );
+
+  const filteredAdminAreas = useMemo(
+    () => data?.areas.filter((area) => matchesSearch(setupSearch, [area.name, area.sort_order])) ?? [],
+    [data?.areas, setupSearch],
+  );
+  const filteredAdminLocations = useMemo(
+    () => {
+      if (!data) return [];
+      return data.locations.filter((location) => {
+        const areaName = data.areas.find((area) => area.id === location.area_id)?.name;
+        return matchesSearch(setupSearch, [location.name, areaName, location.latitude, location.longitude, location.active ? 'active' : 'inactive']);
+      });
+    },
+    [data, setupSearch],
+  );
+  const filteredAdminUnits = useMemo(
+    () => {
+      if (!data) return [];
+      return data.units.filter((unit) => {
+        const location = data.locations.find((candidate) => candidate.id === unit.location_id);
+        const areaName = data.areas.find((area) => area.id === location?.area_id)?.name;
+        return matchesSearch(setupSearch, [
+          unit.name,
+          unitTypeLabel[unit.unit_type],
+          location?.name,
+          areaName,
+          unit.visit_interval_days,
+          unit.active ? 'active' : 'inactive',
+        ]);
+      });
+    },
+    [data, setupSearch],
+  );
+  const filteredAdminTeamMembers = useMemo(
+    () => data?.teamMembers.filter((member) => matchesSearch(setupSearch, [member.name, member.role, member.active ? 'active' : 'inactive'])) ?? [],
+    [data?.teamMembers, setupSearch],
+  );
+
   useEffect(() => {
     if (token && adminSection === 'activity') void loadActivity();
   }, [token, adminSection]);
@@ -3039,6 +3278,11 @@ function AdminScreen({
           <section className="panel">
             <h2>Filter activity</h2>
             <div className="filters">
+              <input
+                placeholder="Search unit, location, area, team member, care, referral"
+                value={activityFilters.search}
+                onChange={(event) => setActivityFilters({ ...activityFilters, search: event.target.value })}
+              />
               <input type="date" value={activityFilters.from} onChange={(event) => setActivityFilters({ ...activityFilters, from: event.target.value })} />
               <input type="date" value={activityFilters.to} onChange={(event) => setActivityFilters({ ...activityFilters, to: event.target.value })} />
               <select value={activityFilters.teamMemberId} onChange={(event) => setActivityFilters({ ...activityFilters, teamMemberId: event.target.value })}>
@@ -3089,7 +3333,7 @@ function AdminScreen({
             </button>
           </section>
           <section className="coverage-list">
-            {activity.map((checkin) => (
+            {filteredActivity.map((checkin) => (
               <AdminCheckinRow
                 key={checkin.id}
                 checkin={checkin}
@@ -3099,7 +3343,7 @@ function AdminScreen({
                 onPatch={patchCheckin}
               />
             ))}
-            {!activity.length && <p className="notice">No check-ins match the current filters.</p>}
+            {!filteredActivity.length && <p className="notice">No check-ins match the current filters.</p>}
           </section>
         </>
       )}
@@ -3108,6 +3352,13 @@ function AdminScreen({
           {showOnboardingChecklist && (
             <OnboardingChecklist onboarding={onboardingSummary} onComplete={() => setShowOnboardingChecklist(false)} />
           )}
+          <section className="filters">
+            <input
+              placeholder="Search saved areas, locations, commands, or team members"
+              value={setupSearch}
+              onChange={(event) => setSetupSearch(event.target.value)}
+            />
+          </section>
           <section className="panel">
             <h2>Create area</h2>
             <form onSubmit={createArea} className="stack">
@@ -3212,7 +3463,7 @@ function AdminScreen({
           </section>
 
           <section className="coverage-list">
-            {data?.areas.map((area) => (
+            {filteredAdminAreas.map((area) => (
               <article key={area.id} className="admin-row">
                 <input defaultValue={area.name} onBlur={(event) => patch(`/api/admin/areas/${area.id}`, { name: event.target.value })} />
                 <input
@@ -3222,7 +3473,7 @@ function AdminScreen({
                 />
               </article>
             ))}
-            {data?.locations.map((location) => (
+            {filteredAdminLocations.map((location) => (
               <article key={location.id} className="admin-row">
                 <input defaultValue={location.name} onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { name: event.target.value })} />
                 <div className="grid-two">
@@ -3242,7 +3493,7 @@ function AdminScreen({
                 </button>
               </article>
             ))}
-            {data?.units.map((unit) => (
+            {filteredAdminUnits.map((unit) => (
               <article key={unit.id} className="admin-row">
                 <div>
                   <input defaultValue={unit.name} onBlur={(event) => patch(`/api/admin/units/${unit.id}`, { name: event.target.value })} />
@@ -3254,7 +3505,7 @@ function AdminScreen({
                 </div>
                 <select value={unit.location_id ?? ''} onChange={(event) => patch(`/api/admin/units/${unit.id}`, { location_id: event.target.value || null })}>
                   <option value="">Unassigned</option>
-                  {data.locations.map((location) => (
+                  {data?.locations.map((location) => (
                     <option key={location.id} value={location.id}>
                       {location.name}
                     </option>
@@ -3265,7 +3516,7 @@ function AdminScreen({
                 </button>
               </article>
             ))}
-            {data?.teamMembers.map((member) => (
+            {filteredAdminTeamMembers.map((member) => (
               <article key={member.id} className="admin-row">
                 <div className="stack">
                   <input defaultValue={member.name} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { name: event.target.value })} />
@@ -3282,6 +3533,11 @@ function AdminScreen({
                 </div>
               </article>
             ))}
+            {data &&
+              !filteredAdminAreas.length &&
+              !filteredAdminLocations.length &&
+              !filteredAdminUnits.length &&
+              !filteredAdminTeamMembers.length && <p className="notice">No setup records match that search.</p>}
           </section>
         </>
       )}
@@ -3445,6 +3701,7 @@ export default function App() {
   });
   const [screen, setScreen] = useState<Screen>('checkin');
   const [error, setError] = useState('');
+  const [workspaceNotice, setWorkspaceNotice] = useState('');
   const [pendingCount, setPendingCount] = useState(0);
   const [syncState, setSyncState] = useState<SyncState>('synced');
   const [syncMessage, setSyncMessage] = useState('');
@@ -3457,6 +3714,7 @@ export default function App() {
     localStorage.setItem(workspaceKey, JSON.stringify(normalized));
     setWorkspace(normalized);
     setShowWorkspaceEntry(false);
+    setWorkspaceNotice('');
     setTeamMembers([]);
     setBootstrap(null);
     setCachedAt(null);
@@ -3533,10 +3791,26 @@ export default function App() {
     setShowWorkspaceEntry(showWorkspacePicker);
     setScreen('checkin');
     setError('');
+    setWorkspaceNotice('');
     setSyncState('synced');
     setSyncMessage('');
     setRefreshPin('');
     setPendingCount(0);
+  }
+
+  function handleWorkspaceUnavailable(message = 'This workspace is unavailable. Select or activate a workspace to continue.') {
+    localStorage.removeItem(identityKey);
+    sessionStorage.removeItem('deckplate.admin');
+    setIdentity(null);
+    setBootstrap(null);
+    setTeamMembers([]);
+    setShowAdminSetup(false);
+    setShowWorkspaceEntry(true);
+    setScreen('checkin');
+    setError('');
+    setWorkspaceNotice(message);
+    setSyncState('synced');
+    setSyncMessage(message);
   }
 
   async function loadWorkspaceFromUrl() {
@@ -3547,7 +3821,7 @@ export default function App() {
       const result = await api<{ organization: WorkspaceContext | null }>(`/api/workspaces/resolve?${query}`);
       if (result.organization) setActiveWorkspace(result.organization);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Workspace link could not be opened.');
+      handleWorkspaceUnavailable(err instanceof Error ? err.message : 'Workspace link could not be opened.');
     }
   }
 
@@ -3560,7 +3834,14 @@ export default function App() {
       }
       setTeamMembers(result.teamMembers);
       setShowWorkspaceEntry(result.teamMembers.length === 0);
+      setError('');
+      setWorkspaceNotice('');
     } catch (err) {
+      const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
+      if (status === 400 || status === 404) {
+        handleWorkspaceUnavailable(err instanceof Error ? err.message : 'Workspace unavailable.');
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Unable to load team members.');
     }
   }
@@ -3610,6 +3891,7 @@ export default function App() {
           localStorage.removeItem(identityKey);
           setIdentity(null);
           setBootstrap(null);
+          setSyncMessage('Session expired. Select your name and enter your PIN again.');
           await loadTeamMembers();
         }
         return;
@@ -3826,6 +4108,7 @@ export default function App() {
         <WorkspaceEntry
           workspace={workspace}
           teamMembers={teamMembers}
+          notice={workspaceNotice}
           onBack={() => setShowWorkspaceEntry(false)}
           onWorkspace={setActiveWorkspace}
           onAdminToken={() => {

@@ -124,9 +124,10 @@ What the user sees: `Manual unit lookup` on the Check In screen.
 What they click:
 
 1. Click `Manual unit lookup` when GPS is unavailable or the location is intentionally unmapped.
-2. Choose one mapped location and its units, or choose one unmapped unit by itself.
-3. Submit the manual check-in.
-4. Review confirmation and click `Done`.
+2. Use the search box to find a command, department, building, or area.
+3. Choose one mapped location and its units, or choose one unmapped unit by itself.
+4. Submit the manual check-in.
+5. Review confirmation and click `Done`.
 
 Expected result: the visit records without GPS verification and still contributes to coverage.
 
@@ -143,9 +144,11 @@ What the user sees: filters, unit cards, status colors, and detail drawers.
 What they click:
 
 1. Open `Coverage`.
-2. Filter by area, type, overdue, never visited, or date range.
-3. Click a unit card.
-4. Read the detail drawer for last visit, recent check-ins, and indicator totals.
+2. Use search to find a command, department, building, area, status, or recent visitor.
+3. Filter by area, type, overdue, never visited, or date range.
+4. Click a unit card.
+5. Read the detail drawer for last visit, recent check-ins, and indicator totals.
+6. In `Reports`, load the referral/care report and use report search to find a location or area.
 
 Expected result: the team can decide which command, department, division, or tenant unit needs attention next.
 
@@ -162,8 +165,9 @@ What the user sees: mapped public locations, radius circles, and location cards.
 What they click:
 
 1. Open `Map`.
-2. Click or tap a mapped location card.
-3. Review attached units and radius.
+2. Use search to narrow the visible map markers and location cards by building, area, command, or department.
+3. Click or tap a mapped location card.
+4. Review attached units and radius.
 
 Expected result: users understand where public/general mapped locations are and which units are attached.
 
@@ -217,9 +221,10 @@ What the user sees: `Create area` in `Admin` > `Locations`.
 
 What they click:
 
-1. Enter a broad area name.
-2. Set sort order if needed.
-3. Click `Save area`.
+1. Use the setup search box when the saved areas, locations, units, or roster list is long.
+2. Enter a broad area name.
+3. Set sort order if needed.
+4. Click `Save area`.
 
 Expected result: the area becomes available for locations and coverage organization.
 
@@ -315,10 +320,11 @@ What the user sees: filters for date, team member, area, unit, `Include voided`,
 What they click:
 
 1. Open `Admin` > `Activity Log`.
-2. Apply filters.
-3. Correct unit, member, date/time, counseling indicator, or referral indicator mistakes.
-4. Click `Save edit`.
-5. Void accidental, duplicate, or incorrect records when needed.
+2. Search by unit, location, area, team member, `care`, or `referral`.
+3. Apply filters.
+4. Correct unit, member, date/time, counseling indicator, or referral indicator mistakes.
+5. Click `Save edit`.
+6. Void accidental, duplicate, or incorrect records when needed.
 
 Expected result: corrected records stay auditable; indicator changes update the generic reports; voided records stop affecting coverage and score.
 

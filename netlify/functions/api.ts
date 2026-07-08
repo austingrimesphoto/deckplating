@@ -22,6 +22,9 @@ type WorkspaceOnboardingSummary = {
   teamMemberCount: number;
   organizationAdminConfigured: boolean;
   readyForCheckins: boolean;
+  lastCheckinAt: string | null;
+  lastCheckinTeamMemberName: string | null;
+  lastCheckinUnitName: string | null;
 };
 
 class RequestValidationError extends Error {
@@ -410,7 +413,7 @@ async function getGamificationTone(organizationId: string | null): Promise<Gamif
 }
 
 async function getWorkspaceOnboardingSummary(organizationId: string | null): Promise<WorkspaceOnboardingSummary> {
-  const [areas, locations, units, teamMembers, adminCredential] = await Promise.all([
+  const [areas, locations, units, teamMembers, adminCredential, latestCheckins] = await Promise.all([
     scoped(supabase.from('areas').select('id', { count: 'exact', head: true }), organizationId),
     scoped(supabase.from('locations').select('id', { count: 'exact', head: true }), organizationId),
     scoped(supabase.from('units').select('id', { count: 'exact', head: true }).eq('active', true), organizationId),
@@ -423,14 +426,24 @@ async function getWorkspaceOnboardingSummary(organizationId: string | null): Pro
           .eq('active', true)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    scoped(
+      supabase
+        .from('checkins')
+        .select('checked_in_at, team_members!checkins_team_member_id_fkey(name), units(id, name)')
+        .is('voided_at', null)
+        .order('checked_in_at', { ascending: false })
+        .limit(1),
+      organizationId,
+    ),
   ]);
-  const error = areas.error ?? locations.error ?? units.error ?? teamMembers.error ?? adminCredential.error;
+  const error = areas.error ?? locations.error ?? units.error ?? teamMembers.error ?? adminCredential.error ?? latestCheckins.error;
   if (error) throw error;
   const areaCount = areas.count ?? 0;
   const locationCount = locations.count ?? 0;
   const unitCount = units.count ?? 0;
   const teamMemberCount = teamMembers.count ?? 0;
   const organizationAdminConfigured = Boolean(adminCredential.data);
+  const latestCheckin = ((latestCheckins.data ?? []) as any[])[0] ?? null;
   return {
     areaCount,
     locationCount,
@@ -438,6 +451,9 @@ async function getWorkspaceOnboardingSummary(organizationId: string | null): Pro
     teamMemberCount,
     organizationAdminConfigured,
     readyForCheckins: areaCount > 0 && locationCount > 0 && unitCount > 0 && teamMemberCount > 0,
+    lastCheckinAt: latestCheckin?.checked_in_at ?? null,
+    lastCheckinTeamMemberName: latestCheckin?.team_members?.name ?? null,
+    lastCheckinUnitName: latestCheckin?.units?.name ?? null,
   };
 }
 
@@ -914,6 +930,38 @@ async function route(event: HandlerEvent) {
     if (!(await organizationSchemaEnabled()) || !(await organizationAdminSchemaEnabled())) {
       return json(400, { error: 'Organization workspace tables are not available for this database yet.' });
     }
+  }
+
+  if (method === 'GET' && path === '/operator/audit-events') {
+    const limit = Math.min(Math.max(Number(event.queryStringParameters?.limit ?? 100), 1), 250);
+    const { data: events, error } = await supabase
+      .from('operator_audit_events')
+      .select('id, organization_id, actor, action, detail, created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) return json(500, { error: error.message });
+    const organizationIds = Array.from(
+      new Set(
+        (events ?? [])
+          .map((event: any) => event.organization_id)
+          .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    );
+    let organizationById = new Map<string, any>();
+    if (organizationIds.length) {
+      const { data: organizations, error: orgError } = await supabase
+        .from('organizations')
+        .select('id, slug, name')
+        .in('id', organizationIds);
+      if (orgError) return json(500, { error: orgError.message });
+      organizationById = new Map((organizations ?? []).map((organization: any) => [organization.id, organization]));
+    }
+    return json(200, {
+      events: (events ?? []).map((event: any) => ({
+        ...event,
+        organization: event.organization_id ? organizationById.get(event.organization_id) ?? null : null,
+      })),
+    });
   }
 
   if (method === 'GET' && path === '/operator/organizations') {

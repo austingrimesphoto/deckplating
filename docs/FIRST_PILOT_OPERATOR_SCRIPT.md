@@ -22,10 +22,11 @@ Use a short slug that the local lead can recognize, for example `example-rmt`.
 ## Issue The Setup Code
 
 1. Find the new workspace card.
-2. Enter a lead/request label.
-3. Keep the expiration short, usually `14` days or less.
-4. Select `Issue setup code`.
-5. Copy the workspace link and setup code from the notice.
+2. Use workspace search if the operator console already has many commands or departments.
+3. Enter a lead/request label.
+4. Keep the expiration short, usually `14` days or less.
+5. Select `Issue setup code`.
+6. Copy the workspace link and setup code from the notice.
 
 Send only this bundle to the approved local lead:
 
@@ -63,8 +64,16 @@ Back in `System Administration`, confirm the workspace card shows:
 - at least one unit
 - at least one team member
 - ready for check-ins
+- latest check-in shown after the local lead completes the test visit
 
 If the local lead is stuck before roster creation, use `Open admin as system administrator` only for support or quality-control work, then lock Admin when finished.
+
+Search the `Operator audit` panel for the workspace slug and confirm the expected events are present:
+
+- workspace created
+- setup code issued
+- setup code used during activation
+- superuser admin session, only if you used it
 
 ## What To Say To The Local Lead
 
@@ -89,5 +98,6 @@ Before leaving the local lead on their own:
 1. Confirm they can sign in as a normal member.
 2. Confirm they can open local Admin.
 3. Confirm they understand how to add/edit roster, locations, units, and generic indicators.
-4. Confirm they know where to send feedback.
-5. Revoke any unused setup codes that are no longer needed.
+4. Confirm they know that search is available in manual check-in, Coverage, Map, Admin setup records, Activity Log, reports, and System Administration.
+5. Confirm they know where to send feedback.
+6. Revoke any unused setup codes that are no longer needed.
