@@ -1784,6 +1784,7 @@ async function route(event: HandlerEvent) {
       { table: 'team_members', query: supabase.from('team_members').delete() },
       { table: 'areas', query: supabase.from('areas').delete() },
       { table: 'app_settings', query: supabase.from('app_settings').delete() },
+      { table: 'workspace_requests', query: supabase.from('workspace_requests').delete() },
       { table: 'organization_setup_codes', query: supabase.from('organization_setup_codes').delete() },
       { table: 'organization_admin_credentials', query: supabase.from('organization_admin_credentials').delete() },
     ];

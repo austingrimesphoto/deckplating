@@ -142,6 +142,7 @@ check(
   has(operatorDeleteRoute, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/delete$/)") &&
     has(operatorDeleteRoute, "confirmSlug must match the workspace slug") &&
     has(operatorDeleteRoute, "deleteSteps") &&
+    has(operatorDeleteRoute, "workspace_requests") &&
     has(operatorDeleteRoute, "organization_setup_codes") &&
     has(operatorDeleteRoute, "organization_admin_credentials") &&
     has(operatorDeleteRoute, "delete().eq('id', organizationId)")
