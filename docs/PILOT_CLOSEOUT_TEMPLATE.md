@@ -150,7 +150,7 @@ Promote only issues proven by real use.
 ## Managed Hosting Signal
 
 - Would this team have adopted faster with one centrally hosted link?
-- Did self-hosted setup materially limit adoption?
+- Did local development setup materially limit adoption?
 - Did the pilot lead want local-control hosting?
 - What account/setup step was hardest?
 

@@ -12,7 +12,7 @@ Every outside pilot should produce:
 
 Current distribution status:
 
-- `Self-hosted beta`: allowed for carefully supported outside pilots.
+- `local development beta`: allowed for carefully supported outside pilots.
 - `Broad self-service beta`: not approved yet.
 - `Managed centralized hosting`: planned, not started.
 
@@ -64,7 +64,7 @@ Consider adding more outside teams only when:
 
 Begin centralized multi-organization architecture work only when pilot evidence shows:
 
-- self-hosted setup is the primary adoption blocker,
+- local development setup is the primary adoption blocker,
 - the core phone workflow is useful enough to keep,
 - safe-use boundaries are understood,
 - outside teams want the tool but do not want GitHub, Supabase, or Netlify setup,

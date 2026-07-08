@@ -23,18 +23,18 @@ Current checkpoint verification:
 - `git diff --check` passed.
 - The live two-workspace integration script was not executed because it requires a live API URL and central operator passphrase.
 
-`git status --short` at managed-pilot administration start: clean.
+`git status --short` at controlled-demonstration administration start: clean.
 
 What changed in this continuation session:
 
-- Completed local implementation of **Managed Pilot Onboarding And Launch Readiness v1**.
+- Completed local implementation of **controlled demonstration Onboarding And Launch Readiness v1**.
 - Tightened `src/App.tsx` activation/admin wording around approved workspace selection, one-time setup code, installation/map center, local admin passphrase, local setup, and roster creation.
 - Added a low-profile `Account` > `Send feedback` link to `https://deckplatingsetup.netlify.app/#feedback`.
-- Rewrote `setup-site/index.html` from self-host-first setup to managed pilot access, workspace request, user guide, and feedback.
+- Rewrote `setup-site/index.html` from local development-first setup to controlled demonstration access, workspace request, user guide, and feedback.
 - Added Netlify Forms request form `deckplating-workspace-request` and thank-you page `workspace-request-thanks.html`.
-- Preserved feedback form `deckplating-pilot-feedback` and updated thank-you copy for manual managed-pilot review.
+- Preserved feedback form `deckplating-pilot-feedback` and updated thank-you copy for manual controlled-demonstration review.
 - Rebuilt `docs/USER_GUIDE.md` and `setup-site/user-guide.html` around concrete workflows and scrubbed demo screenshot assets.
-- Updated feedback and pilot docs for managed-pilot reality:
+- Updated feedback and pilot docs for controlled-demonstration reality:
   - `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`
   - `docs/PILOT_FEEDBACK_REVIEW.md`
   - `docs/PILOT_PACKET.md`
@@ -80,7 +80,7 @@ Review and deploy the current hardening diff only after validation passes. After
 
 Current readiness assessment for a real outside chaplain:
 
-- the hosted app is now usable for a small managed pilot through Deckplating itself
+- the hosted app is now usable for a small controlled demonstration through Deckplating itself
 - the central operator can create/delete/suspend/reactivate workspaces, issue/revoke setup codes, recover a forgotten local-admin passphrase, reset member PINs, and leave routine roster handling to the local lead
 - the central operator can open an audited superuser admin session scoped to one active workspace for support and quality-control work
 - the main remaining gaps before broader self-service rollout are:

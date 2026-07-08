@@ -165,26 +165,27 @@ type CheckinConfirmation = {
 type SyncState = 'synced' | 'offline' | 'pending' | 'auth' | 'failed';
 
 const safeUseSummary =
-  'Use Deckplating only for unclassified, non-sensitive coverage tracking. Do not enter CUI, classified information, sensitive personal information, home addresses, counseling or medical details, or sensitive operational locations.';
+  'Deckplating is an unofficial open-source prototype, not approved by DON or DoD. Use only for unclassified, non-sensitive coverage awareness unless authorized by local IT/N6.';
 
 const safeUseItems = [
-  'Deckplating is not approved for CUI, classified information, or sensitive operational data.',
+  'Deckplating is not approved for operational Navy use unless authorized by local IT/N6, privacy, records, OPSEC, and command guidance.',
   'Store only the minimum information needed to track ministry presence.',
-  'Do not enter counseling notes, medical information, incident details, family information, addresses, phone numbers, email addresses, dates of birth, or other sensitive PII.',
-  'Team display names should be limited to practical operational identity, such as rank and last name.',
+  'Do not enter CUI, classified information, counseling notes, case management, medical details, incident details, family information, home addresses, phone numbers, dates of birth, setup codes, passphrases, or official records.',
+  'Team display names should be limited to practical ministry workflow identity, such as rank/last name or role/name.',
   'Map only publicly identifiable facilities, buildings, or general areas.',
-  'Do not map SCIFs, restricted spaces, operational locations in theater, residences, or other sensitive locations.',
+  'Do not map SCIFs, restricted spaces, deployed operational locations, residences, or other sensitive locations.',
   'When uncertain, do not map the location. Use manual check-in.',
   'Deckplating is a coverage-awareness tool, not a counseling record, case-management system, or official system of record.',
 ];
 
 const locationMappingNotice =
-  'Map only publicly identifiable buildings or general areas. Do not pin SCIFs, sensitive operational spaces, deployed-unit locations, homes, or any location that should not be broadly shared. When uncertain, leave the location unmapped and use manual check-in.';
+  'Map only public/general locations. Do not map restricted rooms, SCIFs, residences, deployed locations, or sensitive operational spaces. When uncertain, leave the location unmapped and use manual check-in.';
 
 const identityKey = 'deckplate.identity';
 const workspaceKey = 'deckplate.workspace';
 const operatorKey = 'deckplate.operator';
 const feedbackUrl = 'https://deckplatingsetup.netlify.app/#feedback';
+const ministryIndicatorsEnabled = /^true$/i.test(import.meta.env.VITE_ENABLE_MINISTRY_INDICATORS ?? '');
 
 const defaultWorkspace: WorkspaceContext = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -265,8 +266,8 @@ const isNetworkFailure = (error: unknown) => {
 };
 
 const indicatorPayload = (indicators: VisitIndicatorState) => ({
-  confidentialCareProvided: indicators.confidentialCareProvided,
-  referralProvided: indicators.referralProvided,
+  confidentialCareProvided: ministryIndicatorsEnabled ? indicators.confidentialCareProvided : null,
+  referralProvided: ministryIndicatorsEnabled ? indicators.referralProvided : null,
 });
 
 const statusText: Record<UnitSummary['status'], string> = {
@@ -752,7 +753,7 @@ function WorkspaceEntry({
         <h1>Workspace setup</h1>
         <p className="muted">Current workspace: {workspace?.name ?? 'Default Workspace'}</p>
         <p className="notice">
-          Managed pilot sequence: select or request your approved workspace, enter the one-time setup code, confirm the installation map center, set the local admin passphrase, then continue to local setup.
+          Demonstration sequence: select or request your controlled demonstration workspace, enter the one-time setup code, confirm the installation map center, set the local admin passphrase, then continue to local setup.
         </p>
         {notice && <p className="warning-notice">{notice}</p>}
         <p className="safe-summary">{safeUseSummary}</p>
@@ -787,7 +788,7 @@ function WorkspaceEntry({
         {mode === 'choose' ? (
           <form className="stack" onSubmit={resolveWorkspace}>
             <p className="muted">
-              Use this if your workspace has already been approved and you know its slug. New pilots should request access on the setup site before expecting a workspace slug or setup code.
+              Use this if your controlled demonstration workspace has already been approved and you know its slug. This is not open signup.
             </p>
             <label>
               Workspace slug
@@ -806,7 +807,10 @@ function WorkspaceEntry({
         ) : (
           <form className="stack" onSubmit={activateWorkspace}>
             <p className="muted">
-              Use the one-time setup code from the Deckplating operator. This does not create an email account or public signup; it activates the already approved workspace for local setup.
+              Use the one-time setup code from the Deckplating operator. This does not create an email account or open signup; it activates the already approved workspace for local setup.
+            </p>
+            <p className="warning-notice">
+              Do not use government-furnished equipment or government networks unless authorized by local IT/N6. Do not enter CUI, official records, sensitive locations, setup codes, or passphrases anywhere except the intended activation fields.
             </p>
             <label>
               One-time setup code
@@ -1104,7 +1108,7 @@ function OperatorConsole({
       operatorNote: '',
     };
     const confirmed = window.confirm(
-      `Approve workspace request for ${request.installation_or_command}?\n\nThis creates the workspace, issues a setup code, sends the welcome email if email is configured, and records an operator audit event.`,
+      `Approve workspace request for ${request.installation_or_command}?\n\nThis sends the workspace link/setup information to the administrative contact email if notifications are enabled. Do not send to personal email unless authorized. Do not include CUI, counseling details, sensitive operational data, or official records.`,
     );
     if (!confirmed) return;
     try {
@@ -1112,6 +1116,12 @@ function OperatorConsole({
         organization: Pick<WorkspaceContext, 'id' | 'slug' | 'name'> & { active: boolean };
         code: string;
         requestorNotificationStatus: string;
+        notification?: {
+          status: string;
+          subject: string;
+          text: string;
+          mailtoUrl?: string;
+        };
       }>(`/api/operator/workspace-requests/${request.id}/approve`, {
         method: 'POST',
         headers: { authorization: `Bearer ${token}` },
@@ -1129,7 +1139,11 @@ function OperatorConsole({
           link: `${window.location.origin}${window.location.pathname}?workspace=${encodeURIComponent(result.organization.slug)}`,
         },
       }));
-      setMessage(`Approved ${request.installation_or_command}. Requestor email ${result.requestorNotificationStatus}.`);
+      setMessage(
+        `Approved ${request.installation_or_command}. Notification ${result.requestorNotificationStatus}. ${
+          result.notification?.mailtoUrl ? `Open mailto link: ${result.notification.mailtoUrl}` : result.notification?.text ?? ''
+        }`,
+      );
       await Promise.all([loadWorkspaceRequests(), loadOrganizations(), loadAuditEvents(token)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Workspace request approval failed.');
@@ -2287,30 +2301,32 @@ function CheckInScreen({
               {unlockedBadges.length > 2 && <small>+{unlockedBadges.length - 2} more on Mission Board</small>}
             </section>
           )}
-          <section className="optional-indicators">
-            <h3>Optional visit indicators</h3>
-            <p className="muted">Optional counts only. Do not add names, circumstances, counseling details, medical information, or other sensitive information.</p>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={confirmation.indicators.confidentialCareProvided === true}
-                onChange={(event) =>
-                  updateIndicators({ ...confirmation.indicators, confidentialCareProvided: event.target.checked ? true : null })
-                }
-              />
-              Confidential care provided
-            </label>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={confirmation.indicators.referralProvided === true}
-                onChange={(event) =>
-                  updateIndicators({ ...confirmation.indicators, referralProvided: event.target.checked ? true : null })
-                }
-              />
-              Referral provided
-            </label>
-          </section>
+          {ministryIndicatorsEnabled && (
+            <section className="optional-indicators">
+              <h3>Optional visit flags</h3>
+              <p className="muted">Generic yes/no flags only. Do not add names, circumstances, notes, medical information, or other sensitive information.</p>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={confirmation.indicators.confidentialCareProvided === true}
+                  onChange={(event) =>
+                    updateIndicators({ ...confirmation.indicators, confidentialCareProvided: event.target.checked ? true : null })
+                  }
+                />
+                Follow-up flag
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={confirmation.indicators.referralProvided === true}
+                  onChange={(event) =>
+                    updateIndicators({ ...confirmation.indicators, referralProvided: event.target.checked ? true : null })
+                  }
+                />
+                External support flag
+              </label>
+            </section>
+          )}
           <section className="brief-card">
             <p className="eyebrow">Deckplate Brief</p>
             <p>{brief.text}</p>
@@ -2539,8 +2555,9 @@ function CoverageBoard({
   }
 
   async function loadReport() {
+    if (!ministryIndicatorsEnabled) return;
     if (cachedMode || !navigator.onLine) {
-      setReportMessage('Referral and care reporting needs a live connection.');
+      setReportMessage('Visit flag reporting needs a live connection.');
       return;
     }
     setReportMessage('');
@@ -2610,11 +2627,11 @@ function CoverageBoard({
                     </small>
                   </div>
                   {checkin.voided_at && <span className="status-pill">Voided</span>}
-                  {(checkin.confidential_care_provided || checkin.referral_provided) && (
+                  {ministryIndicatorsEnabled && (checkin.confidential_care_provided || checkin.referral_provided) && (
                     <span className="status-pill">
-                      {checkin.confidential_care_provided ? 'Care' : ''}
+                      {checkin.confidential_care_provided ? 'Follow-up' : ''}
                       {checkin.confidential_care_provided && checkin.referral_provided ? ' / ' : ''}
-                      {checkin.referral_provided ? 'Referral' : ''}
+                      {checkin.referral_provided ? 'External support' : ''}
                     </span>
                   )}
                 </div>
@@ -2721,53 +2738,55 @@ function CoverageBoard({
         )}
       </section>
       <section className="coverage-list">
-        <section className="panel report-panel">
-          <p className="eyebrow">Reports</p>
-          <h2>Referrals and confidential care</h2>
-          <p className="muted">Generic location-level counts only. Multi-unit visits are not attributed to each selected command.</p>
-          <div className="filters">
-            <input
-              placeholder="Search report rows"
-              value={reportSearch}
-              onChange={(event) => setReportSearch(event.target.value)}
-            />
-            <input type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
-            <input type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
-            <button className="secondary" onClick={loadReport}>Load referral/care report</button>
-          </div>
-          {reportMessage && <p className="notice">{reportMessage}</p>}
-          {reportRows.length > 0 && (
-            <div className="report-list">
-              {filteredReportRows.map((row) => (
-                <article key={row.key} className="report-row">
-                  <div>
-                    <strong>{row.location_name}</strong>
-                    <small>{row.area_name}</small>
-                  </div>
-                  <dl>
-                    <div>
-                      <dt>Visits</dt>
-                      <dd>{row.visits}</dd>
-                    </div>
-                    <div>
-                      <dt>Care</dt>
-                      <dd>{row.confidential_care_count}</dd>
-                    </div>
-                    <div>
-                      <dt>Referrals</dt>
-                      <dd>{row.referral_count}</dd>
-                    </div>
-                    <div>
-                      <dt>Multi-unit</dt>
-                      <dd>{row.multi_unit_indicator_visits}</dd>
-                    </div>
-                  </dl>
-                </article>
-              ))}
-              {!filteredReportRows.length && <p className="notice">No report rows match that search.</p>}
+        {ministryIndicatorsEnabled && (
+          <section className="panel report-panel">
+            <p className="eyebrow">Reports</p>
+            <h2>Visit flags</h2>
+            <p className="muted">Generic location-level yes/no counts only. Multi-unit visits are not attributed to each selected command.</p>
+            <div className="filters">
+              <input
+                placeholder="Search report rows"
+                value={reportSearch}
+                onChange={(event) => setReportSearch(event.target.value)}
+              />
+              <input type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
+              <input type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
+              <button className="secondary" onClick={loadReport}>Load visit flag report</button>
             </div>
-          )}
-        </section>
+            {reportMessage && <p className="notice">{reportMessage}</p>}
+            {reportRows.length > 0 && (
+              <div className="report-list">
+                {filteredReportRows.map((row) => (
+                  <article key={row.key} className="report-row">
+                    <div>
+                      <strong>{row.location_name}</strong>
+                      <small>{row.area_name}</small>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>Visits</dt>
+                        <dd>{row.visits}</dd>
+                      </div>
+                      <div>
+                        <dt>Follow-up</dt>
+                        <dd>{row.confidential_care_count}</dd>
+                      </div>
+                      <div>
+                        <dt>External support</dt>
+                        <dd>{row.referral_count}</dd>
+                      </div>
+                      <div>
+                        <dt>Multi-unit</dt>
+                        <dd>{row.multi_unit_indicator_visits}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+                {!filteredReportRows.length && <p className="notice">No report rows match that search.</p>}
+              </div>
+            )}
+          </section>
+        )}
         {areas.map((candidate) => {
           const areaUnits = filtered.filter((unit) => unit.area_id === candidate.id);
           if (!areaUnits.length) return null;
@@ -3794,8 +3813,12 @@ function AdminCheckinRow({
       unit_id: unitId,
       team_member_id: teamMemberId,
       checked_in_at: localDateTimeToIso(checkedInAt),
-      confidentialCareProvided: confidentialCareProvided ? true : null,
-      referralProvided: referralProvided ? true : null,
+      ...(ministryIndicatorsEnabled
+        ? {
+            confidentialCareProvided: confidentialCareProvided ? true : null,
+            referralProvided: referralProvided ? true : null,
+          }
+        : {}),
     });
   }
 
@@ -3822,11 +3845,11 @@ function AdminCheckinRow({
           </small>
         </div>
         {voided && <span className="status-pill">Voided: {checkin.void_reason ?? 'no reason'}</span>}
-        {(checkin.confidential_care_provided || checkin.referral_provided) && (
+        {ministryIndicatorsEnabled && (checkin.confidential_care_provided || checkin.referral_provided) && (
           <span className="status-pill">
-            {checkin.confidential_care_provided ? 'Care' : ''}
+            {checkin.confidential_care_provided ? 'Follow-up' : ''}
             {checkin.confidential_care_provided && checkin.referral_provided ? ' / ' : ''}
-            {checkin.referral_provided ? 'Referral' : ''}
+            {checkin.referral_provided ? 'External support' : ''}
           </span>
         )}
       </div>
@@ -3847,26 +3870,28 @@ function AdminCheckinRow({
             ))}
           </select>
           <input type="datetime-local" value={checkedInAt} onChange={(event) => setCheckedInAt(event.target.value)} />
-          <section className="optional-indicators admin-indicators">
-            <h3>Optional visit indicators</h3>
-            <p className="muted">Counts only. Do not add counseling notes, referral details, names, or sensitive information.</p>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={confidentialCareProvided}
-                onChange={(event) => setConfidentialCareProvided(event.target.checked)}
-              />
-              Counseling or confidential care happened
-            </label>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={referralProvided}
-                onChange={(event) => setReferralProvided(event.target.checked)}
-              />
-              Referral happened
-            </label>
-          </section>
+          {ministryIndicatorsEnabled && (
+            <section className="optional-indicators admin-indicators">
+              <h3>Optional visit flags</h3>
+              <p className="muted">Counts only. Do not add notes, details, names, or sensitive information.</p>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={confidentialCareProvided}
+                  onChange={(event) => setConfidentialCareProvided(event.target.checked)}
+                />
+                Follow-up flag
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={referralProvided}
+                  onChange={(event) => setReferralProvided(event.target.checked)}
+                />
+                External support flag
+              </label>
+            </section>
+          )}
           <button className="secondary" onClick={saveCorrections} disabled={!actingTeamMemberId}>
             Save edit
           </button>
@@ -4191,8 +4216,8 @@ function AdminScreen({
           checkin.checked_in_at,
           checkin.geofence_verified ? 'geofence verified' : 'manual unverified',
           checkin.void_reason,
-          checkin.confidential_care_provided ? 'care counseling confidential' : '',
-          checkin.referral_provided ? 'referral' : '',
+          ministryIndicatorsEnabled && checkin.confidential_care_provided ? 'follow-up flag' : '',
+          ministryIndicatorsEnabled && checkin.referral_provided ? 'external support flag' : '',
         ]),
       ),
     [activity, activityFilters.search],
@@ -4353,7 +4378,7 @@ function AdminScreen({
             <h2>Filter activity</h2>
             <div className="filters">
               <input
-                placeholder="Search unit, location, area, team member, care, referral"
+                placeholder="Search unit, location, area, or team member"
                 value={activityFilters.search}
                 onChange={(event) => setActivityFilters({ ...activityFilters, search: event.target.value })}
               />
@@ -4444,6 +4469,7 @@ function AdminScreen({
           </section>
           <section className="panel">
             <h2>Create area</h2>
+            <p className="muted">Use broad, non-sensitive area names. Do not enter restricted room names, deployed locations, or sensitive operational details.</p>
             <form onSubmit={createArea} className="stack">
               <input placeholder="Area name" value={areaForm.name} onChange={(event) => setAreaForm({ ...areaForm, name: event.target.value })} />
               <input
@@ -4534,6 +4560,7 @@ function AdminScreen({
 
           <section className="panel">
             <h2>Create unit</h2>
+            <p className="muted">Do not enter sensitive mission details. Use ordinary department, division, or tenant-command labels only when they are not sensitive.</p>
             <form onSubmit={createUnit} className="stack">
               <input placeholder="Unit name" value={unitForm.name} onChange={(event) => setUnitForm({ ...unitForm, name: event.target.value })} />
               <select value={unitForm.unit_type} onChange={(event) => setUnitForm({ ...unitForm, unit_type: event.target.value as UnitType })}>
@@ -4559,6 +4586,9 @@ function AdminScreen({
             <p className="muted">
               This is the current grant-access workflow: create the roster entry here, send the workspace link, then the member selects
               their name and creates their own PIN on first sign-in.
+            </p>
+            <p className="warning-notice">
+              Use minimum practical display identity, such as rank/last name or role/name. Do not enter phone, DOB, family details, or personal contact info.
             </p>
             <form onSubmit={createMember} className="stack">
               <input placeholder="Name" value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} />

@@ -438,7 +438,7 @@ test('captures operator console', async ({ page }, testInfo) => {
             official_contact_email: 'request@example.mil',
             rmt_size: 4,
             expected_pilot_start_date: '2026-07-20',
-            short_use_case: 'Track routine coverage across departments and tenant commands during a managed pilot.',
+            short_use_case: 'Track routine coverage across departments and tenant commands during a controlled demonstration.',
             safe_use_boundaries_confirmed: true,
             no_sensitive_data_acknowledged: true,
             status: 'pending',

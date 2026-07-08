@@ -1,155 +1,70 @@
 # Deckplating
 
-Deckplating is a mobile web app for installation Religious Ministry Teams to track command coverage, map unit locations, log visits, and see which departments, divisions, or tenant commands need attention.
+Deckplating is an unofficial open-source prototype for unclassified, non-sensitive Religious Ministry Team coverage awareness. It is not approved by the Department of the Navy or Department of Defense.
 
-It is designed to be copied by each RMT. Every team should run its own Netlify site and its own Supabase database, so no one has to manage one giant fleet-wide database.
+Do not use Deckplating for CUI, classified information, sensitive operational data, counseling notes, case management, medical information, incident details, family information, home addresses, phone numbers, dates of birth, passphrases, setup codes, sensitive locations, SCIFs, restricted spaces, deployed operational locations, or official records. Do not use it on government-furnished equipment or government networks unless authorized by local IT/N6.
 
-## Start Here
+## What Deckplating Is
 
-Preferred beta distribution path:
+Deckplating is a mobile-first web app that helps an RMT see routine coverage by broad area, public/general location, unit, department, division, or tenant command. It supports check-ins, coverage status, search, map views, local admin correction, and a TV dashboard for team awareness.
 
-1. Send users to the public setup site: <https://deckplatingsetup.netlify.app>
-2. They create their own app copy from the public template.
-3. They follow the hosted setup wizard.
+It is designed to avoid sensitive PII and to minimize low-sensitivity administrative identity/contact data. Team display names and official administrative contact emails, if used, should be limited to what is necessary for access coordination and local accountability.
 
-Hosted setup site:
+## Current Status
 
-<https://deckplatingsetup.netlify.app>
+Current status: technical demonstration. The hosted instance is a central demonstration instance for controlled demonstration workspaces pending local IT/N6, privacy, records, OPSEC, and command guidance.
 
-The setup site source lives in:
+Deckplating is not approved for operational Navy use unless authorized.
 
-[setup-site/](setup-site/)
+## Safe-Use Boundary
 
-For a plain-English, button-by-button setup walkthrough, use:
+Allowed demonstration data:
 
-[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)
+- workspace name or local command label, if non-sensitive
+- broad area names
+- public/general buildings or locations already broadly identifiable
+- unit, department, division, or tenant-command names, when not sensitive
+- team member display names limited to practical ministry workflow identity, such as rank/last name or role/name
+- generic visit/check-in timestamps
+- generic coverage status
 
-For the actual end-user guide after setup, use:
+Prohibited data:
 
-[docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+- CUI or classified information
+- counseling notes, case-management data, medical details, incident details, family information, or official records
+- home addresses, phone numbers, dates of birth, private email addresses, setup codes, passphrases, or screenshots containing those values
+- sensitive operational locations, SCIFs, restricted rooms, deployed/theater operational locations, or residences
 
-Hosted version:
+See [docs/SAFE_USE.md](docs/SAFE_USE.md).
 
-<https://deckplatingsetup.netlify.app/user-guide.html>
+## Not Approved for Operational Navy Use Unless Authorized
 
-That guide is the one to hand to a chaplain, RP, or command teammate who just needs to get the tool running. It is written around a no-terminal beta setup path.
+Deckplating is not a system of record, counseling record, medical tracker, case-management system, CUI system, classified system, or Navy-approved production application. Use for any real command workflow requires local authorization and review.
 
-Offline release validation checklist:
+## Demonstration Setup
 
-[docs/OFFLINE_TEST_CHECKLIST.md](docs/OFFLINE_TEST_CHECKLIST.md)
+Use the central demonstration instance and setup site for controlled demonstration workspaces:
 
-Mission Board validation checklist:
+- App: <https://deckplating.netlify.app>
+- Setup/user guidance: <https://deckplatingsetup.netlify.app>
+- User guide: <https://deckplatingsetup.netlify.app/user-guide.html>
 
-[docs/MISSION_BOARD_TEST_CHECKLIST.md](docs/MISSION_BOARD_TEST_CHECKLIST.md)
+Workspace approval is manual. There is no open signup. Setup codes are issued only for approved controlled demonstration workspaces.
 
-Pilot readiness guide:
+## Documentation
 
-[docs/PILOT_READINESS_GUIDE.md](docs/PILOT_READINESS_GUIDE.md)
+- [docs/SAFE_USE.md](docs/SAFE_USE.md)
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+- [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md)
+- [docs/N6_REVIEW_PACKET.md](docs/N6_REVIEW_PACKET.md)
+- [docs/CENTRAL_OPERATOR_GUIDE.md](docs/CENTRAL_OPERATOR_GUIDE.md)
+- [docs/ADMINISTRATOR_RUNBOOK.md](docs/ADMINISTRATOR_RUNBOOK.md)
+- [docs/OFFLINE_TEST_CHECKLIST.md](docs/OFFLINE_TEST_CHECKLIST.md)
+- [docs/MISSION_BOARD_TEST_CHECKLIST.md](docs/MISSION_BOARD_TEST_CHECKLIST.md)
 
-Pilot support playbook:
+## Development Setup
 
-[docs/PILOT_SUPPORT_PLAYBOOK.md](docs/PILOT_SUPPORT_PLAYBOOK.md)
-
-Pilot closeout template:
-
-[docs/PILOT_CLOSEOUT_TEMPLATE.md](docs/PILOT_CLOSEOUT_TEMPLATE.md)
-
-Pilot decision log:
-
-[docs/PILOT_DECISION_LOG.md](docs/PILOT_DECISION_LOG.md)
-
-Controlled workspace onboarding blueprint:
-
-[docs/CONTROLLED_WORKSPACE_ONBOARDING.md](docs/CONTROLLED_WORKSPACE_ONBOARDING.md)
-
-Pilot packet:
-
-[docs/PILOT_PACKET.md](docs/PILOT_PACKET.md)
-
-Pilot dry-run checklist:
-
-[docs/PILOT_DRY_RUN_CHECKLIST.md](docs/PILOT_DRY_RUN_CHECKLIST.md)
-
-Latest dry-run results:
-
-[docs/PILOT_DRY_RUN_RESULTS_2026-07-04.md](docs/PILOT_DRY_RUN_RESULTS_2026-07-04.md)
-
-Pilot feedback template:
-
-[docs/PILOT_FEEDBACK_TEMPLATE.md](docs/PILOT_FEEDBACK_TEMPLATE.md)
-
-Pilot feedback review workflow:
-
-[docs/PILOT_FEEDBACK_REVIEW.md](docs/PILOT_FEEDBACK_REVIEW.md)
-
-Pilot invitation message:
-
-[docs/PILOT_INVITATION_MESSAGE.md](docs/PILOT_INVITATION_MESSAGE.md)
-
-Current beta release notes draft:
-
-[docs/BETA_RELEASE_NOTES_CURRENT.md](docs/BETA_RELEASE_NOTES_CURRENT.md)
-
-Safe-use policy:
-
-[docs/SAFE_USE.md](docs/SAFE_USE.md)
-
-The beta browser helper is here:
-
-[docs/setup-wizard.html](docs/setup-wizard.html)
-
-## Share This With Another RMT
-
-Send them the hosted setup site first. Use the GitHub repository as the source of truth and backup reference.
-
-Recommended message:
-
-```text
-Deckplating setup starts here:
-https://deckplatingsetup.netlify.app
-
-How to use the app after setup:
-https://deckplatingsetup.netlify.app/user-guide.html
-
-If you need the full source or backup instructions:
-https://github.com/austingrimesphoto/deckplating
-```
-
-The owner of this repository should enable GitHub's template setting:
-
-1. Open this repository on GitHub.
-2. Click **Settings**.
-3. Click **General**.
-4. Check **Template repository**.
-5. Save.
-
-Each RMT should create its own copy from the template, then connect that copy to its own Netlify site and Supabase database.
-
-## Getting Updates
-
-Copies made with **Use this template** do not automatically receive updates from this repository. That is intentional: each installation owns its own app and database.
-
-Recommended update process:
-
-1. This project publishes named versions such as `v1.0.0`, `v1.1.0`, and `v1.2.0`.
-2. Each release includes short notes explaining what changed.
-3. Teams can decide when to update their own copy.
-4. Early teams may choose to create a fresh copy from the latest template if they have not entered much data yet.
-
-For now, keep updates simple: publish releases, write clear release notes, and avoid forcing changes onto other teams automatically.
-
-## What Each Team Gets
-
-- A private app deployment on Netlify
-- A separate Supabase database
-- A phone-friendly installable web app
-- A local admin passphrase
-- Name + PIN sign-in for team members
-- Protected app data behind signed user sessions
-
-## Fast Local Setup
-
-Most users should skip this and use [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md). This section is only for someone who wants to run the app on their own computer before deploying.
+These instructions are for local development and testing only. They are not instructions to create an operational Navy deployment.
 
 Install dependencies:
 
@@ -163,13 +78,13 @@ Create a local `.env` file:
 npm run setup
 ```
 
-Run the app with Netlify Functions:
+Run the app locally with Netlify Functions:
 
 ```bash
 netlify dev
 ```
 
-Optional local quality checks:
+Quality checks:
 
 ```bash
 npm run typecheck
@@ -178,23 +93,7 @@ npm run test:tenant-isolation
 npm run test:ui
 ```
 
-Open the local URL Netlify prints, usually:
-
-```text
-http://localhost:8888
-```
-
-## Required Services
-
-Each installation needs accounts for:
-
-- GitHub, to hold that team's copy of the app: <https://github.com/signup>
-- Supabase, to hold that team's database: <https://supabase.com/dashboard/sign-up>
-- Netlify, to host that team's website and API functions: <https://app.netlify.com/signup>
-
-## Required Environment Variables
-
-These are needed locally in `.env` and in Netlify environment variables:
+Required local development variables:
 
 ```text
 SUPABASE_URL
@@ -209,182 +108,17 @@ MAP_DEFAULT_LONGITUDE
 INSTALLATION_NAME
 DECKPLATING_APP_BASE_URL
 DECKPLATING_SETUP_SITE_BASE_URL
-DECKPLATING_OPERATOR_EMAIL
-DECKPLATING_FROM_EMAIL
-RESEND_API_KEY
+NOTIFICATION_MODE
+NOTIFICATION_FROM
+NOTIFICATION_REPLY_TO
+SMTP_HOST
+SMTP_PORT
+SMTP_USER
+SMTP_PASSWORD
+ENABLE_MINISTRY_INDICATORS
+VITE_ENABLE_MINISTRY_INDICATORS
 ```
 
-`npm run setup` generates `ADMIN_PASSPHRASE_HASH` and `ADMIN_SESSION_SECRET` for local use. Use the same values in Netlify.
+`NOTIFICATION_MODE` defaults to `disabled`. Supported modes are `disabled`, `mailto`, `smtp`, `provider`, and `graph`. Missing notification variables must not block local development.
 
-`CENTRAL_OPERATOR_PASSPHRASE_HASH` is optional and should be used only on a future managed pilot host. When set, it enables protected operator API routes for creating approved organization workspaces and one-time setup codes. Leave it blank for normal self-hosted installs.
-
-`DECKPLATING_OPERATOR_EMAIL`, `DECKPLATING_FROM_EMAIL`, and `RESEND_API_KEY` enable workspace-request notification and approval emails on a managed host. If they are blank, workspace requests and approvals still work, but email delivery is recorded as skipped.
-
-`DECKPLATING_APP_BASE_URL` and `DECKPLATING_SETUP_SITE_BASE_URL` set the links included in operator and welcome emails. Defaults are the managed pilot URLs.
-
-`MAP_TILE_URL` and `MAP_TILE_KEY` may be blank for basic use.
-
-`MAP_DEFAULT_LATITUDE`, `MAP_DEFAULT_LONGITUDE`, and `INSTALLATION_NAME` set the first map center for a new installation.
-
-## Supabase Setup
-
-Run these files in Supabase SQL Editor, in order:
-
-1. `supabase/migrations/001_initial_schema.sql`
-2. `supabase/migrations/002_checkin_corrections.sql`
-3. `supabase/migrations/003_offline_batches_outcomes_and_hardening.sql`
-4. `supabase/migrations/004_mission_board_settings.sql`
-5. `supabase/migrations/005_multi_site_foundation.sql`
-6. `supabase/migrations/006_org_admin_and_invitations.sql`
-7. `supabase/migrations/007_app_settings_workspace_key.sql`
-8. `supabase/migrations/008_operator_audit_events.sql`
-9. `supabase/migrations/009_activity_log_search_indexes.sql`
-10. `supabase/migrations/010_workspace_request_queue.sql`
-11. `supabase/seed.sql`
-
-The schema enables row level security on all tables. Browser code never talks directly to Supabase. All database access goes through Netlify Functions using the server-side service-role key.
-
-## Netlify Deployment
-
-Netlify reads `netlify.toml`.
-
-Expected settings:
-
-```text
-Build command: npm run build
-Publish directory: dist
-Functions directory: netlify/functions
-```
-
-After deployment, open the site on a phone and use **Add to Home Screen**.
-
-## Offline Mode
-
-Deckplating needs one successful online launch before offline use. That first launch installs the app shell and caches recent coverage data on the device.
-
-The app queues visits offline and syncs automatically when it is open and can reach Deckplating again. Background upload while the app is closed is not guaranteed on every phone.
-
-The sync bar shows:
-
-- **Online and synced**: no queued visits remain.
-- **Offline - cached data**: cached coverage is being used.
-- **X visits waiting to upload**: local visit batches are pending.
-- **Sync needs PIN refresh**: enter the existing 4-digit PIN to refresh the session without losing queued visits.
-- **Sync failed - retry available**: use **Sync Now** after checking connectivity.
-
-Queued visits stay on the device until they sync or are undone locally before upload.
-
-## Security Model
-
-- Public users can only load the minimal team-member name list needed for sign-in.
-- Full app data requires a signed user session.
-- Users get a session by selecting their name and entering their PIN.
-- Check-ins require both a valid session and a registered device token.
-- Admin create/edit routes require the admin passphrase session.
-- Supabase service-role access stays inside Netlify Functions.
-
-This is not a DoD enterprise identity system. It is a practical self-hosted app gate for local RMT use.
-
-## File Structure
-
-```text
-src/                         React mobile web app
-netlify/functions/api.ts     API router for /api/* routes
-supabase/migrations/         Database schema
-supabase/seed.sql            Starter areas, units, and team roster
-public/                      Installable app icons, manifest, background assets
-scripts/setup.mjs            Local setup helper
-docs/SETUP_GUIDE.md          Non-technical deployment guide
-docs/PILOT_READINESS_GUIDE.md Outside-team pilot handoff guide
-setup-site/                  Public static onboarding wizard
-netlify.toml                 Build and API rewrite config
-.env.example                 Environment variable names
-```
-
-## API Routes
-
-Public:
-
-- `GET /api/workspaces/resolve`
-- `GET /api/team-members`
-- `POST /api/device/register`
-- `POST /api/workspaces/activate`
-
-Central-operator protected:
-
-- `POST /api/operator/login`
-- `GET /api/operator/organizations`
-- `POST /api/operator/organizations`
-- `POST /api/operator/organizations/:id/admin-session`
-- `POST /api/operator/organizations/:id/setup-codes`
-- `POST /api/operator/setup-codes/:id/revoke`
-
-User-session protected:
-
-- `POST /api/device/change-identity`
-- `GET /api/bootstrap`
-- `GET /api/nearby-locations`
-- `POST /api/checkins`
-- `POST /api/checkins/undo`
-- `PATCH /api/checkin-batches/:clientBatchId/indicators`
-- `GET /api/dashboard`
-- `GET /api/leaderboard`
-
-Admin-session protected:
-
-- `POST /api/admin/login`
-- `GET /api/admin/locations`
-- `POST /api/admin/locations`
-- `PATCH /api/admin/locations/:id`
-- `POST /api/admin/units`
-- `PATCH /api/admin/units/:id`
-- `POST /api/admin/team-members`
-- `PATCH /api/admin/team-members/:id`
-- `GET /api/admin/checkins`
-- `PATCH /api/admin/checkins/:id`
-- `GET /api/admin/settings`
-- `PATCH /api/admin/settings`
-- `POST /api/admin/organization-admin/passphrase`
-
-## Test Checklist
-
-- First launch shows active team member roster.
-- First online launch installs the phone app/service worker and caches the app shell.
-- Selecting a name with a 4-digit PIN registers a device and stores identity locally.
-- Returning to the app skips name selection when the saved session is valid.
-- Protected API routes return `403` without a signed user session.
-- Settings identity change requires the current PIN.
-- After one successful online launch, disable network and reload the app.
-- Cached coverage board loads with clear last-synced status.
-- Check In asks for geolocation and finds mapped locations within radius.
-- Nearby check-in works from cached location data.
-- Manual check-in works when no saved location is nearby.
-- Manual check-in works offline and keeps one location per visit batch.
-- Offline visit survives app close/reopen.
-- Reconnecting and syncing creates exactly one visit batch and correct unit check-ins.
-- Repeated sync attempts do not duplicate check-ins or points.
-- Offline indicator selections upload with the matching visit batch.
-- A user can ignore optional indicators and immediately leave the confirmation screen.
-- Checked indicators save automatically without a second submit button.
-- Indicator values remain generic location-level data and are not duplicated across selected units.
-- A queued offline visit can be undone locally before upload.
-- Immediate undo removes a new check-in from coverage and leaderboard calculations.
-- Uploaded undo rejects check-ins older than 15 minutes.
-- Coverage Board groups by parent area and shows green, yellow, red, and gray status correctly.
-- Map shows pins and radius circles for mapped locations.
-- Admin passphrase unlocks admin screens.
-- A voided record is visible only when Admin Activity Log includes voided records.
-- Correcting a unit updates its linked location and clears geofence verification.
-- Admin date/time and team-member edits zero score.
-- Safe-use notices appear on identity selection, Settings, and Admin location editing.
-- No PIN is stored outside the user’s typed-entry flow.
-- No authenticated API responses are stored in service-worker Cache Storage.
-- Existing identity, map, coverage board, admin location editing, and Mission Board still work.
-- Admin can create/edit locations, move units, deactivate units, and create team members.
-- Mission Board uses stored `score_awarded` values, active check-ins only, monthly filtering, recovered-unit credit, distinct-unit credit, and computed badges.
-- Mission Brief appears once per local day, collapses, and does not block app controls.
-- Admin can switch Mission Board tone between Professional, Friendly, and Deckplate Banter.
-- Tone-controlled nudges remain curated local text and do not shame individual users.
-- Pilot readiness and feedback docs are current before sharing with an outside RMT.
-- Service-role key is absent from built browser assets.
-- Netlify deploy serves the app and all `/api/*` routes.
+`ENABLE_MINISTRY_INDICATORS` and `VITE_ENABLE_MINISTRY_INDICATORS` default to off. Leave them off for Navy-facing demonstrations.

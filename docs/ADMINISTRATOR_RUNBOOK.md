@@ -1,6 +1,6 @@
 # Administrator Runbook
 
-This runbook covers the managed-pilot administration flow for `https://deckplating.netlify.app`.
+This runbook covers the controlled-demonstration administration flow for `https://deckplating.netlify.app`.
 
 ## First-Time Central Operator Bootstrap
 
@@ -212,10 +212,10 @@ Result:
 
 ## Not Supported Yet
 
-- public signup
+- open signup
 - email invitations
 - Supabase Auth or role-based user accounts
 - self-service workspace deletion or archive flows
 - exports or backups from the UI
 - analytics
-- broader production hardening beyond the managed pilot
+- broader production hardening beyond the controlled demonstration

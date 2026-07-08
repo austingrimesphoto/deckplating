@@ -8,6 +8,7 @@ const files = {
   migration007: fs.readFileSync('supabase/migrations/007_app_settings_workspace_key.sql', 'utf8'),
   migration008: fs.readFileSync('supabase/migrations/008_operator_audit_events.sql', 'utf8'),
   migration010: fs.readFileSync('supabase/migrations/010_workspace_request_queue.sql', 'utf8'),
+  notifications: fs.readFileSync('src/lib/notifications.ts', 'utf8'),
 };
 
 const checks = [];
@@ -75,7 +76,7 @@ check('Admin routes require signed admin context and use its organization scope'
 check('Managed hosts fail closed when organization schema checks error', has(api, 'managedHostEnabled') && has(api, 'if (managedHostEnabled || !isMissingRelationError(error)) throw error'));
 check('Managed host disables environment admin fallback for workspace admin login', has(api, 'if (managedHostEnabled && organizationId) return null'));
 check('Admin correction validates all referenced member/unit IDs inside organization', has(adminCorrection, 'validateTeamMemberReferences') && has(adminCorrection, 'scoped(unitQuery, organizationId)') && has(adminCorrection, 'scoped(checkinUpdateQuery, organizationId)'));
-check('Admin correction updates visit indicators only through the scoped check-in batch', has(adminCorrection, 'normalizeIndicator(body.confidentialCareProvided)') && has(adminCorrection, 'normalizeIndicator(body.referralProvided)') && has(adminCorrection, "from('checkin_batches')") && has(adminCorrection, 'scoped(batchUpdate, organizationId)'));
+check('Admin correction gates visit flags and updates only through the scoped check-in batch', has(api, 'const ministryIndicatorsEnabled') && has(adminCorrection, 'if (!ministryIndicatorsEnabled)') && has(adminCorrection, "from('checkin_batches')") && has(adminCorrection, 'scoped(batchUpdate, organizationId)'));
 check('Admin location mutations validate area and assigned units inside organization', has(adminLocations, 'validateLocationReferences') && has(adminLocations, 'validateUnitAssignment') && has(adminLocations, 'scoped(locationUpdate, organizationId)') && has(adminLocations, 'scoped(unitUpdate, organizationId)'));
 check('Admin unit mutations validate referenced locations inside organization', has(adminUnits, 'validateUnitReferences') && has(adminUnits, 'scoped(unitUpdate, organizationId)'));
 check(
@@ -104,6 +105,10 @@ check(
     !has(operatorWorkspaceRequests, 'code_hash') &&
     !has(operatorWorkspaceRequests, 'passphrase_hash')
 );
+check('Workspace approval notifications default to disabled and return copyable text', has(files.notifications, "mode === 'disabled'") && has(files.notifications, "status: 'skipped: notifications disabled'") && has(files.notifications, 'text: message.text'));
+check('Workspace approval mailto mode generates a prefilled message without sending', has(files.notifications, "mode === 'mailto'") && has(files.notifications, 'mailtoUrl') && has(files.notifications, 'URLSearchParams'));
+check('Configured smtp/provider modes refuse missing configuration', has(files.notifications, "mode === 'smtp'") && has(files.notifications, 'smtp notification environment not configured') && has(files.notifications, "mode === 'provider'") && has(files.notifications, 'provider notification environment not configured'));
+check('Notification audit metadata excludes setup-code plaintext', has(operatorWorkspaceRequests, 'workspace_approval_notification_prepared') && has(operatorWorkspaceRequests, 'recipientEmail: requestorNotification.recipientEmail') && has(operatorWorkspaceRequests, 'status: requestorNotification.status') && !has(section(operatorWorkspaceRequests, 'workspace_approval_notification_prepared', 'await supabase'), 'setup.code'));
 check(
   'Operator superuser admin sessions are scoped and audited',
   has(operatorAdminSession, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/admin-session$/)") &&

@@ -32,7 +32,7 @@ The API adds:
 - `POST /api/admin/areas`
 - `PATCH /api/admin/areas/:id`
 
-Current self-hosted teams can keep using the environment admin passphrase. Organization admin passphrases are the normal local admin model for managed hosting.
+Current local development teams can keep using the environment admin passphrase. Organization admin passphrases are the normal local admin model for managed hosting.
 
 The hosted app now includes:
 
@@ -175,7 +175,7 @@ Behavior:
 - Requires an existing admin token.
 - Stores only an organization-scoped admin passphrase hash.
 - Does not store the passphrase itself.
-- Allows current self-hosted installs to transition away from environment-only admin access later.
+- Allows current local development installs to transition away from environment-only admin access later.
 
 ## Setup Code Storage
 

@@ -220,29 +220,9 @@ try {
       unit_id: unit.unit.id,
       team_member_id: member.teamMember.id,
       checked_in_at: checkin.checked_in_at,
-      confidentialCareProvided: true,
-      referralProvided: true,
     },
   });
-  console.log('PASS Admin Activity Log can edit counseling/referral indicators.');
-
-  const editedActivity = await request('/api/admin/checkins?includeVoided=true', {
-    token: adminToken,
-  });
-  const editedCheckin = editedActivity.checkins.find((candidate) => candidate.id === checkin.id);
-  if (editedCheckin?.confidential_care_provided !== true || editedCheckin?.referral_provided !== true) {
-    throw new Error('Edited indicators were not visible in Admin Activity Log.');
-  }
-  console.log('PASS edited indicators are visible in Admin Activity Log.');
-
-  const report = await request('/api/reports/indicators', {
-    token: registered.sessionToken,
-  });
-  const reportRow = report.rows.find((row) => row.location_id === location.location.id);
-  if (!reportRow || reportRow.confidential_care_count < 1 || reportRow.referral_count < 1) {
-    throw new Error('Edited indicators were not reflected in the indicator report.');
-  }
-  console.log('PASS edited indicators are reflected in Reports.');
+  console.log('PASS Admin Activity Log can edit basic check-in fields.');
 
   const leaderboard = await request(`/api/leaderboard?month=${new Date().toISOString().slice(0, 7)}`, {
     token: registered.sessionToken,

@@ -53,6 +53,6 @@ Please capture setup friction, offline behavior, map/GPS issues, admin workflow,
 - Who will do the initial setup?
 - How many phone users will test it?
 - What installation or unit will they use as the map center?
-- Are they comfortable testing a self-hosted beta before any centralized hosting exists?
+- Are they comfortable testing a local development beta before any centralized hosting exists?
 - When will they submit setup feedback?
 - When will they submit closeout feedback after 2-4 weeks?

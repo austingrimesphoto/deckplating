@@ -2,14 +2,14 @@
 
 ## Current Milestone
 
-Exact current milestone: **Managed Pilot Onboarding And Launch Readiness v1** is locally implemented and verified. It still needs human review and production deployment.
+Exact current milestone: **controlled demonstration Onboarding And Launch Readiness v1** is locally implemented and verified. It still needs human review and production deployment.
 
-The repository is on `main` after completing **Managed Pilot Administration v1** for `https://deckplating.netlify.app`. The hosted app now supports protected central-operator bootstrap, reachable in-app system administration, workspace create/delete/suspend/reactivate, emergency local-admin recovery, local roster grant-access guidance, and local team-member PIN reset with device revocation. The user remains the central operator during the small-command managed pilot phase.
+The repository is on `main` after completing **controlled demonstration Administration v1** for `https://deckplating.netlify.app`. The hosted app now supports protected central-operator bootstrap, reachable in-app system administration, workspace create/delete/suspend/reactivate, emergency local-admin recovery, local roster grant-access guidance, and local team-member PIN reset with device revocation. The user remains the central operator during the small-command controlled demonstration phase.
 
 Current priority order:
 
-1. tighten managed-pilot onboarding clarity inside the app
-2. rewrite the public setup site so pilots request/access the managed service instead of self-hosting first
+1. tighten controlled-demonstration onboarding clarity inside the app
+2. rewrite the public setup site so pilots request/access the managed service instead of local developmenting first
 3. rebuild the user guide around concrete workflows and scrubbed screenshots
 4. make feedback capture obvious for first RMT pilots
 5. then return to backend hardening, reliability, speed, and managed-production guardrails
@@ -41,15 +41,15 @@ Completed steps:
   - Normal commands should visit `deckplating.netlify.app`, select or activate their command workspace, complete guided local setup, and use the app without creating GitHub, Supabase, or Netlify accounts.
   - The system administrator owns central workspace creation/approval, setup-code issuance, overhead visibility, incident response, and platform operations during the small-command test phase.
   - Local command leads own their roster, areas, locations, units, and local admin passphrase inside their tenant sandbox.
-  - Self-hosted deployment remains an advanced/local-control option, no longer the primary pilot path.
-- Completed the live managed pilot dry run:
+  - local development deployment remains an advanced/local-control option, no longer the primary pilot path.
+- Completed the live controlled demonstration dry run:
   - Linked the repo to the live Netlify site `deckplating` and confirmed the real Supabase backend.
   - Enabled central operator access on production.
   - Ran workspace creation, setup-code issuance, activation, local setup, device registration, bootstrap, and one real check-in on the live hosted app.
   - Fixed and redeployed one setup-code response-shape defect found during the dry run.
   - Revoked the two unused diagnostic setup codes after validation.
-  - Documented the current managed-pilot feedback loop, including the fact that feedback capture still uses the setup-site Netlify Form rather than an in-app hosted-app entry point.
-- Completed Managed Pilot Administration v1:
+  - Documented the current controlled-demonstration feedback loop, including the fact that feedback capture still uses the setup-site Netlify Form rather than an in-app hosted-app entry point.
+- Completed controlled demonstration Administration v1:
   - Added a local `scripts/bootstrap-central-operator.sh` helper that securely prompts for a new central operator passphrase, hashes it locally, and updates `CENTRAL_OPERATOR_PASSPHRASE_HASH` on the linked Netlify production site without printing secrets.
   - Made `System Administration` reachable from normal `Settings` and reliable through `?operator=1` without clearing the normal stored user identity.
   - Added operator workspace suspend/reactivate and emergency local-admin passphrase recovery controls.
@@ -57,23 +57,23 @@ Completed steps:
   - Added local-admin `Reset PIN and revoke devices` for same-workspace roster members.
   - Added `docs/ADMINISTRATOR_RUNBOOK.md` for exact pilot administration procedures.
 
-In-progress step: review/deploy Managed Pilot Onboarding And Launch Readiness v1, then begin backend hardening.
+In-progress step: review/deploy controlled demonstration Onboarding And Launch Readiness v1, then begin backend hardening.
 
-Next exact task: review the onboarding-launch diff, deploy the app and setup site if accepted, then begin backend hardening. Start with `docs/AI/NEXT_SESSION_START_HERE.md`, then review `src/App.tsx`, `setup-site/index.html`, `setup-site/user-guide.html`, `docs/USER_GUIDE.md`, `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`, `docs/PILOT_FEEDBACK_REVIEW.md`, and `docs/PILOT_PACKET.md`. Keep the managed-pilot path clear: request workspace access, use the approved `deckplating.netlify.app` workspace link/setup code, complete local setup, use the app, and submit feedback without exposing secrets or production data.
+Next exact task: review the onboarding-launch diff, deploy the app and setup site if accepted, then begin backend hardening. Start with `docs/AI/NEXT_SESSION_START_HERE.md`, then review `src/App.tsx`, `setup-site/index.html`, `setup-site/user-guide.html`, `docs/USER_GUIDE.md`, `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`, `docs/PILOT_FEEDBACK_REVIEW.md`, and `docs/PILOT_PACKET.md`. Keep the controlled-demonstration path clear: request workspace access, use the approved `deckplating.netlify.app` workspace link/setup code, complete local setup, use the app, and submit feedback without exposing secrets or production data.
 
 Deferred/out-of-scope items:
 
-- Do not build unrestricted public signup.
+- Do not build unrestricted open signup.
 - Do not port to another platform.
 - Do not add enterprise identity, Supabase Auth, SMS, email, browser push notifications, analytics expansion, AI-generated live content, or native app-store packaging.
-- Do not add CUI, classified, counseling case management, official-record, free-text counseling/referral, or sensitive personal-data workflows.
+- Do not add CUI, classified, counseling case management, official-record, free-text ministry-detail, or sensitive personal-data workflows.
 - Do not deploy, change Netlify settings, alter production environment variables, or access production data unless explicitly requested.
 - Do not apply new migrations unless the user explicitly asks after reviewing SQL.
 
 Relevant constraints that must not be violated:
 
 - Normal users must not need GitHub, Supabase, Netlify, SQL, environment variables, or terminal knowledge in the future managed flow.
-- Self-hosted template users remain supported as an advanced/local-control option.
+- local development template users remain supported as an advanced/local-control option.
 - Setup codes are controlled, one-time, centrally issued, and stored only as hashes.
 - Central operator access is disabled unless `CENTRAL_OPERATOR_PASSPHRASE_HASH` is configured.
 - Organization scope must come from trusted server-side session context after login, not from client-provided IDs on protected data routes.
@@ -99,7 +99,7 @@ The near-term normal user experience is:
 6. Normal command users never touch GitHub, Supabase, Netlify, SQL, environment variables, or terminal commands.
 7. The system administrator has overhead visibility into workspace status, setup-code state, activity health, and access posture without exposing one command's data to another command.
 
-Self-hosted deployment remains available for teams that require local control, formal handoff, separate infrastructure, or slower update adoption, but it is now the advanced path rather than the normal pilot path.
+local development deployment remains available for teams that require local control, formal handoff, separate infrastructure, or slower update adoption, but it is now the advanced path rather than the normal pilot path.
 
 ## Current Architecture Decisions
 
@@ -246,7 +246,7 @@ Verification results:
 - No product code, migrations, deployments, Netlify settings, Supabase settings, or production data were touched.
 - Stage 2 execution remains blocked on external pilot-lead availability; this blocker is recorded in `docs/PILOT_DECISION_LOG.md`.
 
-## Superseded Task: Self-Hosted Outside-Team Pilot Execution
+## Superseded Task: Outside-Team Technical Demonstration Execution
 
 Objective: this was the previous next step. It is no longer the primary path because the user wants to accelerate away from each site managing separate GitHub, Supabase, and Netlify accounts.
 
@@ -273,7 +273,7 @@ Likely files to start with:
 
 Current status:
 
-- Self-hosted pilot docs remain useful for advanced/local-control deployments.
+- local development pilot docs remain useful for advanced/local-control deployments.
 - The managed hosted path is now the normal pilot path for approved commands.
 - Managed Hosted Onboarding v1 is complete in app/API form and validated with typecheck/build.
 
@@ -301,7 +301,7 @@ Validation completed:
 - `npm run build`
 - `git diff --check`
 
-## Completed: Managed Pilot Dry Run and Deployment Readiness
+## Completed: controlled demonstration Dry Run and Deployment Readiness
 
 Objective achieved: the hosted onboarding flow now works end to end against the real managed stack at `https://deckplating.netlify.app`.
 
@@ -359,7 +359,7 @@ Completed in the checkpoint:
 
 Still out of scope for this pass:
 
-- public signup
+- open signup
 - backup/export workflows
 - broad service hardening
 - in-app audit review/export surfaces
@@ -394,13 +394,13 @@ Stage 3 - managed service hardening and sustainment:
 
 - Objective: make the centrally hosted Deckplating service durable enough to hand off to the Navy or operate with a sustainable support model.
 - Scope: stronger operator console, backup/export/delete boundaries, incident response, auditability, support process, tenant-isolation integration tests, migration/rollback process, and documentation for ownership transfer.
-- Exclusions: unrestricted public signup, sensitive data workflows, native port, notifications, broad analytics.
-- Exit criteria: hosted workspaces operate reliably under administrator oversight, self-hosted remains available for local-control cases, and the project has a credible Navy handoff or self-sustaining operating model.
+- Exclusions: unrestricted open signup, sensitive data workflows, native port, notifications, broad analytics.
+- Exit criteria: hosted workspaces operate reliably under administrator oversight, local development remains available for local-control cases, and the project has a credible Navy handoff or self-sustaining operating model.
 
 ## Known Security Work Still Required
 
 - PIN hashing includes organization context, with a legacy beta hash upgrade path on successful PIN use.
-- Environment-wide admin fallback remains only for self-hosted/default-organization beta compatibility; managed workspace admin login is gated to organization admin credentials or audited superuser entry.
+- Environment-wide admin fallback remains only for local development/default-organization beta compatibility; managed workspace admin login is gated to organization admin credentials or audited superuser entry.
 - Organization-aware session refresh behavior needs hardening.
 - Offline pending batches are partitioned for active sync/count/indicator paths by organization and team member; a future IndexedDB schema migration can add a dedicated organization index if volume requires it.
 - Backup/export boundaries must become organization-specific.

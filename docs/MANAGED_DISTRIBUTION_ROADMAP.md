@@ -10,7 +10,7 @@ Scope:
 - badge and Mission Brief engagement features
 - offline reliability fixes
 - setup and safe-use documentation
-- current self-hosted deployment path
+- current local development deployment path
 
 Exclusions:
 
@@ -79,5 +79,5 @@ Exit criteria:
 - automated tenant-isolation tests pass
 - live two-workspace integration checks pass against approved targets
 - workspaces can be created, activated, monitored, suspended, and supported without developer intervention
-- current self-hosted template remains available as advanced/local-control
+- current local development template remains available as advanced/local-control
 - rollback, incident response, backup, and ownership-transfer plans exist before broader release

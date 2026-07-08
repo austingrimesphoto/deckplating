@@ -24,7 +24,7 @@ Do not start an outside-team pilot until all of these are true:
 
 - the tenant-isolation hardening milestone is complete and documented,
 - `docs/PILOT_PACKET.md` reflects the current hosted links and support expectations,
-- the pilot lead understands this is a self-hosted beta,
+- the pilot lead understands this is a local development beta,
 - the team can identify durable owners for GitHub, Supabase, and Netlify,
 - there is a scheduled setup support window and a named follow-up owner,
 - the team agrees to submit feedback after setup and again after 2-4 weeks.

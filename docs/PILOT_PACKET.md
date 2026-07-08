@@ -1,10 +1,10 @@
-# Deckplating Managed Pilot Packet
+# Deckplating controlled demonstration Packet
 
 Use this packet for the first outside RMT pilots using the centrally hosted app.
 
 ## Who This Is For
 
-Send this to one RMT lead who is willing to run a 2-4 week managed pilot for unclassified, non-sensitive ministry coverage awareness.
+Send this to one RMT lead who is willing to run a 2-4 week controlled demonstration for unclassified, non-sensitive ministry coverage awareness.
 
 Best fit:
 
@@ -14,12 +14,12 @@ Best fit:
 - permission to use a local beta tool for non-sensitive coverage metadata only,
 - willingness to submit feedback after setup, after week one, and at closeout.
 
-Do not start the pilot if the team wants public signup, sensitive data storage, counseling/case management, automated email invitations, or official-record workflows.
+Do not start the demonstration if the team wants open signup, sensitive data storage, counseling/case management, automated email invitations, or official-record workflows.
 
 ## Send This Message
 
 ```text
-Subject: Deckplating managed pilot
+Subject: Deckplating controlled demonstration
 
 I am testing Deckplating, a mobile web app for unclassified, non-sensitive ministry coverage awareness.
 

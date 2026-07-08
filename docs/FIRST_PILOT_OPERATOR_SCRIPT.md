@@ -51,7 +51,7 @@ Ask the local lead to do this while you are available:
 6. Set a local admin passphrase.
 7. Create at least one area, location, unit, and team member.
 8. Open the member link on a phone, select the member, create a PIN, and complete one test check-in.
-9. If counseling/referral indicators were missed, open `Admin` > `Activity Log`, edit the check-in, and mark the generic yes/no indicators.
+9. If visit flags were missed, open `Admin` > `Activity Log`, edit the check-in, and mark the generic yes/no indicators.
 10. Open `Reports` and confirm the generic indicator counts make sense.
 
 ## Operator Readiness Check
@@ -82,7 +82,7 @@ If the local lead asks about backup or handoff, use `Download safe export` from 
 Use this plain-language boundary:
 
 ```text
-Deckplating is for coverage awareness only. Counseling and referral indicators are yes/no counts. Do not enter notes, names, circumstances, medical details, personal information, CUI, classified information, or sensitive operational locations.
+Deckplating is for coverage awareness only. Visit flags are yes/no counts. Do not enter notes, names, circumstances, medical details, personal information, CUI, classified information, or sensitive operational locations.
 ```
 
 ## If Something Goes Wrong

@@ -1,6 +1,7 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
+import { sendWorkspaceApprovedNotification } from '../../src/lib/notifications';
 
 type Status = 'green' | 'yellow' | 'red' | 'gray';
 type FixedVoidReason = 'accidental' | 'wrong_unit' | 'duplicate' | 'incorrect_datetime' | 'incorrect_member';
@@ -86,6 +87,10 @@ const setupSiteBaseUrl = (process.env.DECKPLATING_SETUP_SITE_BASE_URL ?? 'https:
 const operatorEmail = process.env.DECKPLATING_OPERATOR_EMAIL ?? '';
 const fromEmail = process.env.DECKPLATING_FROM_EMAIL ?? '';
 const resendApiKey = process.env.RESEND_API_KEY ?? '';
+const ministryIndicatorsEnabled = /^true$/i.test(process.env.ENABLE_MINISTRY_INDICATORS ?? '');
+const notificationMode = process.env.NOTIFICATION_MODE ?? 'disabled';
+const notificationFrom = process.env.NOTIFICATION_FROM ?? fromEmail;
+const notificationReplyTo = process.env.NOTIFICATION_REPLY_TO ?? '';
 
 const supabase =
   supabaseUrl && serviceRoleKey
@@ -315,7 +320,7 @@ async function searchInstallations(query: string) {
 
   const response = await fetch(url, {
     headers: {
-      'user-agent': 'Deckplating managed pilot',
+      'user-agent': 'Deckplating controlled demonstration',
       referer: 'https://deckplating.netlify.app',
     },
   });
@@ -772,7 +777,7 @@ async function tryRecordOperatorAudit(
   try {
     await recordOperatorAudit(organizationId, action, detail);
   } catch {
-    // Audit table is introduced in migration 008. Do not block older self-hosted support paths.
+    // Audit table is introduced in migration 008. Do not block older local development support paths.
   }
 }
 
@@ -943,49 +948,23 @@ async function notifyRequestorOfApproval({
   organization: { id: string; slug: string; name: string; active: boolean };
   setupCode: string;
 }) {
-  const workspaceLink = `${appBaseUrl}/?workspace=${encodeURIComponent(organization.slug)}`;
-  const userGuide = `${setupSiteBaseUrl}/user-guide.html`;
-  const setupGuide = `${setupSiteBaseUrl}/`;
-  const text = [
-    `Welcome to Deckplating, ${request.lead_name}.`,
-    '',
-    `Your workspace is approved: ${organization.name}`,
-    `Workspace link: ${workspaceLink}`,
-    `One-time setup code: ${setupCode}`,
-    '',
-    `Setup guide: ${setupGuide}`,
-    `User guide: ${userGuide}`,
-    '',
-    'First steps:',
-    '1. Open the workspace link.',
-    '2. Select Activate workspace.',
-    '3. Enter the one-time setup code.',
-    '4. Set the local admin passphrase.',
-    '5. Create areas, public/general locations, units, and team members.',
-    '',
-    'Safe-use reminder: Deckplating is only for unclassified, non-sensitive coverage tracking. Do not enter counseling notes, medical details, personal details, CUI, classified information, setup codes, passphrases, or sensitive operational locations.',
-  ].join('\n');
-  const html = `
-    <h1>Welcome to Deckplating</h1>
-    <p>Your workspace is approved: <strong>${escapeHtml(organization.name)}</strong></p>
-    <p>Workspace link: <a href="${escapeHtml(workspaceLink)}">${escapeHtml(workspaceLink)}</a></p>
-    <p>One-time setup code: <strong>${escapeHtml(setupCode)}</strong></p>
-    <p><a href="${escapeHtml(setupGuide)}">Setup guide</a> | <a href="${escapeHtml(userGuide)}">User guide</a></p>
-    <ol>
-      <li>Open the workspace link.</li>
-      <li>Select Activate workspace.</li>
-      <li>Enter the one-time setup code.</li>
-      <li>Set the local admin passphrase.</li>
-      <li>Create areas, public/general locations, units, and team members.</li>
-    </ol>
-    <p><strong>Safe-use reminder:</strong> Deckplating is only for unclassified, non-sensitive coverage tracking. Do not enter counseling notes, medical details, personal details, CUI, classified information, setup codes, passphrases, or sensitive operational locations.</p>
-  `;
-  return sendEmail({
-    to: request.official_contact_email,
-    subject: `Deckplating workspace approved: ${organization.name}`,
-    text,
-    html,
-    idempotencyKey: `workspace-request-approved-${request.id}`,
+  return sendWorkspaceApprovedNotification({
+    workspaceDisplayName: organization.name,
+    workspaceSlug: organization.slug,
+    recipientEmail: request.official_contact_email,
+    setupCode,
+    includeSetupCode: true,
+  }, {
+    mode: notificationMode,
+    from: notificationFrom,
+    replyTo: notificationReplyTo,
+    appBaseUrl,
+    setupSiteBaseUrl,
+    smtpHost: process.env.SMTP_HOST,
+    smtpPort: process.env.SMTP_PORT,
+    smtpUser: process.env.SMTP_USER,
+    smtpPassword: process.env.SMTP_PASSWORD,
+    providerApiKey: process.env.NOTIFICATION_PROVIDER_API_KEY ?? resendApiKey,
   });
 }
 
@@ -1467,16 +1446,24 @@ async function route(event: HandlerEvent) {
       setupCodeId: setup.setupCode.id,
     });
 
-    const requestorNotificationStatus = await notifyRequestorOfApproval({
+    const requestorNotification = await notifyRequestorOfApproval({
       request: updatedRequest as WorkspaceRequestRow,
       organization,
       setupCode: setup.code,
+    });
+    const requestorNotificationStatus = requestorNotification.status;
+    await tryRecordOperatorAudit(organization.id, 'workspace_approval_notification_prepared', {
+      workspaceRequestId: workspaceRequest.id,
+      slug: organization.slug,
+      recipientEmail: requestorNotification.recipientEmail,
+      status: requestorNotification.status,
+      timestamp: requestorNotification.timestamp,
     });
     await supabase
       .from('workspace_requests')
       .update({
         requestor_notification_status: requestorNotificationStatus,
-        requestor_notified_at: requestorNotificationStatus === 'sent' ? new Date().toISOString() : null,
+        requestor_notified_at: requestorNotificationStatus === 'sent' ? requestorNotification.timestamp : null,
       })
       .eq('id', workspaceRequest.id);
 
@@ -1486,6 +1473,15 @@ async function route(event: HandlerEvent) {
       code: setup.code,
       setupCode: { ...setup.setupCode, code: setup.code },
       requestorNotificationStatus,
+      notification: {
+        status: requestorNotification.status,
+        recipientEmail: requestorNotification.recipientEmail,
+        workspaceSlug: requestorNotification.workspaceSlug,
+        timestamp: requestorNotification.timestamp,
+        subject: requestorNotification.subject,
+        text: requestorNotification.text,
+        mailtoUrl: requestorNotification.mailtoUrl,
+      },
     });
   }
 
@@ -1716,7 +1712,7 @@ async function route(event: HandlerEvent) {
       format: 'deckplating-safe-operator-export-v1',
       boundary: {
         included:
-          'Workspace metadata, non-sensitive setup records, roster display names, visit timestamps, scores, void metadata, and generic care/referral indicators.',
+          'Workspace metadata, non-sensitive setup records, roster display names, visit timestamps, scores, void metadata, and generic legacy visit flags.',
         excluded:
           'Setup-code plaintext, setup-code hashes, passphrase hashes, PIN hashes, device-token hashes, devices, service keys, counseling notes, referral details, medical details, personal details, and sensitive operational details.',
       },
@@ -1996,8 +1992,8 @@ async function route(event: HandlerEvent) {
     let referralProvided: IndicatorValue;
     try {
       occurredAt = parseOccurredAt(body.occurredAt);
-      confidentialCareProvided = normalizeIndicator(body.confidentialCareProvided);
-      referralProvided = normalizeIndicator(body.referralProvided);
+      confidentialCareProvided = ministryIndicatorsEnabled ? normalizeIndicator(body.confidentialCareProvided) : null;
+      referralProvided = ministryIndicatorsEnabled ? normalizeIndicator(body.referralProvided) : null;
     } catch (error) {
       return json(400, { error: errorMessage(error) });
     }
@@ -2202,6 +2198,7 @@ async function route(event: HandlerEvent) {
 
   const indicatorMatch = path.match(/^\/checkin-batches\/([^/]+)\/indicators$/);
   if (method === 'PATCH' && indicatorMatch) {
+    if (!ministryIndicatorsEnabled) return json(404, { error: 'Visit flags are not enabled for this demonstration instance.' });
     const body = readBody<Record<string, unknown>>(event);
     const allowed = new Set(['confidentialCareProvided', 'referralProvided']);
     const extra = Object.keys(body).filter((key) => !allowed.has(key));
@@ -2290,6 +2287,7 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'GET' && path === '/reports/indicators') {
+    if (!ministryIndicatorsEnabled) return json(404, { error: 'Visit flag reports are not enabled for this demonstration instance.' });
     const user = await requireUser(event);
     if (!user) return json(403, { error: 'Authentication required.' });
     const params = event.queryStringParameters ?? {};
@@ -2781,8 +2779,8 @@ async function route(event: HandlerEvent) {
           checkin.checked_in_at,
           checkin.geofence_verified ? 'geofence verified' : 'manual unverified',
           checkin.void_reason,
-          checkin.confidential_care_provided ? 'care counseling confidential' : '',
-          checkin.referral_provided ? 'referral' : '',
+          ministryIndicatorsEnabled && checkin.confidential_care_provided ? 'follow-up flag' : '',
+          ministryIndicatorsEnabled && checkin.referral_provided ? 'external support flag' : '',
         ]),
       );
     const checkins = needsMappedFiltering ? filtered.slice(offset, offset + limit) : filtered;
@@ -2836,11 +2834,14 @@ async function route(event: HandlerEvent) {
       Object.prototype.hasOwnProperty.call(body, 'referralProvided');
     let indicatorUpdate: Record<string, unknown> | null = null;
     if (indicatorFieldsProvided) {
+      if (!ministryIndicatorsEnabled) {
+        return json(400, { error: 'Visit flags are not enabled for this demonstration instance.' });
+      }
       if (
         !Object.prototype.hasOwnProperty.call(body, 'confidentialCareProvided') ||
         !Object.prototype.hasOwnProperty.call(body, 'referralProvided')
       ) {
-        return json(400, { error: 'Both indicator fields are required when editing visit indicators.' });
+        return json(400, { error: 'Both visit flag fields are required when editing visit flags.' });
       }
       if (!existing.batch_id) {
         return json(400, { error: 'This check-in does not have an editable visit batch.' });

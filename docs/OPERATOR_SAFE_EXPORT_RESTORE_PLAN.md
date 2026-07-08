@@ -38,7 +38,7 @@ Deckplating now supports a safe operator JSON export for backup, handoff, and mi
 - Reject locations without area IDs unless the restore plan explicitly supports unmapped locations.
 - Reject check-ins whose unit/member IDs are not present in the export.
 - Preserve void metadata but do not restore devices.
-- Preserve generic care/referral indicators only as true/null counts.
+- Preserve generic legacy visit flags only as true/null counts.
 
 ## Tests Needed Before Implementation
 

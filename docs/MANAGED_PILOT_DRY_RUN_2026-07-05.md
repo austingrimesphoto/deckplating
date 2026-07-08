@@ -1,4 +1,4 @@
-# Managed Pilot Dry Run - 2026-07-05
+# controlled demonstration Dry Run - 2026-07-05
 
 ## Scope
 

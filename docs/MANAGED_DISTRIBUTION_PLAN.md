@@ -17,7 +17,7 @@ A platform port is not recommended before managed hosted validation because it w
 5. Normal users never need GitHub, Supabase, Netlify, SQL, environment variables, or a terminal.
 6. The system administrator can see workspace status, setup-code state, access posture, and operational health without allowing one command to view another command's data.
 
-The current self-hosted template path should remain available only as an advanced/local-control option.
+The current local development template path should remain available only as an advanced/local-control option.
 
 ## Organization Model
 
@@ -63,11 +63,11 @@ Current foundation status:
 - `POST /api/workspaces/activate` can consume a valid setup code and establish an organization-scoped admin passphrase.
 - The central operator can open an audited superuser admin session scoped to one active workspace for support or quality control.
 - The app still has no unrestricted public self-service signup.
-- Current self-hosted teams can continue using the environment admin passphrase while optionally setting an organization admin passphrase from Admin Settings. Managed workspace admin login does not accept the environment passphrase when central operator mode is enabled.
+- Current local development teams can continue using the environment admin passphrase while optionally setting an organization admin passphrase from Admin Settings. Managed workspace admin login does not accept the environment passphrase when central operator mode is enabled.
 
-## Self-Hosted Support
+## Local-Control Support
 
-Continue supporting the current template model for teams that require local control, separate infrastructure, formal handoff, or slower update adoption. Managed hosting should be the normal path; self-hosting should be documented as advanced.
+Continue supporting the current template model for teams that require local control, separate infrastructure, formal handoff, or slower update adoption. Managed hosting should be the normal path; local developmenting should be documented as advanced.
 
 ## Central Hosting Responsibilities
 
@@ -91,4 +91,4 @@ Managed Deckplating must remain outside these use cases:
 - no classified data
 - no counseling case management
 - no official recordkeeping
-- no unrestricted public signups
+- no unrestricted open signups

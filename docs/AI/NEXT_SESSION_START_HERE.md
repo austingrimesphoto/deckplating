@@ -1,6 +1,6 @@
 # Next Session Start Here
 
-Use this as the first human/agent handoff page for Deckplating managed pilot work.
+Use this as the first human/agent handoff page for Deckplating controlled demonstration work.
 
 ## Current Anchor
 

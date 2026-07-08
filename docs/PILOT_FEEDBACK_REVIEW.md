@@ -14,7 +14,7 @@ Turn pilot feedback into three outputs:
 
 1. immediate onboarding or operational blockers,
 2. next-release candidates grounded in real use,
-3. evidence for go / no-go on wider managed pilot use.
+3. evidence for go / no-go on wider controlled demonstration use.
 
 ## Where Feedback Comes From
 

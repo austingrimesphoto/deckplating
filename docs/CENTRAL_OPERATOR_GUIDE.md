@@ -2,7 +2,7 @@
 
 This guide is for managed Deckplating pilots where `deckplating.netlify.app` supports multiple approved command workspaces.
 
-It is not public signup. Do not create workspaces for unapproved teams.
+It is not open signup. Do not create workspaces for unapproved teams.
 
 Managed dry run status:
 
@@ -16,7 +16,7 @@ Set `CENTRAL_OPERATOR_PASSPHRASE_HASH` in the managed host environment.
 
 The value is a SHA-256 hash of the central operator passphrase. Do not reuse the local organization admin passphrase.
 
-Normal self-hosted installs should leave this value blank.
+Normal local development installs should leave this value blank.
 
 The managed host also needs the normal production values already in place:
 
@@ -133,7 +133,7 @@ In the app, use `Open admin as system administrator` on an active workspace card
 
 The operator console provides `Download safe export` on each workspace card. This is a JSON backup/export for operational continuity and migration support, not a counseling record or case file.
 
-The export includes only operational metadata needed for backup or migration, such as workspace summary, app settings, areas, public/general locations, units, roster display names, visit timestamps, scores, void status, and generic care/referral counts.
+The export includes only operational metadata needed for backup or migration, such as workspace summary, app settings, areas, public/general locations, units, roster display names, visit timestamps, scores, void status, and legacy visit-flag counts if that optional feature was explicitly enabled.
 
 The export excludes setup-code plaintext, setup-code hashes, passphrase hashes, PIN hashes, device-token hashes, devices, service keys, counseling notes, referral details, medical details, personal details, and sensitive operational details.
 
@@ -158,7 +158,7 @@ Restore/import is not shipped. The planning boundary is documented in `docs/OPER
 
 ## Pilot Feedback Loop
 
-The current managed-pilot feedback path is documented in `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`.
+The current controlled-demonstration feedback path is documented in `docs/MANAGED_PILOT_FEEDBACK_LOOP.md`.
 
 Today, feedback collection still uses the hosted Netlify Form on `deckplatingsetup.netlify.app` rather than an in-app entry point on `deckplating.netlify.app`.
 
@@ -182,5 +182,5 @@ Today, feedback collection still uses the hosted Netlify Form on `deckplatingset
 - The operator console is intentionally focused on pilot support. It supports workspace creation, setup-code issuance/revocation, lifecycle controls, local-admin recovery, audited superuser admin entry, and readiness summaries.
 - The app can remember one selected workspace per device and can resolve workspace links by slug.
 - The app does not provide a full public workspace directory or unrestricted self-service signup.
-- Environment-wide admin fallback remains only for self-hosted beta compatibility; managed workspace admin login uses organization-scoped admin credentials or audited superuser entry.
+- Environment-wide admin fallback remains only for local development beta compatibility; managed workspace admin login uses organization-scoped admin credentials or audited superuser entry.
 - Static tenant-isolation checks exist, and a live two-workspace integration script is available for safe non-production targets.

@@ -1,10 +1,10 @@
-# Managed Pilot Feedback Loop
+# controlled demonstration Feedback Loop
 
-This document records the current feedback path for centrally hosted managed pilots on `https://deckplating.netlify.app`.
+This document records the current feedback path for centrally hosted controlled demonstrations on `https://deckplating.netlify.app`.
 
 ## Current Status
 
-Feedback capture exists and is now centered on the managed pilot support site, with a low-profile in-app link from `Account`.
+Feedback capture exists and is now centered on the controlled demonstration support site, with a low-profile in-app link from `Account`.
 
 What is already in place:
 
@@ -30,7 +30,7 @@ What is not yet in place:
 - email delivery depends on managed-host Resend environment variables
 - no ticketing integration; review remains manual
 
-## Recommended Managed Pilot Cadence
+## Recommended controlled demonstration Cadence
 
 For the next real pilot command, use this cadence:
 
@@ -47,7 +47,7 @@ For the next real pilot command, use this cadence:
 7. Local lead submits one closeout feedback response after 2-4 weeks of real use.
 8. Any critical blocker or safe-use confusion is reported immediately outside the scheduled cadence if needed.
 
-## Current Managed-Pilot Operator Packet
+## Current controlled-demonstration Operator Packet
 
 Until the managed feedback loop is moved into the hosted app, the operator should treat these as the minimum pilot handoff bundle:
 
@@ -57,7 +57,7 @@ Until the managed feedback loop is moved into the hosted app, the operator shoul
 - hosted user guide: `https://deckplatingsetup.netlify.app/user-guide.html`
 - feedback link: `https://deckplatingsetup.netlify.app/#feedback`
 
-That keeps the first pilot path explicit without creating public signup or automated account provisioning.
+That keeps the first demonstration path explicit without creating open signup or automated account provisioning.
 
 ## Review And Decision Path
 

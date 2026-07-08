@@ -103,7 +103,7 @@ Cleanup verification:
 
 ## Remaining Notes
 
-- The self-hosted setup path is viable for a technically guided beta.
+- The local development setup path is viable for a technically guided beta.
 - The biggest user-facing friction remains account creation and copying values between GitHub, Supabase, and Netlify.
 - The setup wizard and docs are ready for an outside-team setup attempt.
 - For a non-technical broad rollout, the managed-distribution plan is still the right long-term path.

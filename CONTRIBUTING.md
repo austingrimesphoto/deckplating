@@ -1,6 +1,6 @@
 # Contributing
 
-Deckplating is currently an alpha/beta self-hosted template. Keep changes small, practical, and easy for another RMT to adopt.
+Deckplating is currently an alpha/beta local development template. Keep changes small, practical, and easy for another RMT to adopt.
 
 ## Beta Workflow
 

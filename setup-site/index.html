@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Deckplating Managed Pilot</title>
+    <title>Deckplating Technical Demonstration</title>
     <style>
       :root {
         --bg: #eef2f5;
@@ -319,7 +319,7 @@
           <img src="assets/deckplate-coverage-app-icon-192.png" alt="" />
           <div>
             <strong>Deckplating</strong>
-            <span>Managed Pilot</span>
+            <span>Technical Demonstration</span>
           </div>
         </div>
         <nav class="steps" aria-label="Setup sections">
@@ -334,10 +334,10 @@
 
       <main>
         <section id="start" class="hero">
-          <p class="eyebrow">Managed pilot access</p>
+          <p class="eyebrow">Technical demonstration access</p>
           <h1>Use Deckplating at deckplating.netlify.app.</h1>
           <p class="muted">
-            Deckplating pilots use the centrally hosted app. This site explains how to request access, learn the app, and send feedback. New pilot teams do not need to create GitHub, Supabase, or Netlify accounts for the managed pilot.
+            Deckplating is an unofficial open-source prototype for controlled demonstration workspaces. This site explains how to request access, learn the app, and send feedback while pending local IT/N6, privacy, records, OPSEC, and command guidance.
           </p>
           <div class="actions">
             <a class="button" href="https://deckplating.netlify.app" target="_blank" rel="noreferrer">Open Deckplating</a>
@@ -345,7 +345,7 @@
             <a class="button secondary" href="user-guide.html">Read User Guide</a>
           </div>
           <div class="warning">
-            Do not submit secrets, setup codes, passphrases, real production data, counseling details, medical details, personal contact lists, or sensitive operational locations through this site.
+            Deckplating is not approved by DON or DoD. Do not submit CUI, classified information, setup codes, passphrases, official records, counseling details, medical details, personal contact lists, or sensitive operational locations through this site.
           </div>
         </section>
 
@@ -376,7 +376,7 @@
         </section>
 
         <section class="panel">
-          <p class="eyebrow">How managed onboarding works</p>
+          <p class="eyebrow">How demonstration onboarding works</p>
           <h2>Manual approval first, then local setup</h2>
           <div class="grid-three">
             <article class="card">
@@ -396,9 +396,9 @@
 
         <section id="request" class="panel">
           <p class="eyebrow">Workspace request</p>
-          <h2>Request managed pilot access</h2>
+          <h2>Request controlled demonstration access</h2>
           <p class="muted">
-            Requests enter the Deckplating operator approval queue. If approved, the lead will receive the workspace link, one-time setup code, setup guide, and first steps at the official contact email provided here.
+            Requests enter the Deckplating operator approval queue. If approved, the lead may receive the workspace link, setup guide, and first steps at the administrative contact email provided here. A setup code is sent only when the operator intentionally includes it.
           </p>
           <form
             id="workspace-request-form"
@@ -435,8 +435,9 @@
             </div>
             <div class="grid-two">
               <label>
-                Official contact email
+                Administrative contact email
                 <input name="official_contact_email" type="email" required />
+                <span class="helper">Use an official contact email when possible. Do not use personal email unless authorized.</span>
               </label>
               <label>
                 RMT size
@@ -444,7 +445,7 @@
               </label>
             </div>
             <label>
-              Expected pilot start date
+              Expected demonstration start date
               <input name="expected_pilot_start_date" type="date" required />
             </label>
             <label>
@@ -453,11 +454,11 @@
             </label>
             <label class="checkline">
               <input name="safe_use_boundaries_confirmed" type="checkbox" required />
-              I understand Deckplating is only for unclassified, non-sensitive coverage tracking and is not for CUI, classified information, counseling notes, medical details, personal data, or sensitive operational locations.
+              I understand Deckplating is an unofficial prototype for unclassified, non-sensitive coverage awareness and is not for CUI, classified information, counseling notes, medical details, official records, personal contact data, or sensitive operational locations.
             </label>
             <label class="checkline">
               <input name="no_sensitive_data_acknowledged" type="checkbox" required />
-              I understand this form should not include secrets, setup codes, passphrases, production data, or sensitive personal/operational details.
+              I understand this form should not include secrets, setup codes, passphrases, production data, sensitive personal details, official records, or sensitive operational details.
             </label>
             <button type="submit">Send Workspace Request</button>
             <p id="workspace-request-status" class="helper" aria-live="polite"></p>
@@ -470,7 +471,7 @@
           <div class="stack">
             <div class="ok">
               <strong>Approved lead package</strong>
-              <p>The operator sends the workspace link on <strong>deckplating.netlify.app</strong>, the one-time setup code, the user guide, and the feedback link.</p>
+              <p>The operator provides the workspace link on <strong>deckplating.netlify.app</strong>, the user guide, and setup information. The setup code is included only when the operator intentionally sends it to the administrative contact email.</p>
             </div>
             <ol>
               <li>Open the workspace link from the operator.</li>
@@ -485,13 +486,13 @@
         </section>
 
         <section id="feedback" class="panel">
-          <p class="eyebrow">Pilot feedback</p>
+          <p class="eyebrow">Demonstration feedback</p>
           <h2>Send feedback during setup, week one, and closeout</h2>
           <p>
-            Use this form for managed pilots. Feedback is reviewed in three buckets: onboarding confusion, operational blockers, and feature requests.
+            Use this form for controlled demonstrations. Feedback is reviewed for onboarding confusion, technical blockers, and feature requests.
           </p>
           <div class="warning">
-            Keep feedback unclassified and non-sensitive. Do not include counseling details, medical details, home addresses, personal identifying information, setup codes, passphrases, or sensitive operational locations.
+            Keep feedback unclassified and non-sensitive. Do not include setup codes, passphrases, screenshots with production data, counseling details, CUI, medical details, personal identifying information, official records, or sensitive operational locations.
           </div>
           <p class="helper">
             Direct feedback link: <a href="#feedback">https://deckplatingsetup.netlify.app/#feedback</a>
@@ -514,8 +515,9 @@
                 <input name="installation_or_command" required />
               </label>
               <label>
-                Pilot lead email, optional
+                Administrative contact email, optional
                 <input name="pilot_lead_email" type="email" />
+                <span class="helper">Use official email where possible. Do not enter phone numbers.</span>
               </label>
             </div>
             <div class="grid-two">
@@ -534,7 +536,7 @@
                 <select name="feedback_bucket" required>
                   <option value="">Choose one</option>
                   <option>Onboarding confusion</option>
-                  <option>Operational blocker</option>
+                  <option>Technical blocker</option>
                   <option>Feature request</option>
                   <option>Safe-use question</option>
                 </select>
@@ -577,7 +579,7 @@
             </label>
             <label>
               What blocked or slowed real use?
-              <textarea name="operational_blockers" placeholder="Check-in, GPS/map, offline sync, account switching, admin setup, performance, etc."></textarea>
+              <textarea name="operational_blockers" placeholder="Check-in, GPS/map, offline sync, account switching, admin setup, performance, etc. Do not include sensitive data."></textarea>
             </label>
             <label>
               What should be improved or added?
@@ -587,7 +589,7 @@
               Top issue before another RMT tries it
               <textarea name="top_issue_before_next_team" required></textarea>
             </label>
-            <button type="submit">Send Pilot Feedback</button>
+            <button type="submit">Send Demonstration Feedback</button>
           </form>
         </section>
       </main>

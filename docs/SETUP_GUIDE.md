@@ -251,7 +251,7 @@ Before the first deploy, add environment variables:
 7. Click **Trigger deploy**.
 8. Click **Deploy site**.
 
-Managed pilot hosts that use the workspace request approval queue should also set:
+controlled demonstration hosts that use the workspace request approval queue should also set:
 
 - `DECKPLATING_OPERATOR_EMAIL`
 - `DECKPLATING_FROM_EMAIL`

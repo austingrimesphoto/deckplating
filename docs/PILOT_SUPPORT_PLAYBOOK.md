@@ -6,7 +6,7 @@ The purpose is to keep pilot support disciplined: help teams get started, captur
 
 ## Pilot Support Objective
 
-Support two outside RMTs through a 2-4 week Deckplating beta pilot and determine whether the app is ready for wider self-hosted beta use.
+Support two outside RMTs through a 2-4 week Deckplating beta pilot and determine whether the app is ready for wider local development beta use.
 
 Success means:
 
@@ -42,7 +42,7 @@ Confirm:
 
 - they will start with GitHub, then use GitHub login for Supabase and Netlify when available,
 - they have an account owner for GitHub, Supabase, and Netlify,
-- they understand this is a self-hosted beta,
+- they understand this is a local development beta,
 - they will not enter CUI, counseling notes, medical details, PII, or sensitive operational locations,
 - they have one installation or command name for map center lookup,
 - they have 30-60 minutes available for first setup,

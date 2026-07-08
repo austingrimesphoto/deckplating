@@ -68,7 +68,7 @@ Use one copy of this template per pilot team.
 
 ## Reports
 
-- Could users find referral and confidential care reporting?
+- Could users find referral and confidential visit flag reporting?
 - Were the counts useful?
 - Was it clear that indicators are generic location-level counts only?
 - Did the reports help local leaders explain ministry coverage without storing sensitive details?
