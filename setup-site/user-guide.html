@@ -28,10 +28,14 @@
 
       html {
         scroll-behavior: smooth;
+        overflow-x: clip;
+        overscroll-behavior-x: none;
       }
 
       body {
         margin: 0;
+        overflow-x: clip;
+        touch-action: pan-y;
       }
 
       a {
@@ -43,6 +47,7 @@
         min-height: 100vh;
         display: grid;
         grid-template-columns: 300px minmax(0, 1fr);
+        overflow-x: clip;
       }
 
       .sidebar {
@@ -116,6 +121,7 @@
       main {
         width: min(100%, 1080px);
         padding: 28px;
+        overflow-x: clip;
       }
 
       .hero,
