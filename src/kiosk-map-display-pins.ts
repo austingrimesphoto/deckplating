@@ -1,5 +1,4 @@
 import * as maplibregl from 'maplibre-gl';
-import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 
 const POINT_SOURCE_ID = 'kiosk-location-points';
 const STYLE_ID = 'deckplating-kiosk-map-display-pins';
@@ -28,6 +27,19 @@ type KioskPin = {
   latitude: number;
 };
 
+type ProjectedPoint = {
+  x: number;
+  y: number;
+};
+
+type KioskMapInstance = {
+  getContainer(): HTMLElement;
+  getSource(id: string): unknown;
+  on(event: string, listener: () => void): unknown;
+  project(coordinates: [number, number]): ProjectedPoint;
+  remove(): void;
+};
+
 type PointFeature = {
   properties?: Record<string, unknown> | null;
   geometry?: {
@@ -42,19 +54,19 @@ type FeatureCollection = {
 };
 
 type PatchableMapPrototype = {
-  addLayer(layer: { id?: string }, beforeId?: string): MapLibreMap;
-  addSource(id: string, source: unknown): MapLibreMap;
-  remove(): void;
+  addLayer(this: KioskMapInstance, layer: { id?: string }, beforeId?: string): KioskMapInstance;
+  addSource(this: KioskMapInstance, id: string, source: unknown): KioskMapInstance;
+  remove(this: KioskMapInstance): void;
 };
 
-type PatchableGeoJSONSource = GeoJSONSource & {
-  setData(data: unknown): GeoJSONSource;
+type PatchableGeoJSONSource = {
+  setData(data: unknown): unknown;
 };
 
-const pinsByMap = new WeakMap<MapLibreMap, KioskPin[]>();
-const framesByMap = new WeakMap<MapLibreMap, number>();
+const pinsByMap = new WeakMap<KioskMapInstance, KioskPin[]>();
+const framesByMap = new WeakMap<KioskMapInstance, number>();
 const patchedSources = new WeakSet<object>();
-const mapsWithListeners = new WeakSet<MapLibreMap>();
+const mapsWithListeners = new WeakSet<KioskMapInstance>();
 
 const finiteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const validLatitude = (value: unknown): value is number => finiteNumber(value) && value >= -90 && value <= 90;
@@ -88,7 +100,7 @@ function pinFeaturesFrom(data: unknown): KioskPin[] {
     const latitude = Number(rawLatitude);
     if (!validLongitude(longitude) || !validLatitude(latitude)) return [];
 
-    const properties = point.properties ?? {};
+    const properties: Record<string, unknown> = point.properties ?? {};
     return [
       {
         id: textFrom(properties.id, `${longitude.toFixed(6)},${latitude.toFixed(6)},${index}`),
@@ -104,7 +116,7 @@ function pinFeaturesFrom(data: unknown): KioskPin[] {
   });
 }
 
-function rememberPointData(map: MapLibreMap, data: unknown) {
+function rememberPointData(map: KioskMapInstance, data: unknown) {
   pinsByMap.set(map, pinFeaturesFrom(data));
 }
 
@@ -119,7 +131,7 @@ function markerOverlayFor(container: HTMLElement) {
   return overlay;
 }
 
-function renderPins(map: MapLibreMap) {
+function renderPins(map: KioskMapInstance) {
   const container = map.getContainer();
   if (!container.classList.contains('kiosk-map-stage')) return;
 
@@ -182,7 +194,7 @@ function renderPins(map: MapLibreMap) {
   overlay.dataset.markerCount = String(markers.length);
 }
 
-function scheduleRender(map: MapLibreMap) {
+function scheduleRender(map: KioskMapInstance) {
   const existingFrame = framesByMap.get(map);
   if (existingFrame != null) window.cancelAnimationFrame(existingFrame);
 
@@ -193,7 +205,7 @@ function scheduleRender(map: MapLibreMap) {
   framesByMap.set(map, frame);
 }
 
-function installMapListeners(map: MapLibreMap) {
+function installMapListeners(map: KioskMapInstance) {
   if (mapsWithListeners.has(map)) return;
   mapsWithListeners.add(map);
 
@@ -204,9 +216,9 @@ function installMapListeners(map: MapLibreMap) {
   map.on('idle', () => scheduleRender(map));
 }
 
-function patchPointSource(map: MapLibreMap) {
+function patchPointSource(map: KioskMapInstance) {
   const source = map.getSource(POINT_SOURCE_ID) as PatchableGeoJSONSource | undefined;
-  if (!source || patchedSources.has(source)) return;
+  if (!source || typeof source !== 'object' || patchedSources.has(source)) return;
 
   const originalSetData = source.setData.bind(source);
   source.setData = (data: unknown) => {
@@ -370,12 +382,12 @@ function patchMapLibreForKioskPins() {
   const originalAddSource = prototype.addSource;
   const originalRemove = prototype.remove;
 
-  prototype.addLayer = function addLayer(layer, beforeId) {
+  prototype.addLayer = function addLayer(this: KioskMapInstance, layer: { id?: string }, beforeId?: string) {
     if (layer.id && HIDDEN_KIOSK_LAYER_IDS.has(layer.id)) return this;
     return originalAddLayer.call(this, layer, beforeId);
   };
 
-  prototype.addSource = function addSource(id, source) {
+  prototype.addSource = function addSource(this: KioskMapInstance, id: string, source: unknown) {
     if (id === POINT_SOURCE_ID && source && typeof source === 'object' && 'data' in source) {
       rememberPointData(this, (source as { data?: unknown }).data);
     }
@@ -391,7 +403,7 @@ function patchMapLibreForKioskPins() {
     return result;
   };
 
-  prototype.remove = function remove() {
+  prototype.remove = function remove(this: KioskMapInstance) {
     const frame = framesByMap.get(this);
     if (frame != null) window.cancelAnimationFrame(frame);
     framesByMap.delete(this);
