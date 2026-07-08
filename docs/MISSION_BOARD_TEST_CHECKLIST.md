@@ -16,6 +16,8 @@ Use this checklist before tagging or sharing a Mission Board release.
 ## Badge Display
 
 - Mission Board ranks by score.
+- Weekly winners and the selected month winner appear above the ranked list.
+- In-progress periods are labeled as current leaders, not final winners.
 - Each row also shows meaningful visits, distinct units, recovered units, and active days.
 - Badge display stays compact on a phone.
 - Tapping a row or badge shows plain-language badge criteria.

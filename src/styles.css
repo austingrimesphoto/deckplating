@@ -352,6 +352,12 @@ small,
   background: #f5fbf6;
 }
 
+.release-note-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
 .optional-indicators,
 .brief-card,
 .mission-nudge {
@@ -654,6 +660,28 @@ small,
   gap: 8px;
 }
 
+.winner-list {
+  display: grid;
+  gap: 8px;
+}
+
+.winner-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.winner-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
 .score-row {
   border-left-width: 1px;
 }
@@ -867,6 +895,12 @@ small,
   .activity-edit {
     grid-template-columns: 1fr 1fr 1fr 110px 1fr 90px;
     align-items: center;
+  }
+}
+
+@media (max-width: 520px) {
+  .winner-row {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -9,6 +9,7 @@ import type {
   GamificationTone,
   IndicatorReportRow,
   LeaderboardRow,
+  LeaderboardWinner,
   LocationSummary,
   MissionBoardSummary,
   MissionBadge,
@@ -361,6 +362,16 @@ const missionBriefMessages: Record<GamificationTone, Record<MissionBriefContext,
 const missionBriefDateKey = 'deckplate.missionBrief.lastExpandedDate';
 const missionBriefLastMessageKey = 'deckplate.missionBrief.lastMessage';
 const badgeCelebrationsKey = 'deckplate.badgeCelebrations';
+const currentReleaseNote = {
+  id: '2026-07-08-quality-controls-winners',
+  title: 'Quality controls, safer exports, and Mission Board winners',
+  items: [
+    'Mission Board now shows weekly leaders and the selected month leader.',
+    'Admin Activity Log and Operator Audit can load older pages instead of stopping at the first batch.',
+    'System Administration includes a safe export that excludes secrets, hashes, device records, and detailed/sensitive fields.',
+    'Map code now loads only when a map view is opened, which keeps the main app lighter.',
+  ],
+};
 
 function localDateKey(date = new Date()) {
   return date.toLocaleDateString('en-CA');
@@ -793,6 +804,36 @@ function OnboardingChecklist({
   );
 }
 
+function WhatChangedPanel({ audience }: { audience: 'admin' | 'operator' }) {
+  const storageKey = `deckplate.releaseNote.${audience}.${currentReleaseNote.id}`;
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(storageKey) === 'dismissed');
+  if (dismissed) return null;
+  return (
+    <section className="panel release-note-panel">
+      <div className="screen-title inline-title">
+        <div>
+          <p className="eyebrow">What changed</p>
+          <h2>{currentReleaseNote.title}</h2>
+        </div>
+        <button
+          className="secondary"
+          onClick={() => {
+            localStorage.setItem(storageKey, 'dismissed');
+            setDismissed(true);
+          }}
+        >
+          Dismiss
+        </button>
+      </div>
+      <ul className="plain-list">
+        {currentReleaseNote.items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function OperatorConsole({
   onClose,
   onSuperuserAdmin,
@@ -1140,6 +1181,7 @@ function OperatorConsole({
       </div>
       {message && <p className="notice">{message}</p>}
       {error && <p className="error">{error}</p>}
+      <WhatChangedPanel audience="operator" />
       <section className="panel">
         <h2>Create approved workspace</h2>
         <form onSubmit={createOrganization} className="stack">
@@ -2673,17 +2715,43 @@ function MapScreen({
 function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamificationTone: GamificationTone }) {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [summary, setSummary] = useState<MissionBoardSummary | null>(null);
+  const [winners, setWinners] = useState<{ weeks: LeaderboardWinner[]; month: LeaderboardWinner | null }>({ weeks: [], month: null });
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [selectedBadge, setSelectedBadge] = useState<{ memberId: string; badge: MissionBadge } | null>(null);
 
   useEffect(() => {
-    api<{ rows: LeaderboardRow[]; summary: MissionBoardSummary }>(`/api/leaderboard?month=${month}`, { headers: authHeaders(identity) }).then(
+    api<{ rows: LeaderboardRow[]; summary: MissionBoardSummary; winners?: { weeks: LeaderboardWinner[]; month: LeaderboardWinner | null } }>(`/api/leaderboard?month=${month}`, { headers: authHeaders(identity) }).then(
       (result) => {
         setRows(result.rows);
         setSummary(result.summary);
+        setWinners(result.winners ?? { weeks: [], month: null });
       },
     );
   }, [identity, month]);
+
+  function renderWinner(winner: LeaderboardWinner) {
+    return (
+      <article key={`${winner.type}:${winner.start}`} className="winner-row">
+        <div>
+          <strong>{winner.label}</strong>
+          <small>{winner.final ? 'Winner' : 'Current leader'}</small>
+        </div>
+        {winner.winner ? (
+          <div>
+            <strong>{winner.winner.name}</strong>
+            <small>
+              {winner.winner.score} points - {winner.winner.distinct_units} units - {winner.winner.recovered_units} recovered
+            </small>
+          </div>
+        ) : (
+          <div>
+            <strong>No activity yet</strong>
+            <small>No scored visits in this period.</small>
+          </div>
+        )}
+      </article>
+    );
+  }
 
   return (
     <main className="screen">
@@ -2721,6 +2789,17 @@ function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamifi
           </dl>
         )}
       </section>
+      {(winners.month || winners.weeks.length > 0) && (
+        <section className="panel mission-panel">
+          <div>
+            <p className="eyebrow">Winners</p>
+            <h2>Weekly and monthly leaders</h2>
+            <p className="muted">Winners use the same meaningful coverage score as the Mission Board.</p>
+          </div>
+          {winners.month && <div className="winner-list monthly-winner">{renderWinner(winners.month)}</div>}
+          {winners.weeks.length > 0 && <div className="winner-list">{winners.weeks.map(renderWinner)}</div>}
+        </section>
+      )}
       <section className="coverage-list">
         {rows.map((row, index) => (
           <article
@@ -3321,6 +3400,7 @@ function AdminScreen({
           System administrator mode is active for {workspace?.name ?? 'this workspace'}. Changes are scoped to this workspace.
         </p>
       )}
+      <WhatChangedPanel audience="admin" />
       <div className="tab-row">
         <button className={adminSection === 'setup' ? 'active' : ''} onClick={() => setAdminSection('setup')}>
           Locations

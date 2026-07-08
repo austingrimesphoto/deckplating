@@ -156,6 +156,14 @@ Then run the operator audit migration:
 4. Paste it into Supabase SQL Editor.
 5. Click **Run**.
 
+Then run the Activity Log search index migration:
+
+1. Click **New query** again.
+2. In your GitHub copy, open `supabase/migrations/009_activity_log_search_indexes.sql`.
+3. Copy the whole file.
+4. Paste it into Supabase SQL Editor.
+5. Click **Run**.
+
 Then load starter data:
 
 1. Click **New query** again.
@@ -303,6 +311,15 @@ npm run setup
 netlify dev
 ```
 
+Optional quality checks for maintainers:
+
+```bash
+npm run typecheck
+npm run build
+npm run test:tenant-isolation
+npm run test:ui
+```
+
 ## What This Beta Wizard Does Not Do Yet
 
 The browser setup wizard helps generate the hard environment values. It does not yet:
@@ -344,7 +361,7 @@ If offline mode does not work:
 
 If Mission Board tone will not save:
 
-- Confirm migrations `004` through `008` were run.
+- Confirm migrations `004` through `009` were run.
 - Confirm the Admin tab unlocks with the current admin passphrase.
 
 If the Admin tab will not unlock:

@@ -143,6 +143,8 @@ API fallback:
 
 Every export records an operator audit event.
 
+Restore/import is not shipped. The planning boundary is documented in `docs/OPERATOR_SAFE_EXPORT_RESTORE_PLAN.md`.
+
 ## Operator Guardrails
 
 - Create workspaces only for approved pilot teams.

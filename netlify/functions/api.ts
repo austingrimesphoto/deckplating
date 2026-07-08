@@ -1797,6 +1797,7 @@ async function route(event: HandlerEvent) {
     const endDate = new Date(start);
     endDate.setUTCMonth(endDate.getUTCMonth() + 1);
     const end = endDate.toISOString();
+    const now = new Date();
     const [monthlyResult, allBeforeEndResult, coverage] = await Promise.all([
       scoped(
         supabase
@@ -1820,6 +1821,7 @@ async function route(event: HandlerEvent) {
     ]);
     const error = monthlyResult.error ?? allBeforeEndResult.error;
     if (error) return json(500, { error: error.message });
+    const monthlyCheckins = monthlyResult.data ?? [];
 
     const firstVisitByUnit = new Map<string, string>();
     for (const checkin of allBeforeEndResult.data ?? []) {
@@ -1836,44 +1838,37 @@ async function route(event: HandlerEvent) {
         .map((area: any) => area.id),
     );
 
-    const rows = new Map<string, any>();
-    const recoveredUnitsThisMonth = new Set<string>();
-    const distinctUnitsCovered = new Set<string>();
-    for (const checkin of monthlyResult.data ?? []) {
-      const member = checkin.team_members as any;
-      if (!member) continue;
-      const row = rows.get(member.id) ?? {
-        team_member_id: member.id,
-        name: member.name,
-        qualifying_checkins: 0,
-        distinct_units: new Set<string>(),
-        recovered_units: 0,
-        gray_to_green_units: new Set<string>(),
-        coverage_sweep_areas: new Set<string>(),
-        active_days: new Set<string>(),
-        score: 0,
-      };
-      if (checkin.score_awarded > 0) row.qualifying_checkins += 1;
-      if (checkin.score_awarded >= 3) {
-        row.recovered_units += 1;
-        recoveredUnitsThisMonth.add(checkin.unit_id);
+    const buildLeaderboardRows = (checkins: any[]) => {
+      const rows = new Map<string, any>();
+      for (const checkin of checkins) {
+        const member = checkin.team_members as any;
+        if (!member) continue;
+        const row = rows.get(member.id) ?? {
+          team_member_id: member.id,
+          name: member.name,
+          qualifying_checkins: 0,
+          distinct_units: new Set<string>(),
+          recovered_units: 0,
+          gray_to_green_units: new Set<string>(),
+          coverage_sweep_areas: new Set<string>(),
+          active_days: new Set<string>(),
+          score: 0,
+        };
+        if (checkin.score_awarded > 0) row.qualifying_checkins += 1;
+        if (checkin.score_awarded >= 3) row.recovered_units += 1;
+        if (checkin.score_awarded > 0 && firstVisitByUnit.get(checkin.unit_id) === checkin.checked_in_at) {
+          row.gray_to_green_units.add(checkin.unit_id);
+        }
+        const areaId = (checkin.units as any)?.locations?.area_id ?? null;
+        if (checkin.score_awarded > 0 && areaId && sweptAreaIds.has(areaId)) {
+          row.coverage_sweep_areas.add(areaId);
+        }
+        row.distinct_units.add(checkin.unit_id);
+        row.active_days.add(String(checkin.checked_in_at).slice(0, 10));
+        row.score += checkin.score_awarded;
+        rows.set(member.id, row);
       }
-      if (checkin.score_awarded > 0 && firstVisitByUnit.get(checkin.unit_id) === checkin.checked_in_at) {
-        row.gray_to_green_units.add(checkin.unit_id);
-      }
-      const areaId = (checkin.units as any)?.locations?.area_id ?? null;
-      if (checkin.score_awarded > 0 && areaId && sweptAreaIds.has(areaId)) {
-        row.coverage_sweep_areas.add(areaId);
-      }
-      row.distinct_units.add(checkin.unit_id);
-      distinctUnitsCovered.add(checkin.unit_id);
-      row.active_days.add(String(checkin.checked_in_at).slice(0, 10));
-      row.score += checkin.score_awarded;
-      rows.set(member.id, row);
-    }
-    return json(200, {
-      month,
-      rows: Array.from(rows.values())
+      return Array.from(rows.values())
         .map((row) => {
           const distinctUnits = row.distinct_units.size;
           const activeDays = row.active_days.size;
@@ -1895,7 +1890,60 @@ async function route(event: HandlerEvent) {
             badges,
           };
         })
-        .sort((a, b) => b.score - a.score),
+        .sort((a, b) => b.score - a.score || b.recovered_units - a.recovered_units || b.distinct_units - a.distinct_units || a.name.localeCompare(b.name));
+    };
+
+    const recoveredUnitsThisMonth = new Set<string>();
+    const distinctUnitsCovered = new Set<string>();
+    for (const checkin of monthlyCheckins) {
+      if (checkin.score_awarded >= 3) recoveredUnitsThisMonth.add(checkin.unit_id);
+      distinctUnitsCovered.add(checkin.unit_id);
+    }
+
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const labelPeriod = (periodStart: Date, periodEndExclusive: Date) => {
+      const endInclusive = new Date(periodEndExclusive.getTime() - 1);
+      return `${dateFormatter.format(periodStart)}-${dateFormatter.format(endInclusive)}`;
+    };
+    const periodWinner = (type: 'week' | 'month', periodStart: Date, periodEndExclusive: Date) => {
+      const rows = buildLeaderboardRows(
+        monthlyCheckins.filter((checkin: any) => {
+          const checkedInAt = new Date(checkin.checked_in_at);
+          return checkedInAt >= periodStart && checkedInAt < periodEndExclusive;
+        }),
+      );
+      return {
+        type,
+        label: type === 'month' ? new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(periodStart) : labelPeriod(periodStart, periodEndExclusive),
+        start: periodStart.toISOString(),
+        end: periodEndExclusive.toISOString(),
+        final: periodEndExclusive <= now,
+        winner: rows[0] ?? null,
+      };
+    };
+
+    const monthStart = new Date(start);
+    const monthEnd = new Date(end);
+    const weeklyWinners = [];
+    let periodStart = new Date(monthStart);
+    while (periodStart < monthEnd) {
+      const day = periodStart.getUTCDay();
+      const daysThroughSunday = day === 0 ? 1 : 8 - day;
+      const periodEnd = new Date(periodStart);
+      periodEnd.setUTCDate(periodEnd.getUTCDate() + daysThroughSunday);
+      if (periodEnd > monthEnd) periodEnd.setTime(monthEnd.getTime());
+      if (periodStart <= now) weeklyWinners.push(periodWinner('week', periodStart, periodEnd));
+      periodStart = new Date(periodEnd);
+    }
+
+    const rows = buildLeaderboardRows(monthlyCheckins);
+    return json(200, {
+      month,
+      rows,
+      winners: {
+        weeks: weeklyWinners,
+        month: periodWinner('month', monthStart, monthEnd),
+      },
       summary: {
         units_recovered_this_month: recoveredUnitsThisMonth.size,
         distinct_units_covered: distinctUnitsCovered.size,

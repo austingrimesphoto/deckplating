@@ -91,6 +91,15 @@ export type LeaderboardRow = {
   badges: MissionBadge[];
 };
 
+export type LeaderboardWinner = {
+  type: 'week' | 'month';
+  label: string;
+  start: string;
+  end: string;
+  final: boolean;
+  winner: LeaderboardRow | null;
+};
+
 export type GamificationTone = 'professional' | 'friendly' | 'banter';
 
 export type MissionBadge =

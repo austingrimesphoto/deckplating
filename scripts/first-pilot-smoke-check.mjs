@@ -205,6 +205,14 @@ try {
   }
   console.log('PASS edited indicators are reflected in Reports.');
 
+  const leaderboard = await request(`/api/leaderboard?month=${new Date().toISOString().slice(0, 7)}`, {
+    token: registered.sessionToken,
+  });
+  if (!leaderboard.winners?.month || !leaderboard.winners.month.winner || !leaderboard.winners?.weeks?.some((week) => week.winner)) {
+    throw new Error('Mission Board did not return weekly and monthly winner data.');
+  }
+  console.log('PASS Mission Board returns weekly and monthly winners.');
+
   const safeExport = await request(`/api/operator/organizations/${organization.id}/export`, {
     token: operatorToken,
   });

@@ -9,6 +9,7 @@ Use this as the draft release note for the current beta build.
 ## What's New
 
 - Added Mission Board engagement features built around meaningful coverage rather than raw visit volume.
+- Added weekly winners and selected-month winners to the Mission Board.
 - Added Mission Brief nudges, compact badge rewards, and in-confirmation achievement cards.
 - Added pilot handoff, feedback, and Mission Board validation documents.
 - Added the first multi-site foundation migration with a default organization for current single-site installs.
@@ -38,6 +39,7 @@ Use this as the draft release note for the current beta build.
   - `006_org_admin_and_invitations.sql`
   - `007_app_settings_workspace_key.sql`
   - `008_operator_audit_events.sql`
+  - `009_activity_log_search_indexes.sql`
   - `seed.sql`
 
 ## Environment Variable Changes
@@ -46,6 +48,5 @@ Use this as the draft release note for the current beta build.
 
 ## Known Issues
 
-- The production build still reports a large JavaScript chunk warning.
 - Background upload while the app is fully closed is not guaranteed on every phone.
 - GPS accuracy still depends on device permissions and phone settings.

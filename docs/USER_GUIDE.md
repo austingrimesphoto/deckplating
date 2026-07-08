@@ -184,8 +184,9 @@ What the user sees: score, meaningful visits, distinct units, recovered units, a
 What they click:
 
 1. Open `Scores`.
-2. Review monthly progress and badges.
-3. Use the top needs to inform the next visit.
+2. Review the weekly winners and selected month winner.
+3. Review monthly progress and badges.
+4. Use the top needs to inform the next visit.
 
 Expected result: the board rewards meaningful coverage, recovery, breadth, and consistency.
 

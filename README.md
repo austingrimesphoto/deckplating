@@ -169,6 +169,15 @@ Run the app with Netlify Functions:
 netlify dev
 ```
 
+Optional local quality checks:
+
+```bash
+npm run typecheck
+npm run build
+npm run test:tenant-isolation
+npm run test:ui
+```
+
 Open the local URL Netlify prints, usually:
 
 ```text
@@ -220,7 +229,8 @@ Run these files in Supabase SQL Editor, in order:
 6. `supabase/migrations/006_org_admin_and_invitations.sql`
 7. `supabase/migrations/007_app_settings_workspace_key.sql`
 8. `supabase/migrations/008_operator_audit_events.sql`
-9. `supabase/seed.sql`
+9. `supabase/migrations/009_activity_log_search_indexes.sql`
+10. `supabase/seed.sql`
 
 The schema enables row level security on all tables. Browser code never talks directly to Supabase. All database access goes through Netlify Functions using the server-side service-role key.
 
