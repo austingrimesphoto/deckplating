@@ -277,6 +277,8 @@ test('captures kiosk dashboard', async ({ page }, testInfo) => {
   await expect(page.getByRole('heading', { name: 'Demo Installation' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Go here first' })).toBeVisible();
   await expect(page.getByText('Coverage picture')).toBeVisible();
+  await expect(page.locator('.kiosk-map-marker')).toBeVisible();
+  await page.waitForTimeout(800);
   await screenshot(page, testInfo.project.name, '06-kiosk-dashboard');
 });
 

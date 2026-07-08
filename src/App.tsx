@@ -3033,6 +3033,183 @@ function MapScreen({
   );
 }
 
+function KioskMap({
+  locations,
+  mapTileUrl,
+  mapDefaultLatitude,
+  mapDefaultLongitude,
+  priorityLocationIds,
+}: {
+  locations: LocationSummary[];
+  mapTileUrl: string;
+  mapDefaultLatitude: number;
+  mapDefaultLongitude: number;
+  priorityLocationIds: Set<string>;
+}) {
+  const container = useRef<HTMLDivElement | null>(null);
+  const map = useRef<MapLibreMap | null>(null);
+  const markers = useRef<MapLibreMarker[]>([]);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapFailed, setMapFailed] = useState(false);
+
+  useEffect(() => {
+    if (!container.current || map.current) return;
+    let cancelled = false;
+    setMapFailed(false);
+    void loadMapLibre()
+      .then((maplibregl) => {
+        if (cancelled || !container.current || map.current) return;
+        const nextMap = new maplibregl.Map({
+          container: container.current,
+          style: mapTileUrl || {
+            version: 8,
+            sources: {
+              osm: {
+                type: 'raster',
+                tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                tileSize: 256,
+                attribution: 'OpenStreetMap',
+              },
+            },
+            layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+          },
+          center: [mapDefaultLongitude, mapDefaultLatitude],
+          zoom: 12,
+          interactive: false,
+          attributionControl: false,
+        });
+        nextMap.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+        map.current = nextMap;
+        setMapReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setMapFailed(true);
+      });
+    return () => {
+      cancelled = true;
+      setMapReady(false);
+      markers.current.forEach((marker) => marker.remove());
+      markers.current = [];
+      map.current?.remove();
+      map.current = null;
+    };
+  }, [mapDefaultLatitude, mapDefaultLongitude, mapTileUrl]);
+
+  useEffect(() => {
+    if (!mapReady || !map.current) return;
+    let cancelled = false;
+    void loadMapLibre().then((maplibregl) => {
+      if (cancelled || !map.current) return;
+      markers.current.forEach((marker) => marker.remove());
+      markers.current = [];
+
+      const drawRadii = () => {
+        if (!map.current?.isStyleLoaded()) return;
+        const sourceData = {
+          type: 'FeatureCollection' as const,
+          features: locations.map((location) => ({
+            type: 'Feature' as const,
+            properties: { status: location.status },
+            geometry: {
+              type: 'Polygon' as const,
+              coordinates: [circlePolygon(location.longitude, location.latitude, location.radius_meters)],
+            },
+          })),
+        };
+        const existing = map.current.getSource('kiosk-location-radii') as GeoJSONSource | undefined;
+        if (existing) {
+          existing.setData(sourceData);
+        } else {
+          map.current.addSource('kiosk-location-radii', { type: 'geojson', data: sourceData });
+          map.current.addLayer({
+            id: 'kiosk-location-radii-fill',
+            type: 'fill',
+            source: 'kiosk-location-radii',
+            paint: {
+              'fill-color': [
+                'match',
+                ['get', 'status'],
+                'red',
+                statusColor.red,
+                'yellow',
+                statusColor.yellow,
+                'green',
+                statusColor.green,
+                statusColor.gray,
+              ],
+              'fill-opacity': 0.18,
+            },
+          });
+          map.current.addLayer({
+            id: 'kiosk-location-radii-line',
+            type: 'line',
+            source: 'kiosk-location-radii',
+            paint: {
+              'line-color': [
+                'match',
+                ['get', 'status'],
+                'red',
+                statusColor.red,
+                'yellow',
+                statusColor.yellow,
+                'green',
+                statusColor.green,
+                statusColor.gray,
+              ],
+              'line-width': 2,
+              'line-opacity': 0.65,
+            },
+          });
+        }
+      };
+      if (map.current.isStyleLoaded()) drawRadii();
+      else map.current.once('load', drawRadii);
+
+      if (locations.length === 1) {
+        map.current.setCenter([locations[0].longitude, locations[0].latitude]);
+        map.current.setZoom(15);
+      } else if (locations.length > 1) {
+        const bounds = new maplibregl.LngLatBounds();
+        locations.forEach((location) => bounds.extend([location.longitude, location.latitude]));
+        map.current.fitBounds(bounds, { padding: 78, maxZoom: 15, duration: 0 });
+      } else {
+        map.current.setCenter([mapDefaultLongitude, mapDefaultLatitude]);
+        map.current.setZoom(12);
+      }
+
+      locations.forEach((location) => {
+        const element = document.createElement('div');
+        element.className = `kiosk-map-marker ${location.status} ${priorityLocationIds.has(location.id) ? 'priority' : ''}`;
+        const count = document.createElement('span');
+        count.textContent = String(location.units.length);
+        element.append(count);
+        if (priorityLocationIds.has(location.id)) {
+          const label = document.createElement('strong');
+          label.textContent = location.name;
+          const area = document.createElement('small');
+          area.textContent = location.area_name || 'Mapped area';
+          label.append(area);
+          element.append(label);
+        }
+        const marker = new maplibregl.Marker({ element, anchor: 'bottom' })
+          .setLngLat([location.longitude, location.latitude])
+          .addTo(map.current!);
+        markers.current.push(marker);
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [locations, mapDefaultLatitude, mapDefaultLongitude, mapReady, priorityLocationIds]);
+
+  return (
+    <div ref={container} className="kiosk-map-stage" aria-label="Color-coded map with workspace pins">
+      {mapFailed && <p className="kiosk-map-empty">Map tiles are unavailable.</p>}
+      {!mapFailed && !locations.length && <p className="kiosk-map-empty">No mapped locations yet.</p>}
+    </div>
+  );
+}
+
 function KioskDashboard({
   identity,
   bootstrap,
@@ -3086,31 +3263,6 @@ function KioskDashboard({
     () => new Set(priorityUnits.map((unit) => unit.location_id).filter((id): id is string => Boolean(id))),
     [priorityUnits],
   );
-
-  const locationPoints = useMemo(() => {
-    if (!locations.length) return [];
-    const lats = locations.map((location) => location.latitude);
-    const lons = locations.map((location) => location.longitude);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
-    const latPadding = Math.max((maxLat - minLat) * 0.16, 0.01);
-    const lonPadding = Math.max((maxLon - minLon) * 0.16, 0.01);
-    const paddedMinLat = minLat - latPadding;
-    const paddedMaxLat = maxLat + latPadding;
-    const paddedMinLon = minLon - lonPadding;
-    const paddedMaxLon = maxLon + lonPadding;
-    const latRange = paddedMaxLat - paddedMinLat || 1;
-    const lonRange = paddedMaxLon - paddedMinLon || 1;
-    const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-    return locations.map((location) => ({
-      ...location,
-      x: clamp(8 + ((location.longitude - paddedMinLon) / lonRange) * 84, 6, 94),
-      y: clamp(92 - ((location.latitude - paddedMinLat) / latRange) * 84, 6, 94),
-    }));
-  }, [locations]);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(new Date()), 60000);
@@ -3224,26 +3376,13 @@ function KioskDashboard({
                 ))}
               </div>
             </div>
-            <div className="kiosk-map-stage" aria-label="Color-coded map pins">
-              <span className="kiosk-map-center" />
-              {locationPoints.map((location) => (
-                <div
-                  key={location.id}
-                  className={`kiosk-pin ${location.status} ${priorityLocationIds.has(location.id) ? 'priority' : ''}`}
-                  style={{ left: `${location.x}%`, top: `${location.y}%` }}
-                  title={`${location.name}: ${location.units.length} unit${location.units.length === 1 ? '' : 's'}`}
-                >
-                  <span>{location.units.length}</span>
-                  {priorityLocationIds.has(location.id) && (
-                    <strong>
-                      {location.name}
-                      <small>{location.area_name || 'Mapped area'}</small>
-                    </strong>
-                  )}
-                </div>
-              ))}
-              {!locationPoints.length && <p className="kiosk-map-empty">No mapped locations yet.</p>}
-            </div>
+            <KioskMap
+              locations={locations}
+              mapTileUrl={bootstrap.mapTileUrl}
+              mapDefaultLatitude={bootstrap.mapDefaultLatitude}
+              mapDefaultLongitude={bootstrap.mapDefaultLongitude}
+              priorityLocationIds={priorityLocationIds}
+            />
           </section>
 
           <section className="kiosk-panel kiosk-actions-panel">
@@ -3256,14 +3395,16 @@ function KioskDashboard({
             <div className="kiosk-actions-list">
               {priorityUnits.map((unit, index) => (
                 <article key={unit.id} className={`kiosk-action ${unit.status}`}>
-                  <span className="rank">{index + 1}</span>
-                  <div>
-                    <strong>{unit.name}</strong>
+                  <span className="kiosk-action-number">{index + 1}</span>
+                  <div className="kiosk-action-body">
+                    <div className="kiosk-action-heading">
+                      <strong>{unit.name}</strong>
+                      <span className="status-pill">{statusLabel(unit)}</span>
+                    </div>
                     <small>
                       {actionLabel(unit)} - {unit.location_name ?? 'Manual lookup'} - Last visit {niceDate(unit.last_visit_at)}
                     </small>
                   </div>
-                  <span className="status-pill">{statusLabel(unit)}</span>
                 </article>
               ))}
               {!priorityUnits.length && <p className="notice">Add active commands to start showing priorities.</p>}
@@ -3704,6 +3845,7 @@ function AdminScreen({
   const [organizationAdminPassphrase, setOrganizationAdminPassphrase] = useState('');
   const [onboardingSummary, setOnboardingSummary] = useState<OnboardingSummary | null>(null);
   const [showOnboardingChecklist, setShowOnboardingChecklist] = useState(true);
+  const kioskHref = kioskLinkForWorkspace(workspace);
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -3791,6 +3933,16 @@ function AdminScreen({
     setOrganizationAdminPassphrase('');
     setMessage('Local admin passphrase saved. Future admin logins can use it.');
     await load();
+  }
+
+  async function copyKioskLink() {
+    const url = new URL(kioskHref, window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(url);
+      setMessage('TV dashboard link copied.');
+    } catch {
+      setMessage(url);
+    }
   }
 
   useEffect(() => {
@@ -4045,6 +4197,19 @@ function AdminScreen({
             <button className="primary" onClick={saveSettings}>
               Save tone
             </button>
+          </section>
+          <section className="panel">
+            <p className="eyebrow">Display</p>
+            <h2>TV dashboard</h2>
+            <p className="muted">Use this workspace-specific link on the browser connected to the office display.</p>
+            <div className="stack">
+              <a className="primary link-button" href={kioskHref}>
+                Open TV dashboard
+              </a>
+              <button className="secondary" type="button" onClick={() => void copyKioskLink()}>
+                Copy TV dashboard link
+              </button>
+            </div>
           </section>
           <section className="panel">
             <p className="eyebrow">Managed hosting foundation</p>
@@ -4379,6 +4544,7 @@ function Settings({
   const [newMember, setNewMember] = useState(members[0]?.id ?? '');
   const [newPin, setNewPin] = useState('');
   const [message, setMessage] = useState('');
+  const kioskHref = kioskLinkForWorkspace(workspace);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -4413,6 +4579,16 @@ function Settings({
       setMessage('Identity changed.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Identity change failed.');
+    }
+  }
+
+  async function copyKioskLink() {
+    const url = new URL(kioskHref, window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(url);
+      setMessage('TV dashboard link copied.');
+    } catch {
+      setMessage(url);
     }
   }
 
@@ -4467,9 +4643,14 @@ function Settings({
       <section className="panel">
         <h2>TV dashboard</h2>
         <p className="muted">Open the workspace kiosk view for a large office display.</p>
-        <a className="primary link-button" href={kioskLinkForWorkspace(workspace)}>
-          Open TV dashboard
-        </a>
+        <div className="stack">
+          <a className="primary link-button" href={kioskHref}>
+            Open TV dashboard
+          </a>
+          <button className="secondary" type="button" onClick={() => void copyKioskLink()}>
+            Copy TV dashboard link
+          </button>
+        </div>
       </section>
       <section className="panel">
         <h2>Safe Use</h2>

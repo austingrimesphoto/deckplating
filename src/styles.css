@@ -913,13 +913,37 @@ small,
 }
 
 .kiosk-header {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+  min-height: clamp(138px, 15vh, 220px);
   padding: clamp(14px, 1.5vw, 24px);
-  background: rgba(248, 251, 251, 0.95);
-  color: var(--text);
+  background:
+    linear-gradient(90deg, rgba(13, 22, 29, 0.9), rgba(16, 31, 41, 0.76) 54%, rgba(16, 31, 41, 0.42)),
+    var(--page-background) center 42% / cover no-repeat;
+  color: #fff;
+}
+
+.kiosk-header::after {
+  position: absolute;
+  top: 50%;
+  right: clamp(80px, 16vw, 260px);
+  z-index: -1;
+  width: clamp(130px, 17vw, 260px);
+  aspect-ratio: 1;
+  background: url('/deckplate-coverage-app-icon-512.png') center / contain no-repeat;
+  content: '';
+  opacity: 0.22;
+  transform: translateY(-50%) rotate(-4deg);
+}
+
+.kiosk-header > * {
+  position: relative;
+  z-index: 1;
 }
 
 .kiosk-header h1,
@@ -933,7 +957,10 @@ small,
 }
 
 .kiosk-header small,
-.kiosk-clock span,
+.kiosk-clock span {
+  color: #dbe7ef;
+}
+
 .kiosk-panel small {
   color: var(--muted);
 }
@@ -955,8 +982,8 @@ small,
 }
 
 .kiosk-ghost {
-  border: 1px solid rgba(23, 50, 77, 0.22);
-  background: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.9);
   color: var(--brand);
   padding: 0 14px;
 }
@@ -1052,108 +1079,88 @@ small,
   overflow: hidden;
   border: 1px solid #c9d6dc;
   border-radius: 8px;
-  background:
-    linear-gradient(rgba(23, 50, 77, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23, 50, 77, 0.08) 1px, transparent 1px),
-    radial-gradient(circle at 45% 48%, rgba(255, 255, 255, 0.95), rgba(232, 240, 238, 0.9) 44%, rgba(217, 227, 223, 0.92) 100%);
-  background-size: 62px 62px, 62px 62px, auto;
+  background: #dbe4eb;
 }
 
 .kiosk-map-stage::before,
 .kiosk-map-stage::after {
-  position: absolute;
-  inset: auto;
-  content: '';
-  pointer-events: none;
+  display: none;
 }
 
-.kiosk-map-stage::before {
-  top: 14%;
-  left: 8%;
-  width: 84%;
-  height: 68%;
-  border: 2px solid rgba(23, 50, 77, 0.1);
-  border-radius: 50%;
-  transform: rotate(-8deg);
+.kiosk-map-stage .maplibregl-canvas {
+  outline: none;
 }
 
-.kiosk-map-stage::after {
-  right: 22%;
-  bottom: 18%;
-  width: 36%;
-  height: 24%;
-  border: 2px dashed rgba(40, 122, 62, 0.18);
-  border-radius: 50%;
-  transform: rotate(14deg);
+.kiosk-map-stage .maplibregl-ctrl-attrib {
+  font-size: 0.62rem;
 }
 
-.kiosk-map-center {
-  position: absolute;
-  inset: 12% 10%;
-  border: 1px solid rgba(23, 50, 77, 0.08);
-  border-radius: 8px;
-  pointer-events: none;
-}
-
-.kiosk-pin {
-  position: absolute;
-  z-index: 2;
+.kiosk-map-marker {
+  position: relative;
   display: grid;
-  width: clamp(34px, 2.7vw, 54px);
-  height: clamp(34px, 2.7vw, 54px);
+  width: clamp(36px, 2.7vw, 56px);
+  height: clamp(36px, 2.7vw, 56px);
   place-items: center;
   border: 3px solid #fff;
-  border-radius: 999px 999px 999px 2px;
-  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.26);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
   color: #fff;
-  font-size: clamp(0.8rem, 1.1vw, 1.25rem);
+  font-size: clamp(0.85rem, 1.05vw, 1.2rem);
   font-weight: 900;
-  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
-.kiosk-pin span {
-  transform: rotate(45deg);
+.kiosk-map-marker::after {
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  border-right: 3px solid #fff;
+  border-bottom: 3px solid #fff;
+  background: inherit;
+  content: '';
+  transform: translateX(-50%) rotate(45deg);
 }
 
-.kiosk-pin.green {
+.kiosk-map-marker.green {
   background: var(--green);
 }
 
-.kiosk-pin.yellow {
+.kiosk-map-marker.yellow {
   background: var(--yellow);
 }
 
-.kiosk-pin.red {
+.kiosk-map-marker.red {
   background: var(--red);
 }
 
-.kiosk-pin.gray {
+.kiosk-map-marker.gray {
   background: var(--gray);
 }
 
-.kiosk-pin.priority {
-  z-index: 4;
-  box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.42), 0 16px 28px rgba(0, 0, 0, 0.32);
+.kiosk-map-marker.priority {
+  box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.42), 0 14px 28px rgba(0, 0, 0, 0.34);
 }
 
-.kiosk-pin strong {
+.kiosk-map-marker strong {
   position: absolute;
   top: 50%;
   left: calc(100% + 12px);
   display: grid;
-  width: clamp(150px, 13vw, 230px);
+  width: clamp(150px, 13vw, 240px);
   max-width: 28vw;
   padding: 8px 10px;
   border: 1px solid rgba(23, 50, 77, 0.14);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
   color: var(--text);
   font-size: clamp(0.78rem, 0.92vw, 1.08rem);
   line-height: 1.12;
-  transform: translateY(-50%) rotate(45deg);
+  transform: translateY(-50%);
 }
 
-.kiosk-pin strong small {
+.kiosk-map-marker strong small {
   margin-top: 3px;
   overflow: hidden;
   color: var(--muted);
@@ -1190,15 +1197,19 @@ small,
 .kiosk-action,
 .kiosk-score-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
   min-height: 0;
-  padding: clamp(8px, 0.9vw, 13px);
+  padding: clamp(10px, 1vw, 15px);
   border: 1px solid var(--line);
   border-left: 7px solid var(--brand-2);
   border-radius: 8px;
   background: #fff;
+}
+
+.kiosk-score-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
 .kiosk-action.green {
@@ -1222,6 +1233,33 @@ small,
   min-width: 0;
   display: grid;
   gap: 2px;
+}
+
+.kiosk-action-number {
+  display: grid;
+  width: clamp(38px, 2.8vw, 48px);
+  height: clamp(38px, 2.8vw, 48px);
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: clamp(1rem, 1.25vw, 1.35rem);
+  font-weight: 900;
+}
+
+.kiosk-action-body {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.kiosk-action-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .kiosk-action strong,
@@ -1389,7 +1427,7 @@ small,
     grid-template-columns: 1fr;
   }
 
-  .kiosk-pin strong {
+  .kiosk-map-marker strong {
     display: none;
   }
 }
