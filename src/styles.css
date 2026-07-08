@@ -27,17 +27,19 @@ body {
   width: 100%;
   min-width: 320px;
   min-height: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
 }
 
 body {
   margin: 0;
   background: var(--bg) var(--page-background) center / cover no-repeat fixed;
+  touch-action: pan-y;
 }
 
 #root {
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 button,
@@ -102,6 +104,7 @@ h2 {
     max(14px, env(safe-area-inset-left))
     calc(118px + env(safe-area-inset-bottom))
     max(14px, env(safe-area-inset-right));
+  overflow-x: clip;
 }
 
 @supports (min-height: 100dvh) {
