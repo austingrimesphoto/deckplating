@@ -44,7 +44,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -60,7 +61,8 @@ button {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 46px;
   padding: 10px 12px;
@@ -68,6 +70,11 @@ select {
   border-radius: 8px;
   background: #fff;
   color: var(--text);
+}
+
+textarea {
+  min-height: 118px;
+  line-height: 1.45;
 }
 
 label {

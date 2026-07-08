@@ -16,6 +16,7 @@ What is already in place:
   - form name: `deckplating-workspace-request`
   - entry link: `https://deckplatingsetup.netlify.app/#request`
   - thank-you page: `https://deckplatingsetup.netlify.app/workspace-request-thanks.html`
+- normal workspace request submissions now enter the System Administration approval queue in `deckplating.netlify.app`
 - `deckplating.netlify.app` includes `Account` > `Send feedback`, which opens the setup-site feedback form
 - review workflow already exists in:
   - `docs/PILOT_FEEDBACK_REVIEW.md`
@@ -26,7 +27,7 @@ What is already in place:
 What is not yet in place:
 
 - no fully in-app feedback capture screen inside `deckplating.netlify.app`
-- no automated email notification or approval workflow for workspace requests
+- email delivery depends on managed-host Resend environment variables
 - no ticketing integration; review remains manual
 
 ## Recommended Managed Pilot Cadence
@@ -34,16 +35,17 @@ What is not yet in place:
 For the next real pilot command, use this cadence:
 
 1. Local lead submits a workspace request at `https://deckplatingsetup.netlify.app/#request`.
-2. Operator manually reviews the request, creates the workspace, issues the setup code, and contacts the approved lead outside the form.
-3. Operator sends the local lead:
+2. Operator reviews the request in `System Administration` > `Workspace requests`.
+3. Operator approves the request. The app creates the workspace, issues the setup code, records audit events, and sends the welcome email when email is configured.
+4. The approved local lead receives:
    - the workspace link on `deckplating.netlify.app`
    - the one-time setup code
    - the user guide `https://deckplatingsetup.netlify.app/user-guide.html`
    - the feedback link `https://deckplatingsetup.netlify.app/#feedback`
-4. Local lead submits one setup feedback response before the onboarding session ends.
-5. Local lead submits one week-one feedback response after the first real-use week.
-6. Local lead submits one closeout feedback response after 2-4 weeks of real use.
-7. Any critical blocker or safe-use confusion is reported immediately outside the scheduled cadence if needed.
+5. Local lead submits one setup feedback response before the onboarding session ends.
+6. Local lead submits one week-one feedback response after the first real-use week.
+7. Local lead submits one closeout feedback response after 2-4 weeks of real use.
+8. Any critical blocker or safe-use confusion is reported immediately outside the scheduled cadence if needed.
 
 ## Current Managed-Pilot Operator Packet
 
@@ -78,7 +80,7 @@ What still prevents a clean "send one link and let them self-start" handoff:
 
 - stale-session UX around suspended/deleted workspaces needs more polish
 - feedback capture still lives on the setup-site Netlify Form rather than inside a hosted-app workflow
-- workspace request approval is manual and has no automated email notification
+- email notification depends on managed-host Resend configuration
 - live two-workspace integration coverage still needs to be run repeatedly against safe targets
 
 ## Recommended Next Follow-Up

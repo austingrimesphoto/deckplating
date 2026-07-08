@@ -18,6 +18,7 @@ const suffix = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 const slug = `smoke-${suffix}`.toLowerCase();
 let organization = null;
 let operatorToken = '';
+let workspaceRequestId = '';
 
 async function request(path, { method = 'GET', token, body, expected = [200] } = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -36,7 +37,22 @@ async function request(path, { method = 'GET', token, body, expected = [200] } =
 }
 
 async function cleanup() {
-  if (!operatorToken || !organization) return;
+  if (!operatorToken) return;
+  if (!organization && workspaceRequestId) {
+    try {
+      await request(`/api/operator/workspace-requests/${workspaceRequestId}/reject`, {
+        method: 'POST',
+        token: operatorToken,
+        body: { operatorNote: 'Smoke cleanup for unapproved request.' },
+        expected: [200, 400, 404],
+      });
+      console.log(`CLEANUP rejected workspace request ${workspaceRequestId}`);
+    } catch (error) {
+      console.error(`CLEANUP failed for workspace request ${workspaceRequestId}: ${error.message}`);
+    }
+    return;
+  }
+  if (!organization) return;
   try {
     await request(`/api/operator/organizations/${organization.id}/delete`, {
       method: 'DELETE',
@@ -58,27 +74,50 @@ try {
   operatorToken = login.token;
   console.log('PASS operator login.');
 
-  const created = await request('/api/operator/organizations', {
+  const submittedRequest = await request('/api/workspace-requests', {
     method: 'POST',
-    token: operatorToken,
     expected: [201],
-    body: { name: `Smoke Workspace ${suffix}`, slug },
+    body: {
+      installation_or_command: `Smoke Workspace ${suffix}`,
+      preferred_workspace_slug: slug,
+      lead_name: 'Smoke lead',
+      lead_role: 'Smoke tester',
+      official_contact_email: `smoke-${suffix}@example.mil`,
+      rmt_size: 2,
+      expected_pilot_start_date: new Date().toISOString().slice(0, 10),
+      short_use_case: 'Smoke test request for managed workspace approval.',
+      safe_use_boundaries_confirmed: true,
+      no_sensitive_data_acknowledged: true,
+    },
   });
-  organization = created.organization;
-  console.log('PASS workspace creation.');
+  workspaceRequestId = submittedRequest.request.id;
+  console.log('PASS workspace request submission.');
 
-  const issued = await request(`/api/operator/organizations/${organization.id}/setup-codes`, {
+  const requestQueue = await request('/api/operator/workspace-requests?status=pending', {
+    token: operatorToken,
+  });
+  if (!requestQueue.requests.some((candidate) => candidate.id === workspaceRequestId)) {
+    throw new Error('Submitted workspace request was not visible in the operator approval queue.');
+  }
+  console.log('PASS operator approval queue includes the request.');
+
+  const approved = await request(`/api/operator/workspace-requests/${workspaceRequestId}/approve`, {
     method: 'POST',
     token: operatorToken,
-    expected: [201],
-    body: { label: 'First pilot smoke', expiresInDays: 1 },
+    body: {
+      workspaceName: `Smoke Workspace ${suffix}`,
+      workspaceSlug: slug,
+      expiresInDays: 1,
+      operatorNote: 'Approved by first-pilot smoke check.',
+    },
   });
-  console.log('PASS setup-code issuance.');
+  organization = approved.organization;
+  console.log('PASS workspace request approval creates workspace and setup code.');
 
   const activated = await request('/api/workspaces/activate', {
     method: 'POST',
     body: {
-      setupCode: issued.code ?? issued.setupCode?.code,
+      setupCode: approved.code ?? approved.setupCode?.code,
       adminPassphrase: `smoke-admin-${suffix}`,
       organizationName: organization.name,
       leadLabel: 'Smoke lead',

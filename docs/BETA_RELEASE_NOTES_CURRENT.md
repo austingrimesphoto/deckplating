@@ -10,6 +10,7 @@ Use this as the draft release note for the current beta build.
 
 - Added Mission Board engagement features built around meaningful coverage rather than raw visit volume.
 - Added weekly winners and selected-month winners to the Mission Board.
+- Added a managed workspace request approval queue for System Administration.
 - Added Mission Brief nudges, compact badge rewards, and in-confirmation achievement cards.
 - Added pilot handoff, feedback, and Mission Board validation documents.
 - Added the first multi-site foundation migration with a default organization for current single-site installs.
@@ -40,11 +41,13 @@ Use this as the draft release note for the current beta build.
   - `007_app_settings_workspace_key.sql`
   - `008_operator_audit_events.sql`
   - `009_activity_log_search_indexes.sql`
+  - `010_workspace_request_queue.sql`
   - `seed.sql`
 
 ## Environment Variable Changes
 
-- None.
+- Managed workspace request emails use `DECKPLATING_OPERATOR_EMAIL`, `DECKPLATING_FROM_EMAIL`, and `RESEND_API_KEY`.
+- Email links can be controlled with `DECKPLATING_APP_BASE_URL` and `DECKPLATING_SETUP_SITE_BASE_URL`.
 
 ## Known Issues
 

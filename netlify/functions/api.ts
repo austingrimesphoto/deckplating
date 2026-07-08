@@ -26,6 +26,43 @@ type WorkspaceOnboardingSummary = {
   lastCheckinTeamMemberName: string | null;
   lastCheckinUnitName: string | null;
 };
+type WorkspaceRequestStatus = 'pending' | 'approved' | 'rejected';
+type WorkspaceRequestRow = {
+  id: string;
+  installation_or_command: string;
+  preferred_workspace_slug: string | null;
+  lead_name: string;
+  lead_role: string;
+  official_contact_email: string;
+  rmt_size: number;
+  expected_pilot_start_date: string;
+  short_use_case: string;
+  safe_use_boundaries_confirmed: boolean;
+  no_sensitive_data_acknowledged: boolean;
+  status: WorkspaceRequestStatus;
+  operator_note: string | null;
+  organization_id: string | null;
+  setup_code_id: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+  operator_notified_at: string | null;
+  requestor_notified_at: string | null;
+  operator_notification_status: string | null;
+  requestor_notification_status: string | null;
+  created_at: string;
+  updated_at: string;
+  organizations?: { id: string; slug: string; name: string; active: boolean } | null;
+  organization_setup_codes?: {
+    id: string;
+    label: string | null;
+    purpose: string;
+    active: boolean;
+    expires_at: string | null;
+    used_at: string | null;
+    used_by_label: string | null;
+    created_at: string;
+  } | null;
+};
 
 class RequestValidationError extends Error {
   statusCode: number;
@@ -44,6 +81,11 @@ const centralOperatorPassphraseHash = process.env.CENTRAL_OPERATOR_PASSPHRASE_HA
 const managedHostEnabled = Boolean(centralOperatorPassphraseHash);
 const defaultOrganizationId =
   process.env.DECKPLATING_DEFAULT_ORGANIZATION_ID ?? '00000000-0000-4000-8000-000000000001';
+const appBaseUrl = (process.env.DECKPLATING_APP_BASE_URL ?? 'https://deckplating.netlify.app').replace(/\/+$/, '');
+const setupSiteBaseUrl = (process.env.DECKPLATING_SETUP_SITE_BASE_URL ?? 'https://deckplatingsetup.netlify.app').replace(/\/+$/, '');
+const operatorEmail = process.env.DECKPLATING_OPERATOR_EMAIL ?? '';
+const fromEmail = process.env.DECKPLATING_FROM_EMAIL ?? '';
+const resendApiKey = process.env.RESEND_API_KEY ?? '';
 
 const supabase =
   supabaseUrl && serviceRoleKey
@@ -57,8 +99,22 @@ const json = (statusCode: number, body: unknown) => ({
   headers: {
     'content-type': 'application/json',
     'cache-control': 'no-store',
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+    'access-control-allow-headers': 'content-type,authorization',
   },
   body: JSON.stringify(body),
+});
+
+const empty = (statusCode: number) => ({
+  statusCode,
+  headers: {
+    'cache-control': 'no-store',
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+    'access-control-allow-headers': 'content-type,authorization',
+  },
+  body: '',
 });
 
 const errorMessage = (error: unknown) => {
@@ -74,6 +130,15 @@ const readBody = <T>(event: HandlerEvent): T => {
   return JSON.parse(event.body) as T;
 };
 
+const readRequestBody = <T>(event: HandlerEvent): T => {
+  if (!event.body) return {} as T;
+  const contentType = event.headers['content-type'] ?? event.headers['Content-Type'] ?? '';
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    return Object.fromEntries(new URLSearchParams(event.body)) as T;
+  }
+  return JSON.parse(event.body) as T;
+};
+
 const boundedInteger = (value: string | undefined, fallback: number, min: number, max: number) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -85,6 +150,12 @@ const matchesSearch = (query: string, values: unknown[]) => {
   if (!needle) return true;
   return values.some((value) => String(value ?? '').toLowerCase().includes(needle));
 };
+
+const truthyFormValue = (value: unknown) => value === true || value === 'true' || value === 'on' || value === 'yes' || value === '1';
+
+const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+const clampText = (value: unknown, max = 2000) => String(value ?? '').trim().slice(0, max);
 
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -655,6 +726,265 @@ const createSetupCode = () => {
   return `${value.slice(0, 4)}-${value.slice(4, 8)}-${value.slice(8, 12)}-${value.slice(12)}`;
 };
 
+const escapeHtml = (value: unknown) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const emailRecipients = (value: string) =>
+  value
+    .split(',')
+    .map((candidate) => candidate.trim())
+    .filter(Boolean);
+
+async function sendEmail({
+  to,
+  subject,
+  text,
+  html,
+  idempotencyKey,
+}: {
+  to: string | string[];
+  subject: string;
+  text: string;
+  html: string;
+  idempotencyKey: string;
+}) {
+  const recipients = Array.isArray(to) ? to : emailRecipients(to);
+  if (!resendApiKey || !fromEmail || !recipients.length) return 'skipped: email environment not configured';
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${resendApiKey}`,
+      'content-type': 'application/json',
+      'idempotency-key': idempotencyKey.slice(0, 256),
+      'user-agent': 'deckplating/1.0',
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: recipients,
+      subject,
+      text,
+      html,
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    return `failed: resend ${response.status} ${body.slice(0, 180)}`;
+  }
+  return 'sent';
+}
+
+async function uniqueWorkspaceSlug(baseValue: string) {
+  const base = slugify(baseValue) || 'workspace';
+  for (let index = 0; index < 100; index += 1) {
+    const suffix = index === 0 ? '' : `-${index + 1}`;
+    const candidate = `${base.slice(0, 48 - suffix.length)}${suffix}`;
+    const { data, error } = await supabase.from('organizations').select('id').eq('slug', candidate).maybeSingle();
+    if (error) throw error;
+    if (!data) return candidate;
+  }
+  return `${base.slice(0, 39)}-${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function normalizeWorkspaceRequestBody(body: Record<string, unknown>) {
+  const installationOrCommand = clampText(body.installation_or_command ?? body.installationOrCommand, 160);
+  const preferredWorkspaceSlug = slugify(clampText(body.preferred_workspace_slug ?? body.preferredWorkspaceSlug, 80));
+  const leadName = clampText(body.lead_name ?? body.leadName, 120);
+  const leadRole = clampText(body.lead_role ?? body.leadRole, 120);
+  const officialContactEmail = clampText(body.official_contact_email ?? body.officialContactEmail, 254).toLowerCase();
+  const rmtSize = Number(body.rmt_size ?? body.rmtSize);
+  const expectedPilotStartDate = clampText(body.expected_pilot_start_date ?? body.expectedPilotStartDate, 10);
+  const shortUseCase = clampText(body.short_use_case ?? body.shortUseCase, 2000);
+  const safeUseBoundariesConfirmed = truthyFormValue(body.safe_use_boundaries_confirmed ?? body.safeUseBoundariesConfirmed);
+  const noSensitiveDataAcknowledged = truthyFormValue(body.no_sensitive_data_acknowledged ?? body.noSensitiveDataAcknowledged);
+
+  if (installationOrCommand.length < 2) throw new RequestValidationError(400, 'Installation or command name is required.');
+  if (preferredWorkspaceSlug && preferredWorkspaceSlug.length < 2) throw new RequestValidationError(400, 'Preferred workspace slug is too short.');
+  if (leadName.length < 2) throw new RequestValidationError(400, 'Lead name is required.');
+  if (leadRole.length < 2) throw new RequestValidationError(400, 'Lead role is required.');
+  if (!isEmail(officialContactEmail)) throw new RequestValidationError(400, 'A valid official contact email is required.');
+  if (!Number.isInteger(rmtSize) || rmtSize < 1 || rmtSize > 999) throw new RequestValidationError(400, 'RMT size must be between 1 and 999.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expectedPilotStartDate)) throw new RequestValidationError(400, 'Expected pilot start date is required.');
+  if (shortUseCase.length < 10) throw new RequestValidationError(400, 'Short use case must include at least 10 characters.');
+  if (!safeUseBoundariesConfirmed || !noSensitiveDataAcknowledged) {
+    throw new RequestValidationError(400, 'Safe-use acknowledgements are required.');
+  }
+
+  return {
+    installation_or_command: installationOrCommand,
+    preferred_workspace_slug: preferredWorkspaceSlug || null,
+    lead_name: leadName,
+    lead_role: leadRole,
+    official_contact_email: officialContactEmail,
+    rmt_size: rmtSize,
+    expected_pilot_start_date: expectedPilotStartDate,
+    short_use_case: shortUseCase,
+    safe_use_boundaries_confirmed: safeUseBoundariesConfirmed,
+    no_sensitive_data_acknowledged: noSensitiveDataAcknowledged,
+  };
+}
+
+async function notifyOperatorOfWorkspaceRequest(request: WorkspaceRequestRow) {
+  const operatorLink = `${appBaseUrl}/?operator=1&request=${encodeURIComponent(request.id)}`;
+  const text = [
+    `Deckplating workspace request: ${request.installation_or_command}`,
+    '',
+    `Lead: ${request.lead_name}`,
+    `Role: ${request.lead_role}`,
+    `Email: ${request.official_contact_email}`,
+    `RMT size: ${request.rmt_size}`,
+    `Expected pilot start: ${request.expected_pilot_start_date}`,
+    `Preferred slug: ${request.preferred_workspace_slug ?? 'none provided'}`,
+    '',
+    'Use case:',
+    request.short_use_case,
+    '',
+    `Review: ${operatorLink}`,
+  ].join('\n');
+  const html = `
+    <h1>Deckplating workspace request</h1>
+    <p><strong>${escapeHtml(request.installation_or_command)}</strong></p>
+    <ul>
+      <li>Lead: ${escapeHtml(request.lead_name)}</li>
+      <li>Role: ${escapeHtml(request.lead_role)}</li>
+      <li>Email: ${escapeHtml(request.official_contact_email)}</li>
+      <li>RMT size: ${escapeHtml(request.rmt_size)}</li>
+      <li>Expected pilot start: ${escapeHtml(request.expected_pilot_start_date)}</li>
+      <li>Preferred slug: ${escapeHtml(request.preferred_workspace_slug ?? 'none provided')}</li>
+    </ul>
+    <p>${escapeHtml(request.short_use_case)}</p>
+    <p><a href="${escapeHtml(operatorLink)}">Review in System Administration</a></p>
+  `;
+  return sendEmail({
+    to: operatorEmail,
+    subject: `Deckplating workspace request: ${request.installation_or_command}`,
+    text,
+    html,
+    idempotencyKey: `workspace-request-operator-${request.id}`,
+  });
+}
+
+async function notifyRequestorOfApproval({
+  request,
+  organization,
+  setupCode,
+}: {
+  request: WorkspaceRequestRow;
+  organization: { id: string; slug: string; name: string; active: boolean };
+  setupCode: string;
+}) {
+  const workspaceLink = `${appBaseUrl}/?workspace=${encodeURIComponent(organization.slug)}`;
+  const userGuide = `${setupSiteBaseUrl}/user-guide.html`;
+  const setupGuide = `${setupSiteBaseUrl}/`;
+  const text = [
+    `Welcome to Deckplating, ${request.lead_name}.`,
+    '',
+    `Your workspace is approved: ${organization.name}`,
+    `Workspace link: ${workspaceLink}`,
+    `One-time setup code: ${setupCode}`,
+    '',
+    `Setup guide: ${setupGuide}`,
+    `User guide: ${userGuide}`,
+    '',
+    'First steps:',
+    '1. Open the workspace link.',
+    '2. Select Activate workspace.',
+    '3. Enter the one-time setup code.',
+    '4. Set the local admin passphrase.',
+    '5. Create areas, public/general locations, units, and team members.',
+    '',
+    'Safe-use reminder: Deckplating is only for unclassified, non-sensitive coverage tracking. Do not enter counseling notes, medical details, personal details, CUI, classified information, setup codes, passphrases, or sensitive operational locations.',
+  ].join('\n');
+  const html = `
+    <h1>Welcome to Deckplating</h1>
+    <p>Your workspace is approved: <strong>${escapeHtml(organization.name)}</strong></p>
+    <p>Workspace link: <a href="${escapeHtml(workspaceLink)}">${escapeHtml(workspaceLink)}</a></p>
+    <p>One-time setup code: <strong>${escapeHtml(setupCode)}</strong></p>
+    <p><a href="${escapeHtml(setupGuide)}">Setup guide</a> | <a href="${escapeHtml(userGuide)}">User guide</a></p>
+    <ol>
+      <li>Open the workspace link.</li>
+      <li>Select Activate workspace.</li>
+      <li>Enter the one-time setup code.</li>
+      <li>Set the local admin passphrase.</li>
+      <li>Create areas, public/general locations, units, and team members.</li>
+    </ol>
+    <p><strong>Safe-use reminder:</strong> Deckplating is only for unclassified, non-sensitive coverage tracking. Do not enter counseling notes, medical details, personal details, CUI, classified information, setup codes, passphrases, or sensitive operational locations.</p>
+  `;
+  return sendEmail({
+    to: request.official_contact_email,
+    subject: `Deckplating workspace approved: ${organization.name}`,
+    text,
+    html,
+    idempotencyKey: `workspace-request-approved-${request.id}`,
+  });
+}
+
+async function notifyRequestorOfRejection(request: WorkspaceRequestRow) {
+  const text = [
+    `Deckplating workspace request update: ${request.installation_or_command}`,
+    '',
+    'Your request was not approved as submitted.',
+    request.operator_note ? `Operator note: ${request.operator_note}` : '',
+    '',
+    `You can submit a revised request at ${setupSiteBaseUrl}/#request.`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const html = `
+    <h1>Deckplating workspace request update</h1>
+    <p>Your request for <strong>${escapeHtml(request.installation_or_command)}</strong> was not approved as submitted.</p>
+    ${request.operator_note ? `<p>Operator note: ${escapeHtml(request.operator_note)}</p>` : ''}
+    <p>You can submit a revised request at <a href="${escapeHtml(`${setupSiteBaseUrl}/#request`)}">${escapeHtml(`${setupSiteBaseUrl}/#request`)}</a>.</p>
+  `;
+  return sendEmail({
+    to: request.official_contact_email,
+    subject: `Deckplating request update: ${request.installation_or_command}`,
+    text,
+    html,
+    idempotencyKey: `workspace-request-rejected-${request.id}`,
+  });
+}
+
+async function issueOrganizationSetupCode({
+  organizationId,
+  organization,
+  label,
+  expiresInDays,
+  purpose = 'workspace_setup',
+}: {
+  organizationId: string;
+  organization: { slug: string };
+  label?: string | null;
+  expiresInDays: number;
+  purpose?: 'workspace_setup' | 'pilot_setup';
+}) {
+  const code = createSetupCode();
+  const expiresAt = new Date(Date.now() + expiresInDays * 86400000).toISOString();
+  const { data, error } = await supabase
+    .from('organization_setup_codes')
+    .insert({
+      organization_id: organizationId,
+      code_hash: setupCodeHash(code),
+      label: label?.trim() || null,
+      purpose,
+      active: true,
+      expires_at: expiresAt,
+    })
+    .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
+    .single();
+  if (error) throw error;
+  await tryRecordOperatorAudit(organizationId, 'setup_code_issued', {
+    setupCodeId: data.id,
+    slug: organization.slug,
+    expiresAt,
+  });
+  return { code, setupCode: data, expiresAt };
+}
+
 async function verifySetupCode(code: string) {
   if (!(await organizationAdminSchemaEnabled())) return null;
   const hash = setupCodeHash(code);
@@ -910,10 +1240,44 @@ async function registerDevice(body: { teamMemberId: string; pin: string; deviceT
 }
 
 async function route(event: HandlerEvent) {
+  if (event.httpMethod === 'OPTIONS') return empty(204);
   if (!supabaseUrl || !serviceRoleKey) return json(500, { error: 'Supabase environment variables are missing.' });
 
   const path = normalizePath(event);
   const method = event.httpMethod;
+
+  if (method === 'POST' && path === '/workspace-requests') {
+    let values: ReturnType<typeof normalizeWorkspaceRequestBody>;
+    try {
+      values = normalizeWorkspaceRequestBody(readRequestBody<Record<string, unknown>>(event));
+    } catch (error) {
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      throw error;
+    }
+    const { data, error } = await supabase.from('workspace_requests').insert(values).select('*').single();
+    if (error) {
+      if (isMissingRelationError(error)) return json(503, { error: 'Workspace request queue is not configured yet.' });
+      return json(500, { error: error.message });
+    }
+    const request = data as WorkspaceRequestRow;
+    const notificationStatus = await notifyOperatorOfWorkspaceRequest(request);
+    await supabase
+      .from('workspace_requests')
+      .update({
+        operator_notification_status: notificationStatus,
+        operator_notified_at: notificationStatus === 'sent' ? new Date().toISOString() : null,
+      })
+      .eq('id', request.id);
+    return json(201, {
+      request: {
+        id: request.id,
+        status: request.status,
+        installation_or_command: request.installation_or_command,
+        created_at: request.created_at,
+      },
+      notificationStatus,
+    });
+  }
 
   if (method === 'GET' && path === '/installations/search') {
     const query = event.queryStringParameters?.q?.trim() ?? '';
@@ -942,6 +1306,156 @@ async function route(event: HandlerEvent) {
     if (!(await organizationSchemaEnabled()) || !(await organizationAdminSchemaEnabled())) {
       return json(400, { error: 'Organization workspace tables are not available for this database yet.' });
     }
+  }
+
+  if (method === 'GET' && path === '/operator/workspace-requests') {
+    const params = event.queryStringParameters ?? {};
+    const limit = boundedInteger(params.limit, 100, 1, 250);
+    const offset = boundedInteger(params.offset, 0, 0, 100000);
+    const status = params.status?.trim();
+    let query = supabase
+      .from('workspace_requests')
+      .select(
+        '*, organizations(id, slug, name, active), organization_setup_codes(id, label, purpose, active, expires_at, used_at, used_by_label, created_at)',
+        { count: 'exact' },
+      )
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (status && ['pending', 'approved', 'rejected'].includes(status)) query = query.eq('status', status);
+    const { data, error, count } = await query;
+    if (error) {
+      if (isMissingRelationError(error)) return json(503, { error: 'Workspace request queue is not configured yet.' });
+      return json(500, { error: error.message });
+    }
+    const returned = data?.length ?? 0;
+    return json(200, {
+      requests: data ?? [],
+      page: {
+        limit,
+        offset,
+        returned,
+        total: count ?? returned,
+        hasMore: count == null ? returned === limit : offset + returned < count,
+      },
+    });
+  }
+
+  const operatorRequestApproveMatch = path.match(/^\/operator\/workspace-requests\/([^/]+)\/approve$/);
+  if (method === 'POST' && operatorRequestApproveMatch) {
+    const requestId = operatorRequestApproveMatch[1];
+    if (!isUuid(requestId)) return json(400, { error: 'Workspace request ID must be a UUID.' });
+    const body = readBody<{ workspaceName?: string; workspaceSlug?: string; expiresInDays?: number; operatorNote?: string }>(event);
+    const { data: request, error: requestError } = await supabase
+      .from('workspace_requests')
+      .select('*')
+      .eq('id', requestId)
+      .maybeSingle();
+    if (requestError) return json(500, { error: requestError.message });
+    if (!request) return json(404, { error: 'Workspace request not found.' });
+    const workspaceRequest = request as WorkspaceRequestRow;
+    if (workspaceRequest.status !== 'pending') return json(400, { error: 'Only pending workspace requests can be approved.' });
+
+    const workspaceName = clampText(body.workspaceName, 160) || workspaceRequest.installation_or_command;
+    const slugBase = clampText(body.workspaceSlug, 80) || workspaceRequest.preferred_workspace_slug || workspaceName;
+    const workspaceSlug = await uniqueWorkspaceSlug(slugBase);
+    const expiresInDays = body.expiresInDays == null ? 14 : Number(body.expiresInDays);
+    if (expiresInDays < 1 || expiresInDays > 90) return json(400, { error: 'expiresInDays must be between 1 and 90.' });
+
+    const { data: organization, error: organizationError } = await supabase
+      .from('organizations')
+      .insert({ name: workspaceName, slug: workspaceSlug, active: true })
+      .select('id, slug, name, active, created_at, updated_at')
+      .single();
+    if (organizationError) {
+      if (organizationError.code === '23505') return json(409, { error: 'An organization with that slug already exists.' });
+      return json(500, { error: organizationError.message });
+    }
+
+    await tryRecordOperatorAudit(organization.id, 'workspace_created', { slug: organization.slug, workspaceRequestId: workspaceRequest.id });
+    const setup = await issueOrganizationSetupCode({
+      organizationId: organization.id,
+      organization,
+      label: `${workspaceRequest.lead_name} approval setup`,
+      expiresInDays,
+      purpose: 'pilot_setup',
+    });
+
+    const approvedAt = new Date().toISOString();
+    const { data: updatedRequest, error: updateError } = await supabase
+      .from('workspace_requests')
+      .update({
+        status: 'approved',
+        organization_id: organization.id,
+        setup_code_id: setup.setupCode.id,
+        approved_at: approvedAt,
+        rejected_at: null,
+        operator_note: clampText(body.operatorNote, 1000) || null,
+      })
+      .eq('id', workspaceRequest.id)
+      .select('*')
+      .single();
+    if (updateError) return json(500, { error: updateError.message });
+    await tryRecordOperatorAudit(organization.id, 'workspace_request_approved', {
+      workspaceRequestId: workspaceRequest.id,
+      slug: organization.slug,
+      setupCodeId: setup.setupCode.id,
+    });
+
+    const requestorNotificationStatus = await notifyRequestorOfApproval({
+      request: updatedRequest as WorkspaceRequestRow,
+      organization,
+      setupCode: setup.code,
+    });
+    await supabase
+      .from('workspace_requests')
+      .update({
+        requestor_notification_status: requestorNotificationStatus,
+        requestor_notified_at: requestorNotificationStatus === 'sent' ? new Date().toISOString() : null,
+      })
+      .eq('id', workspaceRequest.id);
+
+    return json(200, {
+      request: updatedRequest,
+      organization,
+      code: setup.code,
+      setupCode: { ...setup.setupCode, code: setup.code },
+      requestorNotificationStatus,
+    });
+  }
+
+  const operatorRequestRejectMatch = path.match(/^\/operator\/workspace-requests\/([^/]+)\/reject$/);
+  if (method === 'POST' && operatorRequestRejectMatch) {
+    const requestId = operatorRequestRejectMatch[1];
+    if (!isUuid(requestId)) return json(400, { error: 'Workspace request ID must be a UUID.' });
+    const body = readBody<{ operatorNote?: string }>(event);
+    const operatorNote = clampText(body.operatorNote, 1000);
+    if (operatorNote.length < 3) return json(400, { error: 'An operator note is required when rejecting a request.' });
+    const { data: existing, error: existingError } = await supabase.from('workspace_requests').select('*').eq('id', requestId).maybeSingle();
+    if (existingError) return json(500, { error: existingError.message });
+    if (!existing) return json(404, { error: 'Workspace request not found.' });
+    const workspaceRequest = existing as WorkspaceRequestRow;
+    if (workspaceRequest.status !== 'pending') return json(400, { error: 'Only pending workspace requests can be rejected.' });
+    const { data: updatedRequest, error: updateError } = await supabase
+      .from('workspace_requests')
+      .update({
+        status: 'rejected',
+        rejected_at: new Date().toISOString(),
+        operator_note: operatorNote,
+      })
+      .eq('id', requestId)
+      .select('*')
+      .single();
+    if (updateError) return json(500, { error: updateError.message });
+    await tryRecordOperatorAudit(null, 'workspace_request_rejected', { workspaceRequestId: requestId });
+    const requestorNotificationStatus = await notifyRequestorOfRejection(updatedRequest as WorkspaceRequestRow);
+    await supabase
+      .from('workspace_requests')
+      .update({
+        requestor_notification_status: requestorNotificationStatus,
+        requestor_notified_at: requestorNotificationStatus === 'sent' ? new Date().toISOString() : null,
+      })
+      .eq('id', requestId);
+    return json(200, { request: updatedRequest, requestorNotificationStatus });
   }
 
   if (method === 'GET' && path === '/operator/audit-events') {
@@ -1170,27 +1684,14 @@ async function route(event: HandlerEvent) {
     const purpose = body.purpose === 'pilot_setup' ? 'pilot_setup' : 'workspace_setup';
     const expiresInDays = body.expiresInDays == null ? 14 : Number(body.expiresInDays);
     if (expiresInDays < 1 || expiresInDays > 90) return json(400, { error: 'expiresInDays must be between 1 and 90.' });
-    const code = createSetupCode();
-    const expiresAt = new Date(Date.now() + expiresInDays * 86400000).toISOString();
-    const { data, error } = await supabase
-      .from('organization_setup_codes')
-      .insert({
-        organization_id: organizationId,
-        code_hash: setupCodeHash(code),
-        label: body.label?.trim() || null,
-        purpose,
-        active: true,
-        expires_at: expiresAt,
-      })
-      .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
-      .single();
-    if (error) return json(500, { error: error.message });
-    await tryRecordOperatorAudit(organizationId, 'setup_code_issued', {
-      setupCodeId: data.id,
-      slug: organization.slug,
-      expiresAt,
+    const setup = await issueOrganizationSetupCode({
+      organizationId,
+      organization,
+      label: body.label,
+      expiresInDays,
+      purpose,
     });
-    return json(201, { organization, code, setupCode: { ...data, code } });
+    return json(201, { organization, code: setup.code, setupCode: { ...setup.setupCode, code: setup.code } });
   }
 
   const operatorCodeRevokeMatch = path.match(/^\/operator\/setup-codes\/([^/]+)\/revoke$/);

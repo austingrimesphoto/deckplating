@@ -164,6 +164,14 @@ Then run the Activity Log search index migration:
 4. Paste it into Supabase SQL Editor.
 5. Click **Run**.
 
+Then run the workspace request queue migration:
+
+1. Click **New query** again.
+2. In your GitHub copy, open `supabase/migrations/010_workspace_request_queue.sql`.
+3. Copy the whole file.
+4. Paste it into Supabase SQL Editor.
+5. Click **Run**.
+
 Then load starter data:
 
 1. Click **New query** again.
@@ -242,6 +250,16 @@ Before the first deploy, add environment variables:
 6. Click **Deploys**.
 7. Click **Trigger deploy**.
 8. Click **Deploy site**.
+
+Managed pilot hosts that use the workspace request approval queue should also set:
+
+- `DECKPLATING_OPERATOR_EMAIL`
+- `DECKPLATING_FROM_EMAIL`
+- `RESEND_API_KEY`
+- `DECKPLATING_APP_BASE_URL`
+- `DECKPLATING_SETUP_SITE_BASE_URL`
+
+If the email variables are blank, workspace requests and approvals still work, but notification status is recorded as skipped.
 
 ## Step 7: First Launch
 
@@ -350,7 +368,7 @@ If the app loads but data does not:
 - Check Netlify environment variables.
 - Confirm the Supabase URL is correct.
 - Confirm the `service_role` key was used, not the anon key.
-- Confirm all eight migration files and `seed.sql` were run in Supabase.
+- Confirm all migration files and `seed.sql` were run in Supabase.
 
 If offline mode does not work:
 
@@ -361,7 +379,7 @@ If offline mode does not work:
 
 If Mission Board tone will not save:
 
-- Confirm migrations `004` through `009` were run.
+- Confirm migrations `004` through `010` were run.
 - Confirm the Admin tab unlocks with the current admin passphrase.
 
 If the Admin tab will not unlock:

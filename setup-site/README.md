@@ -19,8 +19,8 @@ https://deckplating.netlify.app
 The setup site now supports the centrally managed pilot flow:
 
 - explain that pilots use `deckplating.netlify.app`
-- collect workspace/account requests through Netlify Forms
-- explain the manual approval path
+- send workspace/account requests into the Deckplating operator approval queue
+- explain the managed approval path
 - link to the hosted user guide
 - collect pilot feedback during setup, week one, urgent blockers, and closeout
 
@@ -33,7 +33,8 @@ Workspace requests:
 - form name: `deckplating-workspace-request`
 - entry link: `https://deckplatingsetup.netlify.app/#request`
 - thank-you page: `workspace-request-thanks.html`
-- notification model: manual review, then the operator manually contacts the approved lead with the workspace link and one-time setup code
+- notification model: JavaScript submits to `https://deckplating.netlify.app/api/workspace-requests`; Netlify Forms remains a no-JavaScript fallback
+- approval model: the System Administration queue creates the workspace, setup code, audit event, and welcome email when email environment variables are configured
 
 Pilot feedback:
 

@@ -207,11 +207,20 @@ MAP_TILE_KEY
 MAP_DEFAULT_LATITUDE
 MAP_DEFAULT_LONGITUDE
 INSTALLATION_NAME
+DECKPLATING_APP_BASE_URL
+DECKPLATING_SETUP_SITE_BASE_URL
+DECKPLATING_OPERATOR_EMAIL
+DECKPLATING_FROM_EMAIL
+RESEND_API_KEY
 ```
 
 `npm run setup` generates `ADMIN_PASSPHRASE_HASH` and `ADMIN_SESSION_SECRET` for local use. Use the same values in Netlify.
 
 `CENTRAL_OPERATOR_PASSPHRASE_HASH` is optional and should be used only on a future managed pilot host. When set, it enables protected operator API routes for creating approved organization workspaces and one-time setup codes. Leave it blank for normal self-hosted installs.
+
+`DECKPLATING_OPERATOR_EMAIL`, `DECKPLATING_FROM_EMAIL`, and `RESEND_API_KEY` enable workspace-request notification and approval emails on a managed host. If they are blank, workspace requests and approvals still work, but email delivery is recorded as skipped.
+
+`DECKPLATING_APP_BASE_URL` and `DECKPLATING_SETUP_SITE_BASE_URL` set the links included in operator and welcome emails. Defaults are the managed pilot URLs.
 
 `MAP_TILE_URL` and `MAP_TILE_KEY` may be blank for basic use.
 
@@ -230,7 +239,8 @@ Run these files in Supabase SQL Editor, in order:
 7. `supabase/migrations/007_app_settings_workspace_key.sql`
 8. `supabase/migrations/008_operator_audit_events.sql`
 9. `supabase/migrations/009_activity_log_search_indexes.sql`
-10. `supabase/seed.sql`
+10. `supabase/migrations/010_workspace_request_queue.sql`
+11. `supabase/seed.sql`
 
 The schema enables row level security on all tables. Browser code never talks directly to Supabase. All database access goes through Netlify Functions using the server-side service-role key.
 

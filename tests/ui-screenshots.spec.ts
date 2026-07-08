@@ -298,6 +298,40 @@ test('captures operator console', async ({ page }, testInfo) => {
       },
     }),
   );
+  await page.route('**/api/operator/workspace-requests**', (route) =>
+    route.fulfill({
+      json: {
+        requests: [
+          {
+            id: '99999999-9999-4999-8999-999999999999',
+            installation_or_command: 'Demo Request Command',
+            preferred_workspace_slug: 'demo-request',
+            lead_name: 'CH Request',
+            lead_role: 'Command chaplain',
+            official_contact_email: 'request@example.mil',
+            rmt_size: 4,
+            expected_pilot_start_date: '2026-07-20',
+            short_use_case: 'Track routine coverage across departments and tenant commands during a managed pilot.',
+            safe_use_boundaries_confirmed: true,
+            no_sensitive_data_acknowledged: true,
+            status: 'pending',
+            operator_note: null,
+            organization_id: null,
+            setup_code_id: null,
+            approved_at: null,
+            rejected_at: null,
+            operator_notified_at: '2026-07-08T00:00:00.000Z',
+            requestor_notified_at: null,
+            operator_notification_status: 'sent',
+            requestor_notification_status: null,
+            created_at: '2026-07-08T00:00:00.000Z',
+            updated_at: '2026-07-08T00:00:00.000Z',
+          },
+        ],
+        page: { limit: 100, offset: 0, returned: 1, total: 1, hasMore: false },
+      },
+    }),
+  );
   await page.route('**/api/operator/audit-events**', (route) =>
     route.fulfill({
       json: {
@@ -322,5 +356,7 @@ test('captures operator console', async ({ page }, testInfo) => {
   await page.getByRole('button', { name: 'Unlock operator console' }).click();
   await expect(page.getByRole('heading', { name: 'System Administration', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Quality controls/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Approval queue' })).toBeVisible();
+  await expect(page.getByText('Demo Request Command')).toBeVisible();
   await screenshot(page, testInfo.project.name, '06-operator-console');
 });

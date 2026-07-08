@@ -398,9 +398,10 @@
           <p class="eyebrow">Workspace request</p>
           <h2>Request managed pilot access</h2>
           <p class="muted">
-            Requests are reviewed manually. If approved, the lead will be contacted outside this form with the workspace link and one-time setup code.
+            Requests enter the Deckplating operator approval queue. If approved, the lead will receive the workspace link, one-time setup code, setup guide, and first steps at the official contact email provided here.
           </p>
           <form
+            id="workspace-request-form"
             name="deckplating-workspace-request"
             method="POST"
             action="workspace-request-thanks.html"
@@ -459,6 +460,7 @@
               I understand this form should not include secrets, setup codes, passphrases, production data, or sensitive personal/operational details.
             </label>
             <button type="submit">Send Workspace Request</button>
+            <p id="workspace-request-status" class="helper" aria-live="polite"></p>
           </form>
         </section>
 
@@ -590,5 +592,35 @@
         </section>
       </main>
     </div>
+    <script>
+      const workspaceRequestForm = document.getElementById('workspace-request-form');
+      const workspaceRequestStatus = document.getElementById('workspace-request-status');
+
+      workspaceRequestForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const formData = new FormData(form);
+        if (String(formData.get('bot-field') || '').trim()) {
+          window.location.href = 'workspace-request-thanks.html';
+          return;
+        }
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        workspaceRequestStatus.textContent = 'Sending request...';
+        try {
+          const response = await fetch('https://deckplating.netlify.app/api/workspace-requests', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(Object.fromEntries(formData.entries())),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.error || 'Workspace request could not be sent.');
+          window.location.href = 'workspace-request-thanks.html?queued=1';
+        } catch (error) {
+          workspaceRequestStatus.textContent = error instanceof Error ? error.message : 'Workspace request could not be sent.';
+          submitButton.disabled = false;
+        }
+      });
+    </script>
   </body>
 </html>

@@ -43,12 +43,34 @@ Exit path:
 - select `Back and lock`
 - this removes only the operator token from `sessionStorage`
 
-## Create Workspace
+## Approve Workspace Request
+
+1. Open `System Administration`.
+2. In `Workspace requests`, review the pending request details.
+3. Adjust the generated workspace name or slug if needed.
+4. Leave an operator note if useful.
+5. Select `Approve and send welcome`.
+6. Confirm the workspace card appears and the request status changes to approved.
+
+Approval creates the workspace, issues the one-time setup code, records operator audit events, and sends the welcome email when email environment variables are configured.
+
+## Create Workspace Manually
 
 1. Open `System Administration`.
 2. In `Create approved workspace`, enter the workspace name and slug.
 3. Select `Create workspace`.
 4. Confirm the workspace card appears with status and onboarding counts.
+
+Use manual creation only for support, testing, or approved exceptions that did not come through the setup-site request form.
+
+## Reject Or Request More Information
+
+1. Open `System Administration`.
+2. In `Workspace requests`, find the pending request.
+3. Enter an operator note explaining the issue or missing information.
+4. Select `Reject or needs info`.
+
+The requestor receives the note by email when email environment variables are configured.
 
 ## Issue And Revoke Setup Code
 

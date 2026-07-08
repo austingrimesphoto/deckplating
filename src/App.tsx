@@ -89,6 +89,41 @@ type OperatorAuditEvent = {
   organization: Pick<WorkspaceContext, 'id' | 'slug' | 'name'> | null;
 };
 
+type OperatorWorkspaceRequest = {
+  id: string;
+  installation_or_command: string;
+  preferred_workspace_slug: string | null;
+  lead_name: string;
+  lead_role: string;
+  official_contact_email: string;
+  rmt_size: number;
+  expected_pilot_start_date: string;
+  short_use_case: string;
+  safe_use_boundaries_confirmed: boolean;
+  no_sensitive_data_acknowledged: boolean;
+  status: 'pending' | 'approved' | 'rejected';
+  operator_note: string | null;
+  organization_id: string | null;
+  setup_code_id: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+  operator_notified_at: string | null;
+  requestor_notified_at: string | null;
+  operator_notification_status: string | null;
+  requestor_notification_status: string | null;
+  created_at: string;
+  updated_at: string;
+  organizations?: Pick<WorkspaceContext, 'id' | 'slug' | 'name'> & { active: boolean };
+  organization_setup_codes?: OperatorSetupCode | null;
+};
+
+type WorkspaceRequestApprovalForm = {
+  workspaceName: string;
+  workspaceSlug: string;
+  expiresInDays: string;
+  operatorNote: string;
+};
+
 type PageMetadata = {
   limit: number;
   offset: number;
@@ -163,6 +198,16 @@ const workspaceParam = () => {
 };
 
 const operatorParamEnabled = () => new URLSearchParams(window.location.search).get('operator') === '1';
+
+const operatorRequestParam = () => new URLSearchParams(window.location.search).get('request') ?? '';
+
+const slugPreview = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
 
 const setOperatorQueryParam = (enabled: boolean) => {
   const url = new URL(window.location.href);
@@ -844,6 +889,11 @@ function OperatorConsole({
   const [token, setToken] = useState(sessionStorage.getItem(operatorKey) ?? '');
   const [passphrase, setPassphrase] = useState('');
   const [organizations, setOrganizations] = useState<OperatorOrganization[]>([]);
+  const [workspaceRequests, setWorkspaceRequests] = useState<OperatorWorkspaceRequest[]>([]);
+  const [workspaceRequestSearch, setWorkspaceRequestSearch] = useState(operatorRequestParam());
+  const [workspaceRequestStatus, setWorkspaceRequestStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [workspaceRequestPage, setWorkspaceRequestPage] = useState<PageMetadata | null>(null);
+  const [workspaceRequestForms, setWorkspaceRequestForms] = useState<Record<string, WorkspaceRequestApprovalForm>>({});
   const [workspaceSearch, setWorkspaceSearch] = useState('');
   const [auditEvents, setAuditEvents] = useState<OperatorAuditEvent[]>([]);
   const [auditSearch, setAuditSearch] = useState('');
@@ -863,6 +913,30 @@ function OperatorConsole({
       headers: { authorization: `Bearer ${currentToken}` },
     });
     setOrganizations(result.organizations);
+  }
+
+  async function loadWorkspaceRequests(currentToken = token, nextOffset = 0, append = false) {
+    const params = new URLSearchParams({ limit: '100', offset: String(nextOffset) });
+    if (workspaceRequestStatus !== 'all') params.set('status', workspaceRequestStatus);
+    const result = await api<{ requests: OperatorWorkspaceRequest[]; page?: PageMetadata }>(`/api/operator/workspace-requests?${params.toString()}`, {
+      headers: { authorization: `Bearer ${currentToken}` },
+    });
+    setWorkspaceRequests((current) => (append ? [...current, ...result.requests] : result.requests));
+    setWorkspaceRequestPage(result.page ?? null);
+    setWorkspaceRequestForms((current) => {
+      const next = { ...current };
+      for (const request of result.requests) {
+        if (!next[request.id]) {
+          next[request.id] = {
+            workspaceName: request.installation_or_command,
+            workspaceSlug: request.preferred_workspace_slug ?? slugPreview(request.installation_or_command),
+            expiresInDays: '14',
+            operatorNote: '',
+          };
+        }
+      }
+      return next;
+    });
   }
 
   async function loadAuditEvents(currentToken = token, nextOffset = 0, append = false) {
@@ -895,8 +969,7 @@ function OperatorConsole({
       sessionStorage.setItem(operatorKey, result.token);
       setToken(result.token);
       setPassphrase('');
-      await loadOrganizations(result.token);
-      await loadAuditEvents(result.token);
+      await Promise.all([loadOrganizations(result.token), loadWorkspaceRequests(result.token), loadAuditEvents(result.token)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Operator login failed.');
     }
@@ -946,6 +1019,76 @@ function OperatorConsole({
       await loadOrganizations();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Setup code creation failed.');
+    }
+  }
+
+  async function approveWorkspaceRequest(request: OperatorWorkspaceRequest) {
+    setError('');
+    setMessage('');
+    const form = workspaceRequestForms[request.id] ?? {
+      workspaceName: request.installation_or_command,
+      workspaceSlug: request.preferred_workspace_slug ?? slugPreview(request.installation_or_command),
+      expiresInDays: '14',
+      operatorNote: '',
+    };
+    const confirmed = window.confirm(
+      `Approve workspace request for ${request.installation_or_command}?\n\nThis creates the workspace, issues a setup code, sends the welcome email if email is configured, and records an operator audit event.`,
+    );
+    if (!confirmed) return;
+    try {
+      const result = await api<{
+        organization: Pick<WorkspaceContext, 'id' | 'slug' | 'name'> & { active: boolean };
+        code: string;
+        requestorNotificationStatus: string;
+      }>(`/api/operator/workspace-requests/${request.id}/approve`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          workspaceName: form.workspaceName,
+          workspaceSlug: form.workspaceSlug,
+          expiresInDays: Number(form.expiresInDays || '14'),
+          operatorNote: form.operatorNote,
+        }),
+      });
+      setLastIssuedCode((current) => ({
+        ...current,
+        [result.organization.id]: {
+          code: result.code,
+          link: `${window.location.origin}${window.location.pathname}?workspace=${encodeURIComponent(result.organization.slug)}`,
+        },
+      }));
+      setMessage(`Approved ${request.installation_or_command}. Requestor email ${result.requestorNotificationStatus}.`);
+      await Promise.all([loadWorkspaceRequests(), loadOrganizations(), loadAuditEvents(token)]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Workspace request approval failed.');
+    }
+  }
+
+  async function rejectWorkspaceRequest(request: OperatorWorkspaceRequest) {
+    setError('');
+    setMessage('');
+    const form = workspaceRequestForms[request.id] ?? {
+      workspaceName: request.installation_or_command,
+      workspaceSlug: request.preferred_workspace_slug ?? slugPreview(request.installation_or_command),
+      expiresInDays: '14',
+      operatorNote: '',
+    };
+    if (form.operatorNote.trim().length < 3) {
+      setError('Add an operator note before rejecting a request.');
+      return;
+    }
+    const confirmed = window.confirm(`Reject workspace request for ${request.installation_or_command}?`);
+    if (!confirmed) return;
+    try {
+      const result = await api<{ requestorNotificationStatus: string }>(`/api/operator/workspace-requests/${request.id}/reject`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ operatorNote: form.operatorNote }),
+      });
+      setMessage(`Rejected ${request.installation_or_command}. Requestor email ${result.requestorNotificationStatus}.`);
+      await Promise.all([loadWorkspaceRequests(), loadAuditEvents(token)]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Workspace request rejection failed.');
     }
   }
 
@@ -1104,10 +1247,10 @@ function OperatorConsole({
 
   useEffect(() => {
     if (!token) return;
-    void Promise.all([loadOrganizations(token), loadAuditEvents(token)]).catch((err) => {
+    void Promise.all([loadOrganizations(token), loadWorkspaceRequests(token), loadAuditEvents(token)]).catch((err) => {
       setError(err instanceof Error ? err.message : 'Unable to load operator console.');
     });
-  }, [token]);
+  }, [token, workspaceRequestStatus]);
 
   const filteredOrganizations = useMemo(
     () =>
@@ -1123,6 +1266,26 @@ function OperatorConsole({
         ]),
       ),
     [organizations, workspaceSearch],
+  );
+
+  const filteredWorkspaceRequests = useMemo(
+    () =>
+      workspaceRequests.filter((request) =>
+        matchesSearch(workspaceRequestSearch, [
+          request.id,
+          request.installation_or_command,
+          request.preferred_workspace_slug,
+          request.lead_name,
+          request.lead_role,
+          request.official_contact_email,
+          request.status,
+          request.short_use_case,
+          request.organizations?.name,
+          request.organizations?.slug,
+          request.operator_note,
+        ]),
+      ),
+    [workspaceRequests, workspaceRequestSearch],
   );
 
   const filteredAuditEvents = useMemo(
@@ -1182,6 +1345,147 @@ function OperatorConsole({
       {message && <p className="notice">{message}</p>}
       {error && <p className="error">{error}</p>}
       <WhatChangedPanel audience="operator" />
+      <section className="panel">
+        <div className="screen-title inline-title">
+          <div>
+            <p className="eyebrow">Workspace requests</p>
+            <h2>Approval queue</h2>
+          </div>
+          <button className="secondary" onClick={() => void loadWorkspaceRequests()}>
+            Refresh requests
+          </button>
+        </div>
+        <div className="filters">
+          <input
+            placeholder="Search requests by command, lead, email, status, or request ID"
+            value={workspaceRequestSearch}
+            onChange={(event) => setWorkspaceRequestSearch(event.target.value)}
+          />
+          <select value={workspaceRequestStatus} onChange={(event) => setWorkspaceRequestStatus(event.target.value as typeof workspaceRequestStatus)}>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="all">All requests</option>
+          </select>
+        </div>
+        <div className="activity-list">
+          {filteredWorkspaceRequests.map((request) => {
+            const form = workspaceRequestForms[request.id] ?? {
+              workspaceName: request.installation_or_command,
+              workspaceSlug: request.preferred_workspace_slug ?? slugPreview(request.installation_or_command),
+              expiresInDays: '14',
+              operatorNote: '',
+            };
+            return (
+              <article key={request.id} className="activity-row">
+                <div className="activity-summary">
+                  <div>
+                    <strong>{request.installation_or_command}</strong>
+                    <small>
+                      {request.lead_name} - {request.lead_role} - {request.official_contact_email}
+                    </small>
+                    <small>
+                      Requested {niceDateTime(request.created_at)} - Pilot start {niceDate(request.expected_pilot_start_date)} - RMT size {request.rmt_size}
+                    </small>
+                  </div>
+                  <span className="status-pill">{request.status}</span>
+                </div>
+                <p className="muted">{request.short_use_case}</p>
+                <div className="safe-summary">
+                  Preferred slug: {request.preferred_workspace_slug ?? 'none'}.
+                  Operator notice: {request.operator_notification_status ?? 'not recorded'}.
+                  Requestor notice: {request.requestor_notification_status ?? 'not recorded'}.
+                </div>
+                {request.status === 'approved' && request.organizations && (
+                  <p className="notice">
+                    Approved workspace: {request.organizations.name} ({request.organizations.slug})
+                  </p>
+                )}
+                {request.operator_note && <p className="warning-notice">Operator note: {request.operator_note}</p>}
+                {request.status === 'pending' && (
+                  <div className="stack">
+                    <div className="filters">
+                      <input
+                        placeholder="Workspace name"
+                        value={form.workspaceName}
+                        onChange={(event) =>
+                          setWorkspaceRequestForms((current) => ({
+                            ...current,
+                            [request.id]: {
+                              ...form,
+                              workspaceName: event.target.value,
+                              workspaceSlug: form.workspaceSlug || slugPreview(event.target.value),
+                            },
+                          }))
+                        }
+                      />
+                      <input
+                        placeholder="workspace-slug"
+                        autoCapitalize="none"
+                        value={form.workspaceSlug}
+                        onChange={(event) =>
+                          setWorkspaceRequestForms((current) => ({
+                            ...current,
+                            [request.id]: {
+                              ...form,
+                              workspaceSlug: slugPreview(event.target.value),
+                            },
+                          }))
+                        }
+                      />
+                      <input
+                        inputMode="numeric"
+                        placeholder="Setup code days"
+                        value={form.expiresInDays}
+                        onChange={(event) =>
+                          setWorkspaceRequestForms((current) => ({
+                            ...current,
+                            [request.id]: {
+                              ...form,
+                              expiresInDays: event.target.value.replace(/\D/g, '').slice(0, 2) || '14',
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <textarea
+                      placeholder="Operator note, required for rejection and optional for approval"
+                      value={form.operatorNote}
+                      onChange={(event) =>
+                        setWorkspaceRequestForms((current) => ({
+                          ...current,
+                          [request.id]: {
+                            ...form,
+                            operatorNote: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                    <div className="action-row">
+                      <button className="primary" onClick={() => void approveWorkspaceRequest(request)}>
+                        Approve and send welcome
+                      </button>
+                      <button className="secondary danger-text" onClick={() => void rejectWorkspaceRequest(request)}>
+                        Reject or needs info
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+          {workspaceRequests.length > 0 && !filteredWorkspaceRequests.length && <p className="notice">No workspace requests match that search.</p>}
+          {!workspaceRequests.length && <p className="notice">No workspace requests in this view.</p>}
+        </div>
+        {workspaceRequestPage?.hasMore && (
+          <button
+            className="secondary"
+            onClick={() => void loadWorkspaceRequests(token, workspaceRequestPage.offset + workspaceRequestPage.returned, true)}
+          >
+            Load more requests
+          </button>
+        )}
+      </section>
       <section className="panel">
         <h2>Create approved workspace</h2>
         <form onSubmit={createOrganization} className="stack">

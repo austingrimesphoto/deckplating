@@ -7,6 +7,7 @@ const files = {
   migration005: fs.readFileSync('supabase/migrations/005_multi_site_foundation.sql', 'utf8'),
   migration007: fs.readFileSync('supabase/migrations/007_app_settings_workspace_key.sql', 'utf8'),
   migration008: fs.readFileSync('supabase/migrations/008_operator_audit_events.sql', 'utf8'),
+  migration010: fs.readFileSync('supabase/migrations/010_workspace_request_queue.sql', 'utf8'),
 };
 
 const checks = [];
@@ -32,6 +33,8 @@ const checkinRoute = section(api, "if (method === 'POST' && path === '/checkins'
 const undoRoute = section(api, "if (method === 'POST' && path === '/checkins/undo')", 'const indicatorMatch');
 const indicatorRoute = section(api, 'const indicatorMatch', "if (method === 'GET' && path === '/dashboard')");
 const operatorRoutes = section(api, "if (method === 'GET' && path === '/operator/organizations')", "if (method === 'GET' && path === '/workspaces/resolve')");
+const workspaceRequestPublic = section(api, "if (method === 'POST' && path === '/workspace-requests')", "if (method === 'GET' && path === '/installations/search')");
+const operatorWorkspaceRequests = section(api, "if (method === 'GET' && path === '/operator/workspace-requests')", "if (method === 'GET' && path === '/operator/audit-events')");
 const operatorOrganizations = section(api, "if (method === 'GET' && path === '/operator/organizations')", "if (method === 'POST' && path === '/operator/organizations')");
 const operatorAdminSession = section(api, 'const operatorAdminSessionMatch', 'const operatorSetupCodeMatch');
 const operatorExport = section(api, 'const operatorExportMatch', 'const operatorSetupCodeMatch');
@@ -88,6 +91,18 @@ check(
     !has(operatorStatusRoute, 'passphrase_hash') &&
     !has(operatorAdminRecovery, '.select(\'passphrase_hash') &&
     !has(operatorDeleteRoute, 'passphrase_hash'),
+);
+check(
+  'Workspace request approval is queued, operator-gated, audited, and avoids stored setup-code hashes',
+  has(files.migration010, 'create table if not exists workspace_requests') &&
+    has(workspaceRequestPublic, "from('workspace_requests').insert") &&
+    has(api, 'safe_use_boundaries_confirmed') &&
+    has(operatorWorkspaceRequests, 'const operatorRequestApproveMatch = path.match') &&
+    has(operatorWorkspaceRequests, '/operator\\/workspace-requests') &&
+    has(operatorWorkspaceRequests, 'workspace_request_approved') &&
+    has(operatorWorkspaceRequests, 'notifyRequestorOfApproval') &&
+    !has(operatorWorkspaceRequests, 'code_hash') &&
+    !has(operatorWorkspaceRequests, 'passphrase_hash')
 );
 check(
   'Operator superuser admin sessions are scoped and audited',
