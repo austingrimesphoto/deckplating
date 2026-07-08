@@ -201,6 +201,8 @@ const operatorParamEnabled = () => new URLSearchParams(window.location.search).g
 
 const operatorRequestParam = () => new URLSearchParams(window.location.search).get('request') ?? '';
 
+const kioskParamEnabled = () => new URLSearchParams(window.location.search).get('kiosk') === '1';
+
 const slugPreview = (value: string) =>
   value
     .trim()
@@ -214,6 +216,11 @@ const setOperatorQueryParam = (enabled: boolean) => {
   if (enabled) url.searchParams.set('operator', '1');
   else url.searchParams.delete('operator');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+};
+
+const kioskLinkForWorkspace = (workspace: WorkspaceContext | null) => {
+  const workspaceKey = workspace?.slug || workspace?.id;
+  return workspaceKey ? `/?workspace=${encodeURIComponent(workspaceKey)}&kiosk=1` : '/?kiosk=1';
 };
 
 const looksLikeUuid = (value: string) =>
@@ -262,12 +269,14 @@ const indicatorPayload = (indicators: VisitIndicatorState) => ({
   referralProvided: indicators.referralProvided,
 });
 
-const statusLabel = (unit: UnitSummary) => {
-  if (unit.status === 'gray') return 'Never visited';
-  if (unit.status === 'red') return 'Overdue';
-  if (unit.status === 'yellow') return 'Due soon';
-  return 'Current';
+const statusText: Record<UnitSummary['status'], string> = {
+  gray: 'Never visited',
+  red: 'Overdue',
+  yellow: 'Due soon',
+  green: 'Current',
 };
+
+const statusLabel = (unit: UnitSummary) => statusText[unit.status];
 
 const niceDate = (date: string | null) => (date ? new Date(date).toLocaleDateString() : 'Never');
 
@@ -292,6 +301,38 @@ const statusColor = {
   yellow: '#b47b13',
   red: '#bd3030',
   gray: '#68717a',
+};
+
+const statusPriority: Record<UnitSummary['status'], number> = {
+  gray: 4,
+  red: 3,
+  yellow: 2,
+  green: 1,
+};
+
+const mappedLocationSummaries = (units: UnitSummary[]) => {
+  const grouped = new Map<string, LocationSummary>();
+  for (const unit of units) {
+    if (!unit.location_id || unit.latitude == null || unit.longitude == null || unit.radius_meters == null) continue;
+    const existing = grouped.get(unit.location_id);
+    if (existing) {
+      existing.units.push(unit);
+      existing.status = statusPriority[unit.status] > statusPriority[existing.status] ? unit.status : existing.status;
+    } else {
+      grouped.set(unit.location_id, {
+        id: unit.location_id,
+        area_id: unit.area_id ?? '',
+        area_name: unit.area_name ?? '',
+        name: unit.location_name ?? '',
+        latitude: unit.latitude,
+        longitude: unit.longitude,
+        radius_meters: unit.radius_meters,
+        status: unit.status,
+        units: [unit],
+      });
+    }
+  }
+  return Array.from(grouped.values());
 };
 
 const unitTypeLabel: Record<UnitType, string> = {
@@ -2777,31 +2818,7 @@ function MapScreen({
   const [expandedLocationId, setExpandedLocationId] = useState<string | null>(null);
   const [mapSearch, setMapSearch] = useState('');
   const [mapReady, setMapReady] = useState(false);
-  const locations = useMemo(() => {
-    const grouped = new Map<string, LocationSummary>();
-    for (const unit of units) {
-      if (!unit.location_id || unit.latitude == null || unit.longitude == null || unit.radius_meters == null) continue;
-      const existing = grouped.get(unit.location_id);
-      const rank = { gray: 4, red: 3, yellow: 2, green: 1 };
-      if (existing) {
-        existing.units.push(unit);
-        existing.status = rank[unit.status] > rank[existing.status] ? unit.status : existing.status;
-      } else {
-        grouped.set(unit.location_id, {
-          id: unit.location_id,
-          area_id: unit.area_id ?? '',
-          area_name: unit.area_name ?? '',
-          name: unit.location_name ?? '',
-          latitude: unit.latitude,
-          longitude: unit.longitude,
-          radius_meters: unit.radius_meters,
-          status: unit.status,
-          units: [unit],
-        });
-      }
-    }
-    return Array.from(grouped.values());
-  }, [units]);
+  const locations = useMemo(() => mappedLocationSummaries(units), [units]);
   const filteredLocations = useMemo(
     () =>
       locations.filter((location) =>
@@ -3011,6 +3028,297 @@ function MapScreen({
           </div>
         ))}
         {!filteredLocations.length && <p className="notice">No mapped locations match that search.</p>}
+      </div>
+    </main>
+  );
+}
+
+function KioskDashboard({
+  identity,
+  bootstrap,
+  workspace,
+  cachedAt,
+  cachedMode,
+  onRefresh,
+}: {
+  identity: Identity;
+  bootstrap: Bootstrap;
+  workspace: WorkspaceContext | null;
+  cachedAt: string | null;
+  cachedMode: boolean;
+  onRefresh: () => void;
+}) {
+  const [phase, setPhase] = useState(0);
+  const [now, setNow] = useState(() => new Date());
+  const [rows, setRows] = useState<LeaderboardRow[]>([]);
+  const [summary, setSummary] = useState<MissionBoardSummary | null>(null);
+  const [winners, setWinners] = useState<{ weeks: LeaderboardWinner[]; month: LeaderboardWinner | null }>({ weeks: [], month: null });
+  const [leaderboardMessage, setLeaderboardMessage] = useState('');
+  const activeUnits = useMemo(() => bootstrap.units.filter((unit) => unit.active), [bootstrap.units]);
+  const locations = useMemo(() => mappedLocationSummaries(activeUnits), [activeUnits]);
+  const workspaceTitle = bootstrap.installationName || workspace?.installationName || workspace?.name || 'Deckplating';
+  const month = now.toISOString().slice(0, 7);
+
+  const statusCounts = useMemo(
+    () => ({
+      gray: activeUnits.filter((unit) => unit.status === 'gray').length,
+      red: activeUnits.filter((unit) => unit.status === 'red').length,
+      yellow: activeUnits.filter((unit) => unit.status === 'yellow').length,
+      green: activeUnits.filter((unit) => unit.status === 'green').length,
+    }),
+    [activeUnits],
+  );
+  const coveragePercent = activeUnits.length ? Math.round((statusCounts.green / activeUnits.length) * 100) : 0;
+
+  const priorityUnits = useMemo(() => {
+    const needs = activeUnits.filter((unit) => unit.status !== 'green');
+    const source = needs.length ? needs : activeUnits;
+    return [...source]
+      .sort((a, b) => {
+        const daysA = a.days_since_last_visit ?? (a.status === 'gray' ? 9999 : -1);
+        const daysB = b.days_since_last_visit ?? (b.status === 'gray' ? 9999 : -1);
+        return statusPriority[b.status] - statusPriority[a.status] || daysB - daysA || a.name.localeCompare(b.name);
+      })
+      .slice(0, 6);
+  }, [activeUnits]);
+
+  const priorityLocationIds = useMemo(
+    () => new Set(priorityUnits.map((unit) => unit.location_id).filter((id): id is string => Boolean(id))),
+    [priorityUnits],
+  );
+
+  const locationPoints = useMemo(() => {
+    if (!locations.length) return [];
+    const lats = locations.map((location) => location.latitude);
+    const lons = locations.map((location) => location.longitude);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    const latPadding = Math.max((maxLat - minLat) * 0.16, 0.01);
+    const lonPadding = Math.max((maxLon - minLon) * 0.16, 0.01);
+    const paddedMinLat = minLat - latPadding;
+    const paddedMaxLat = maxLat + latPadding;
+    const paddedMinLon = minLon - lonPadding;
+    const paddedMaxLon = maxLon + lonPadding;
+    const latRange = paddedMaxLat - paddedMinLat || 1;
+    const lonRange = paddedMaxLon - paddedMinLon || 1;
+    const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+    return locations.map((location) => ({
+      ...location,
+      x: clamp(8 + ((location.longitude - paddedMinLon) / lonRange) * 84, 6, 94),
+      y: clamp(92 - ((location.latitude - paddedMinLat) / latRange) * 84, 6, 94),
+    }));
+  }, [locations]);
+
+  useEffect(() => {
+    const clock = window.setInterval(() => setNow(new Date()), 60000);
+    const morph = window.setInterval(() => setPhase((current) => (current + 1) % 6), 90000);
+    const refresh = window.setInterval(onRefresh, 300000);
+    return () => {
+      window.clearInterval(clock);
+      window.clearInterval(morph);
+      window.clearInterval(refresh);
+    };
+  }, [onRefresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadLeaderboard() {
+      if (cachedMode || !navigator.onLine) {
+        setLeaderboardMessage('Scores need a live connection.');
+        return;
+      }
+      try {
+        const result = await api<{
+          rows: LeaderboardRow[];
+          summary: MissionBoardSummary;
+          winners?: { weeks: LeaderboardWinner[]; month: LeaderboardWinner | null };
+        }>(`/api/leaderboard?month=${month}`, { headers: authHeaders(identity), timeoutMs: 6000 });
+        if (cancelled) return;
+        setRows(result.rows);
+        setSummary(result.summary);
+        setWinners(result.winners ?? { weeks: [], month: null });
+        setLeaderboardMessage('');
+      } catch (err) {
+        if (!cancelled) setLeaderboardMessage(err instanceof Error ? err.message : 'Unable to load scores.');
+      }
+    }
+    void loadLeaderboard();
+    const timer = window.setInterval(loadLeaderboard, 300000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [cachedMode, identity, month]);
+
+  function actionLabel(unit: UnitSummary) {
+    if (unit.status === 'gray') return 'First visit';
+    if (unit.status === 'red') return 'Overdue recovery';
+    if (unit.status === 'yellow') return 'Due soon';
+    return 'Sustain presence';
+  }
+
+  const featuredWeek = winners.weeks.length ? winners.weeks[winners.weeks.length - 1] : null;
+
+  return (
+    <main className={`kiosk-dashboard phase-${phase}`}>
+      <div className="kiosk-shell">
+        <header className="kiosk-header">
+          <div>
+            <p className="eyebrow">Deckplating Kiosk</p>
+            <h1>{workspaceTitle}</h1>
+            <small>
+              {cachedMode ? 'Cached workspace data' : 'Live workspace data'}
+              {cachedAt ? ` - synced ${niceDateTime(cachedAt)}` : ''}
+            </small>
+          </div>
+          <div className="kiosk-header-actions">
+            <div className="kiosk-clock">
+              <strong>{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>
+              <span>{now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+            </div>
+            <button className="kiosk-ghost" onClick={() => void document.documentElement.requestFullscreen?.()}>
+              Fullscreen
+            </button>
+          </div>
+        </header>
+
+        <section className="kiosk-status-strip" aria-label="Coverage status summary">
+          <div>
+            <span>Current</span>
+            <strong>{statusCounts.green}</strong>
+          </div>
+          <div>
+            <span>Due soon</span>
+            <strong>{statusCounts.yellow}</strong>
+          </div>
+          <div>
+            <span>Overdue</span>
+            <strong>{statusCounts.red}</strong>
+          </div>
+          <div>
+            <span>Never</span>
+            <strong>{statusCounts.gray}</strong>
+          </div>
+          <div>
+            <span>Coverage</span>
+            <strong>{coveragePercent}%</strong>
+          </div>
+        </section>
+
+        <div className="kiosk-main">
+          <section className="kiosk-panel kiosk-map-panel">
+            <div className="kiosk-panel-title">
+              <div>
+                <p className="eyebrow">Map</p>
+                <h2>Coverage picture</h2>
+              </div>
+              <div className="kiosk-legend">
+                {(['green', 'yellow', 'red', 'gray'] as const).map((status) => (
+                  <span key={status}>
+                    <i style={{ background: statusColor[status] }} />
+                    {statusText[status]}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="kiosk-map-stage" aria-label="Color-coded map pins">
+              <span className="kiosk-map-center" />
+              {locationPoints.map((location) => (
+                <div
+                  key={location.id}
+                  className={`kiosk-pin ${location.status} ${priorityLocationIds.has(location.id) ? 'priority' : ''}`}
+                  style={{ left: `${location.x}%`, top: `${location.y}%` }}
+                  title={`${location.name}: ${location.units.length} unit${location.units.length === 1 ? '' : 's'}`}
+                >
+                  <span>{location.units.length}</span>
+                  {priorityLocationIds.has(location.id) && (
+                    <strong>
+                      {location.name}
+                      <small>{location.area_name || 'Mapped area'}</small>
+                    </strong>
+                  )}
+                </div>
+              ))}
+              {!locationPoints.length && <p className="kiosk-map-empty">No mapped locations yet.</p>}
+            </div>
+          </section>
+
+          <section className="kiosk-panel kiosk-actions-panel">
+            <div className="kiosk-panel-title">
+              <div>
+                <p className="eyebrow">Next best actions</p>
+                <h2>Go here first</h2>
+              </div>
+            </div>
+            <div className="kiosk-actions-list">
+              {priorityUnits.map((unit, index) => (
+                <article key={unit.id} className={`kiosk-action ${unit.status}`}>
+                  <span className="rank">{index + 1}</span>
+                  <div>
+                    <strong>{unit.name}</strong>
+                    <small>
+                      {actionLabel(unit)} - {unit.location_name ?? 'Manual lookup'} - Last visit {niceDate(unit.last_visit_at)}
+                    </small>
+                  </div>
+                  <span className="status-pill">{statusLabel(unit)}</span>
+                </article>
+              ))}
+              {!priorityUnits.length && <p className="notice">Add active commands to start showing priorities.</p>}
+            </div>
+          </section>
+
+          <section className="kiosk-panel kiosk-leaderboard-panel">
+            <div className="kiosk-panel-title">
+              <div>
+                <p className="eyebrow">Leaderboard</p>
+                <h2>Meaningful coverage</h2>
+              </div>
+              {summary && (
+                <span className="kiosk-score-summary">
+                  {summary.units_recovered_this_month} recovered / {summary.distinct_units_covered} covered
+                </span>
+              )}
+            </div>
+            {(winners.month || featuredWeek) && (
+              <div className="kiosk-winners">
+                {featuredWeek && (
+                  <article>
+                    <span>{featuredWeek.final ? 'Week winner' : 'Week leader'}</span>
+                    <strong>{featuredWeek.winner?.name ?? 'No activity yet'}</strong>
+                    <small>{featuredWeek.label}</small>
+                  </article>
+                )}
+                {winners.month && (
+                  <article>
+                    <span>{winners.month.final ? 'Month winner' : 'Month leader'}</span>
+                    <strong>{winners.month.winner?.name ?? 'No activity yet'}</strong>
+                    <small>{winners.month.label}</small>
+                  </article>
+                )}
+              </div>
+            )}
+            <div className="kiosk-score-list">
+              {rows.slice(0, 5).map((row, index) => (
+                <article key={row.team_member_id} className="kiosk-score-row">
+                  <span className="rank">{index + 1}</span>
+                  <div>
+                    <strong>{row.name}</strong>
+                    <small>
+                      {row.distinct_units} units - {row.recovered_units} recovered - {row.active_days} active day
+                      {row.active_days === 1 ? '' : 's'}
+                    </small>
+                  </div>
+                  <strong>{row.score}</strong>
+                </article>
+              ))}
+              {leaderboardMessage && <p className="notice">{leaderboardMessage}</p>}
+              {!rows.length && !leaderboardMessage && <p className="notice">No Mission Board activity for this month yet.</p>}
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   );
@@ -4048,6 +4356,7 @@ function AdminScreen({
 
 function Settings({
   identity,
+  workspace,
   members,
   pendingCount,
   onIdentity,
@@ -4057,6 +4366,7 @@ function Settings({
   showSystemAdministration,
 }: {
   identity: Identity;
+  workspace: WorkspaceContext | null;
   members: TeamMember[];
   pendingCount: number;
   onIdentity: (identity: Identity) => void;
@@ -4153,6 +4463,13 @@ function Settings({
             Send feedback
           </a>
         </div>
+      </section>
+      <section className="panel">
+        <h2>TV dashboard</h2>
+        <p className="muted">Open the workspace kiosk view for a large office display.</p>
+        <a className="primary link-button" href={kioskLinkForWorkspace(workspace)}>
+          Open TV dashboard
+        </a>
       </section>
       <section className="panel">
         <h2>Safe Use</h2>
@@ -4633,6 +4950,19 @@ export default function App() {
   }
   if (!bootstrap) return <main className="center-shell"><p>Loading Deckplating...</p></main>;
 
+  if (kioskParamEnabled()) {
+    return (
+      <KioskDashboard
+        identity={identity}
+        bootstrap={bootstrap}
+        workspace={workspace}
+        cachedAt={cachedAt}
+        cachedMode={cachedMode}
+        onRefresh={() => void load(identity)}
+      />
+    );
+  }
+
   return (
     <>
       <SyncStatusBar
@@ -4712,6 +5042,7 @@ export default function App() {
       {screen === 'settings' && (
         <Settings
           identity={identity}
+          workspace={workspace}
           members={bootstrap.teamMembers}
           pendingCount={pendingCount}
           onIdentity={handleIdentity}

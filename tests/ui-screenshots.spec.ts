@@ -269,6 +269,17 @@ test('captures core user and admin screens', async ({ page }, testInfo) => {
   await screenshot(page, testInfo.project.name, '05-admin-release-note');
 });
 
+test('captures kiosk dashboard', async ({ page }, testInfo) => {
+  await mockAppApi(page);
+  await page.goto('/?kiosk=1');
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Demo Installation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Go here first' })).toBeVisible();
+  await expect(page.getByText('Coverage picture')).toBeVisible();
+  await screenshot(page, testInfo.project.name, '06-kiosk-dashboard');
+});
+
 test('captures operator console', async ({ page }, testInfo) => {
   await page.route('**/api/operator/login', (route) => route.fulfill({ json: { token: 'demo-operator-token' } }));
   await page.route('**/api/operator/organizations', (route) =>
@@ -358,5 +369,5 @@ test('captures operator console', async ({ page }, testInfo) => {
   await expect(page.getByRole('heading', { name: /Quality controls/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Approval queue' })).toBeVisible();
   await expect(page.getByText('Demo Request Command')).toBeVisible();
-  await screenshot(page, testInfo.project.name, '06-operator-console');
+  await screenshot(page, testInfo.project.name, '07-operator-console');
 });
