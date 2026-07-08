@@ -310,10 +310,41 @@ const statusPriority: Record<UnitSummary['status'], number> = {
   green: 1,
 };
 
+const minLocationRadiusMeters = 25;
+const maxLocationRadiusMeters = 750;
+
+const finiteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+const validLatitude = (value: unknown): value is number => finiteNumber(value) && value >= -90 && value <= 90;
+
+const validLongitude = (value: unknown): value is number => finiteNumber(value) && value >= -180 && value <= 180;
+
+const validLocationRadius = (value: unknown): value is number =>
+  finiteNumber(value) && value >= minLocationRadiusMeters && value <= maxLocationRadiusMeters;
+
+const numberFromInput = (value: unknown) => {
+  const text = String(value ?? '').trim();
+  return text === '' ? Number.NaN : Number(text);
+};
+
+const locationInputError = (latitude: number, longitude: number, radiusMeters: number) => {
+  if (!validLatitude(latitude)) return 'Latitude must be a number from -90 to 90.';
+  if (!validLongitude(longitude)) return 'Longitude must be a number from -180 to 180.';
+  if (!validLocationRadius(radiusMeters)) return `Radius must be between ${minLocationRadiusMeters}m and ${maxLocationRadiusMeters}m.`;
+  return '';
+};
+
 const mappedLocationSummaries = (units: UnitSummary[]) => {
   const grouped = new Map<string, LocationSummary>();
   for (const unit of units) {
-    if (!unit.location_id || unit.latitude == null || unit.longitude == null || unit.radius_meters == null) continue;
+    if (
+      !unit.location_id ||
+      !validLatitude(unit.latitude) ||
+      !validLongitude(unit.longitude) ||
+      !validLocationRadius(unit.radius_meters)
+    ) {
+      continue;
+    }
     const existing = grouped.get(unit.location_id);
     if (existing) {
       existing.units.push(unit);
@@ -3051,6 +3082,29 @@ function KioskMap({
   const markers = useRef<MapLibreMarker[]>([]);
   const [mapReady, setMapReady] = useState(false);
   const [mapFailed, setMapFailed] = useState(false);
+  const [resizeTick, setResizeTick] = useState(0);
+  const resizeFrame = useRef<number | null>(null);
+  const safeMapDefaultLatitude = validLatitude(mapDefaultLatitude) ? mapDefaultLatitude : 24.57;
+  const safeMapDefaultLongitude = validLongitude(mapDefaultLongitude) ? mapDefaultLongitude : -81.78;
+  const displayLocations = useMemo(
+    () =>
+      locations.filter(
+        (location) =>
+          validLatitude(location.latitude) && validLongitude(location.longitude) && validLocationRadius(location.radius_meters),
+      ),
+    [locations],
+  );
+
+  function scheduleMapResize() {
+    if (resizeFrame.current != null) window.cancelAnimationFrame(resizeFrame.current);
+    resizeFrame.current = window.requestAnimationFrame(() => {
+      resizeFrame.current = null;
+      const element = container.current;
+      if (!map.current || !element || element.clientWidth === 0 || element.clientHeight === 0) return;
+      map.current.resize();
+      setResizeTick((current) => current + 1);
+    });
+  }
 
   useEffect(() => {
     if (!container.current || map.current) return;
@@ -3073,14 +3127,18 @@ function KioskMap({
             },
             layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
           },
-          center: [mapDefaultLongitude, mapDefaultLatitude],
+          center: [safeMapDefaultLongitude, safeMapDefaultLatitude],
           zoom: 12,
           interactive: false,
           attributionControl: false,
         });
         nextMap.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+        nextMap.once('load', () => {
+          if (cancelled) return;
+          scheduleMapResize();
+          setMapReady(true);
+        });
         map.current = nextMap;
-        setMapReady(true);
       })
       .catch(() => {
         if (!cancelled) setMapFailed(true);
@@ -3092,14 +3150,36 @@ function KioskMap({
       markers.current = [];
       map.current?.remove();
       map.current = null;
+      if (resizeFrame.current != null) {
+        window.cancelAnimationFrame(resizeFrame.current);
+        resizeFrame.current = null;
+      }
     };
-  }, [mapDefaultLatitude, mapDefaultLongitude, mapTileUrl]);
+  }, [safeMapDefaultLatitude, safeMapDefaultLongitude, mapTileUrl]);
+
+  useEffect(() => {
+    const element = container.current;
+    if (!element) return;
+    const observer = new ResizeObserver(scheduleMapResize);
+    observer.observe(element);
+    window.addEventListener('resize', scheduleMapResize);
+    document.addEventListener('fullscreenchange', scheduleMapResize);
+    scheduleMapResize();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', scheduleMapResize);
+      document.removeEventListener('fullscreenchange', scheduleMapResize);
+    };
+  }, []);
 
   useEffect(() => {
     if (!mapReady || !map.current) return;
     let cancelled = false;
     void loadMapLibre().then((maplibregl) => {
       if (cancelled || !map.current) return;
+      const element = container.current;
+      if (!element || element.clientWidth === 0 || element.clientHeight === 0) return;
+      map.current.resize();
       markers.current.forEach((marker) => marker.remove());
       markers.current = [];
 
@@ -3107,7 +3187,7 @@ function KioskMap({
         if (!map.current?.isStyleLoaded()) return;
         const sourceData = {
           type: 'FeatureCollection' as const,
-          features: locations.map((location) => ({
+          features: displayLocations.map((location) => ({
             type: 'Feature' as const,
             properties: { status: location.status },
             geometry: {
@@ -3165,19 +3245,27 @@ function KioskMap({
       if (map.current.isStyleLoaded()) drawRadii();
       else map.current.once('load', drawRadii);
 
-      if (locations.length === 1) {
-        map.current.setCenter([locations[0].longitude, locations[0].latitude]);
+      if (displayLocations.length === 1) {
+        map.current.setCenter([displayLocations[0].longitude, displayLocations[0].latitude]);
         map.current.setZoom(15);
-      } else if (locations.length > 1) {
+      } else if (displayLocations.length > 1) {
         const bounds = new maplibregl.LngLatBounds();
-        locations.forEach((location) => bounds.extend([location.longitude, location.latitude]));
-        map.current.fitBounds(bounds, { padding: 78, maxZoom: 15, duration: 0 });
+        displayLocations.forEach((location) => bounds.extend([location.longitude, location.latitude]));
+        const horizontalPadding = Math.max(48, Math.min(96, element.clientWidth * 0.16));
+        const verticalPadding = Math.max(60, Math.min(96, element.clientHeight * 0.14));
+        const rightPadding =
+          element.clientWidth >= 620 ? Math.max(horizontalPadding, Math.min(260, element.clientWidth * 0.34)) : horizontalPadding;
+        map.current.fitBounds(bounds, {
+          padding: { top: verticalPadding, right: rightPadding, bottom: verticalPadding + 10, left: horizontalPadding },
+          maxZoom: 15,
+          duration: 0,
+        });
       } else {
-        map.current.setCenter([mapDefaultLongitude, mapDefaultLatitude]);
+        map.current.setCenter([safeMapDefaultLongitude, safeMapDefaultLatitude]);
         map.current.setZoom(12);
       }
 
-      locations.forEach((location) => {
+      displayLocations.forEach((location) => {
         const element = document.createElement('div');
         element.className = `kiosk-map-marker ${location.status} ${priorityLocationIds.has(location.id) ? 'priority' : ''}`;
         const count = document.createElement('span');
@@ -3200,12 +3288,12 @@ function KioskMap({
     return () => {
       cancelled = true;
     };
-  }, [locations, mapDefaultLatitude, mapDefaultLongitude, mapReady, priorityLocationIds]);
+  }, [displayLocations, safeMapDefaultLatitude, safeMapDefaultLongitude, mapReady, priorityLocationIds, resizeTick]);
 
   return (
     <div ref={container} className="kiosk-map-stage" aria-label="Color-coded map with workspace pins">
       {mapFailed && <p className="kiosk-map-empty">Map tiles are unavailable.</p>}
-      {!mapFailed && !locations.length && <p className="kiosk-map-empty">No mapped locations yet.</p>}
+      {!mapFailed && !displayLocations.length && <p className="kiosk-map-empty">No mapped locations yet.</p>}
     </div>
   );
 }
@@ -3263,6 +3351,7 @@ function KioskDashboard({
     () => new Set(priorityUnits.map((unit) => unit.location_id).filter((id): id is string => Boolean(id))),
     [priorityUnits],
   );
+  const displayPriorityUnits = useMemo(() => priorityUnits.slice(0, 3), [priorityUnits]);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(new Date()), 60000);
@@ -3393,7 +3482,7 @@ function KioskDashboard({
               </div>
             </div>
             <div className="kiosk-actions-list">
-              {priorityUnits.map((unit, index) => (
+              {displayPriorityUnits.map((unit, index) => (
                 <article key={unit.id} className={`kiosk-action ${unit.status}`}>
                   <span className="kiosk-action-number">{index + 1}</span>
                   <div className="kiosk-action-body">
@@ -3407,7 +3496,7 @@ function KioskDashboard({
                   </div>
                 </article>
               ))}
-              {!priorityUnits.length && <p className="notice">Add active commands to start showing priorities.</p>}
+              {!displayPriorityUnits.length && <p className="notice">Add active commands to start showing priorities.</p>}
             </div>
           </section>
 
@@ -3951,14 +4040,22 @@ function AdminScreen({
 
   async function createLocation(event: FormEvent) {
     event.preventDefault();
+    const latitude = numberFromInput(locationForm.latitude);
+    const longitude = numberFromInput(locationForm.longitude);
+    const radiusMeters = numberFromInput(locationForm.radius_meters);
+    const validationError = locationInputError(latitude, longitude, radiusMeters);
+    if (validationError) {
+      setMessage(validationError);
+      return;
+    }
     await api('/api/admin/locations', {
       method: 'POST',
       headers: { authorization: `Bearer ${token}` },
       body: JSON.stringify({
         ...locationForm,
-        latitude: Number(locationForm.latitude),
-        longitude: Number(locationForm.longitude),
-        radius_meters: Number(locationForm.radius_meters),
+        latitude,
+        longitude,
+        radius_meters: radiusMeters,
         active: true,
         unitIds: attachUnitIds,
       }),
@@ -4018,6 +4115,18 @@ function AdminScreen({
     await api(path, { method: 'PATCH', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
     refresh();
     load();
+  }
+
+  async function patchLocation(location: AdminData['locations'][number], values: Record<string, unknown>) {
+    const latitude = values.latitude === undefined ? location.latitude : Number(values.latitude);
+    const longitude = values.longitude === undefined ? location.longitude : Number(values.longitude);
+    const radiusMeters = values.radius_meters === undefined ? location.radius_meters : Number(values.radius_meters);
+    const validationError = locationInputError(latitude, longitude, radiusMeters);
+    if (validationError) {
+      setMessage(validationError);
+      return;
+    }
+    await patch(`/api/admin/locations/${location.id}`, values);
   }
 
   async function resetMemberPin(memberId: string, memberName: string) {
@@ -4372,12 +4481,34 @@ function AdminScreen({
                 }
               />
               <div className="grid-two">
-                <input inputMode="decimal" value={locationForm.latitude} onChange={(event) => setLocationForm({ ...locationForm, latitude: event.target.value })} />
-                <input inputMode="decimal" value={locationForm.longitude} onChange={(event) => setLocationForm({ ...locationForm, longitude: event.target.value })} />
+                <label>
+                  Latitude
+                  <input
+                    inputMode="decimal"
+                    placeholder="24.570000"
+                    value={locationForm.latitude}
+                    onChange={(event) => setLocationForm({ ...locationForm, latitude: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Longitude
+                  <input
+                    inputMode="decimal"
+                    placeholder="-81.780000"
+                    value={locationForm.longitude}
+                    onChange={(event) => setLocationForm({ ...locationForm, longitude: event.target.value })}
+                  />
+                </label>
               </div>
               <label>
                 Radius {locationForm.radius_meters}m
-                <input type="range" min="25" max="750" value={locationForm.radius_meters} onChange={(event) => setLocationForm({ ...locationForm, radius_meters: event.target.value })} />
+                <input
+                  type="range"
+                  min={minLocationRadiusMeters}
+                  max={maxLocationRadiusMeters}
+                  value={locationForm.radius_meters}
+                  onChange={(event) => setLocationForm({ ...locationForm, radius_meters: event.target.value })}
+                />
               </label>
               <label>
                 Attach units
@@ -4449,20 +4580,28 @@ function AdminScreen({
             ))}
             {filteredAdminLocations.map((location) => (
               <article key={location.id} className="admin-row">
-                <input defaultValue={location.name} onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { name: event.target.value })} />
+                <input defaultValue={location.name} onBlur={(event) => patchLocation(location, { name: event.target.value })} />
                 <div className="grid-two">
-                  <input
-                    inputMode="decimal"
-                    defaultValue={location.latitude}
-                    onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { latitude: Number(event.target.value) })}
-                  />
-                  <input
-                    inputMode="decimal"
-                    defaultValue={location.longitude}
-                    onBlur={(event) => patch(`/api/admin/locations/${location.id}`, { longitude: Number(event.target.value) })}
-                  />
+                  <label>
+                    Latitude
+                    <input
+                      inputMode="decimal"
+                      placeholder="24.570000"
+                      defaultValue={location.latitude}
+                      onBlur={(event) => patchLocation(location, { latitude: numberFromInput(event.target.value) })}
+                    />
+                  </label>
+                  <label>
+                    Longitude
+                    <input
+                      inputMode="decimal"
+                      placeholder="-81.780000"
+                      defaultValue={location.longitude}
+                      onBlur={(event) => patchLocation(location, { longitude: numberFromInput(event.target.value) })}
+                    />
+                  </label>
                 </div>
-                <button className="secondary" onClick={() => patch(`/api/admin/locations/${location.id}`, { active: !location.active })}>
+                <button className="secondary" onClick={() => patchLocation(location, { active: !location.active })}>
                   {location.active ? 'Deactivate' : 'Activate'}
                 </button>
               </article>

@@ -431,6 +431,72 @@ const distanceMeters = (aLat: number, aLon: number, bLat: number, bLon: number) 
   return earthRadius * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 };
 
+const minLocationRadiusMeters = 25;
+const maxLocationRadiusMeters = 750;
+
+const hasOwn = (values: Record<string, unknown>, key: string) => Object.prototype.hasOwnProperty.call(values, key);
+
+const isLatitude = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= -90 && value <= 90;
+
+const isLongitude = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= -180 && value <= 180;
+
+const isLocationRadius = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= minLocationRadiusMeters && value <= maxLocationRadiusMeters;
+
+const payloadNumber = (value: unknown, label: string) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new RequestValidationError(400, `${label} must be a finite number.`);
+  }
+  return value;
+};
+
+async function rejectLikelySwappedCoordinates(latitude: number, longitude: number, organizationId: string | null) {
+  if (!isLatitude(longitude) || !isLongitude(latitude)) return;
+  const settings = await getWorkspaceMapSettings(organizationId);
+  if (!isLatitude(settings.mapDefaultLatitude) || !isLongitude(settings.mapDefaultLongitude)) return;
+  const directDistance = distanceMeters(settings.mapDefaultLatitude, settings.mapDefaultLongitude, latitude, longitude);
+  const swappedDistance = distanceMeters(settings.mapDefaultLatitude, settings.mapDefaultLongitude, longitude, latitude);
+  if (directDistance > 50000 && swappedDistance < 10000 && directDistance > swappedDistance * 5) {
+    throw new RequestValidationError(400, 'Latitude and longitude look reversed.');
+  }
+}
+
+async function validateLocationCoordinates(
+  values: Record<string, unknown>,
+  organizationId: string | null,
+  requireAll: boolean,
+  existing?: { latitude: number; longitude: number; radius_meters: number } | null,
+) {
+  const hasLatitude = hasOwn(values, 'latitude');
+  const hasLongitude = hasOwn(values, 'longitude');
+  const hasRadius = hasOwn(values, 'radius_meters');
+
+  if (requireAll && !hasLatitude) throw new RequestValidationError(400, 'Latitude is required.');
+  if (requireAll && !hasLongitude) throw new RequestValidationError(400, 'Longitude is required.');
+  if (requireAll && !hasRadius) throw new RequestValidationError(400, 'Radius is required.');
+
+  if (hasLatitude) {
+    values.latitude = payloadNumber(values.latitude, 'Latitude');
+    if (!isLatitude(values.latitude)) throw new RequestValidationError(400, 'Latitude must be between -90 and 90.');
+  }
+  if (hasLongitude) {
+    values.longitude = payloadNumber(values.longitude, 'Longitude');
+    if (!isLongitude(values.longitude)) throw new RequestValidationError(400, 'Longitude must be between -180 and 180.');
+  }
+  if (hasRadius) {
+    values.radius_meters = payloadNumber(values.radius_meters, 'Radius');
+    if (!isLocationRadius(values.radius_meters)) {
+      throw new RequestValidationError(400, `Radius must be between ${minLocationRadiusMeters}m and ${maxLocationRadiusMeters}m.`);
+    }
+  }
+
+  const latitude = hasLatitude ? (values.latitude as number) : existing?.latitude;
+  const longitude = hasLongitude ? (values.longitude as number) : existing?.longitude;
+  if ((hasLatitude || hasLongitude || requireAll) && isLatitude(latitude) && isLongitude(longitude)) {
+    await rejectLikelySwappedCoordinates(latitude, longitude, organizationId);
+  }
+}
+
 const statusFromDays = (days: number | null, interval: number): Status => {
   if (days === null) return 'gray';
   const ratio = days / interval;
@@ -2857,6 +2923,7 @@ async function route(event: HandlerEvent) {
     if (!Array.isArray(unitIds)) return json(400, { error: 'unitIds must be an array.' });
     try {
       await validateLocationReferences(locationValues, organizationId);
+      await validateLocationCoordinates(locationValues, organizationId, true);
       if (unitIds.length) await validateUnitAssignment(unitIds, organizationId);
     } catch (error) {
       if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
@@ -2883,7 +2950,22 @@ async function route(event: HandlerEvent) {
     delete locationValues.organization_id;
     if (unitIds !== undefined && !Array.isArray(unitIds)) return json(400, { error: 'unitIds must be an array.' });
     try {
+      let existingLocationForValidation: { latitude: number; longitude: number; radius_meters: number } | null = null;
+      const needsExistingCoordinates =
+        (hasOwn(locationValues, 'latitude') && !hasOwn(locationValues, 'longitude')) ||
+        (!hasOwn(locationValues, 'latitude') && hasOwn(locationValues, 'longitude'));
+      if (needsExistingCoordinates) {
+        const existingQuery = supabase
+          .from('locations')
+          .select('latitude, longitude, radius_meters')
+          .eq('id', locationMatch[1]);
+        const { data: existing, error: existingError } = await scoped(existingQuery, organizationId).maybeSingle();
+        if (existingError) return json(500, { error: existingError.message });
+        if (!existing) return json(404, { error: 'Location not found.' });
+        existingLocationForValidation = existing;
+      }
       await validateLocationReferences(locationValues, organizationId);
+      await validateLocationCoordinates(locationValues, organizationId, false, existingLocationForValidation);
       if (Array.isArray(unitIds)) await validateUnitAssignment(unitIds, organizationId);
     } catch (error) {
       if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });

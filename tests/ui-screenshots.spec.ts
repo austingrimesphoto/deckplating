@@ -20,6 +20,39 @@ const teamMembers = [
 
 const areas = [{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Waterfront', sort_order: 1 }];
 
+const locations = [
+  {
+    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    name: 'Pier Admin',
+    area_id: areas[0].id,
+    area_name: areas[0].name,
+    latitude: 24.57,
+    longitude: -81.78,
+    radius_meters: 120,
+    active: true,
+  },
+  {
+    id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    name: 'Trumbo Point Waterfront Operations and Support Annex With Long Location Name',
+    area_id: areas[0].id,
+    area_name: areas[0].name,
+    latitude: 24.5589,
+    longitude: -81.8012,
+    radius_meters: 180,
+    active: true,
+  },
+  {
+    id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    name: 'Boca Chica Flight Line Chaplain Support Corridor',
+    area_id: areas[0].id,
+    area_name: areas[0].name,
+    latitude: 24.5761,
+    longitude: -81.6887,
+    radius_meters: 220,
+    active: true,
+  },
+];
+
 const units = [
   {
     id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -27,13 +60,13 @@ const units = [
     unit_type: 'department',
     visit_interval_days: 30,
     active: true,
-    location_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-    location_name: 'Pier Admin',
+    location_id: locations[0].id,
+    location_name: locations[0].name,
     area_id: areas[0].id,
     area_name: areas[0].name,
-    latitude: 24.57,
-    longitude: -81.78,
-    radius_meters: 120,
+    latitude: locations[0].latitude,
+    longitude: locations[0].longitude,
+    radius_meters: locations[0].radius_meters,
     last_visit_at: null,
     last_visitor: null,
     days_since_last_visit: null,
@@ -45,21 +78,84 @@ const units = [
     unit_type: 'division',
     visit_interval_days: 14,
     active: true,
-    location_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-    location_name: 'Pier Admin',
+    location_id: locations[0].id,
+    location_name: locations[0].name,
     area_id: areas[0].id,
     area_name: areas[0].name,
-    latitude: 24.57,
-    longitude: -81.78,
-    radius_meters: 120,
+    latitude: locations[0].latitude,
+    longitude: locations[0].longitude,
+    radius_meters: locations[0].radius_meters,
     last_visit_at: new Date().toISOString(),
     last_visitor: 'CH Doe',
     days_since_last_visit: 0,
     status: 'green',
   },
+  {
+    id: '99999999-9999-4999-8999-999999999999',
+    name: 'Expeditionary Maintenance Coordination Department With an Extremely Long Display Name',
+    unit_type: 'department',
+    visit_interval_days: 21,
+    active: true,
+    location_id: locations[1].id,
+    location_name: locations[1].name,
+    area_id: areas[0].id,
+    area_name: areas[0].name,
+    latitude: locations[1].latitude,
+    longitude: locations[1].longitude,
+    radius_meters: locations[1].radius_meters,
+    last_visit_at: new Date(Date.now() - 33 * 24 * 60 * 60 * 1000).toISOString(),
+    last_visitor: 'RP Smith',
+    days_since_last_visit: 33,
+    status: 'red',
+  },
+  {
+    id: 'abababab-abab-4aba-8bab-abababababab',
+    name: 'Tenant Command Liaison and Family Readiness Support Element',
+    unit_type: 'tenant',
+    visit_interval_days: 14,
+    active: true,
+    location_id: locations[1].id,
+    location_name: locations[1].name,
+    area_id: areas[0].id,
+    area_name: areas[0].name,
+    latitude: locations[1].latitude,
+    longitude: locations[1].longitude,
+    radius_meters: locations[1].radius_meters,
+    last_visit_at: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString(),
+    last_visitor: 'CH Doe',
+    days_since_last_visit: 12,
+    status: 'yellow',
+  },
+  {
+    id: 'cdcdcdcd-cdcd-4cdc-8dcd-cdcdcdcdcdcd',
+    name: 'Aviation Support Division',
+    unit_type: 'division',
+    visit_interval_days: 10,
+    active: true,
+    location_id: locations[2].id,
+    location_name: locations[2].name,
+    area_id: areas[0].id,
+    area_name: areas[0].name,
+    latitude: locations[2].latitude,
+    longitude: locations[2].longitude,
+    radius_meters: locations[2].radius_meters,
+    last_visit_at: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000).toISOString(),
+    last_visitor: 'RP Smith',
+    days_since_last_visit: 18,
+    status: 'red',
+  },
 ];
 
 async function mockAppApi(page: import('@playwright/test').Page) {
+  await page.route('**/blank-map-style.json', (route) =>
+    route.fulfill({
+      json: {
+        version: 8,
+        sources: {},
+        layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#dbe4eb' } }],
+      },
+    }),
+  );
   await page.route('**/api/team-members**', (route) =>
     route.fulfill({ json: { organizationId: workspace.id, organization: workspace, teamMembers } }),
   );
@@ -81,7 +177,7 @@ async function mockAppApi(page: import('@playwright/test').Page) {
         areas,
         teamMembers,
         units,
-        mapTileUrl: '',
+        mapTileUrl: '/blank-map-style.json',
         mapDefaultLatitude: 24.57,
         mapDefaultLongitude: -81.78,
         installationName: 'Demo Installation',
@@ -92,20 +188,12 @@ async function mockAppApi(page: import('@playwright/test').Page) {
   await page.route('**/api/nearby-locations**', (route) =>
     route.fulfill({
       json: {
-        matches: [
-          {
-            id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-            area_id: areas[0].id,
-            area_name: areas[0].name,
-            name: 'Pier Admin',
-            latitude: 24.57,
-            longitude: -81.78,
-            radius_meters: 120,
-            distance_meters: 12,
-            status: 'gray',
-            units,
-          },
-        ],
+        matches: locations.map((location, index) => ({
+          ...location,
+          distance_meters: index === 0 ? 12 : 220 + index * 60,
+          status: units.find((unit) => unit.location_id === location.id)?.status ?? 'gray',
+          units: units.filter((unit) => unit.location_id === location.id),
+        })),
       },
     }),
   );
@@ -189,8 +277,8 @@ async function mockAppApi(page: import('@playwright/test').Page) {
         organizationAdminAvailable: true,
         onboarding: {
           areaCount: 1,
-          locationCount: 1,
-          unitCount: 2,
+          locationCount: locations.length,
+          unitCount: units.length,
           teamMemberCount: 2,
           organizationAdminConfigured: true,
           readyForCheckins: true,
@@ -205,17 +293,7 @@ async function mockAppApi(page: import('@playwright/test').Page) {
     route.fulfill({
       json: {
         areas,
-        locations: [
-          {
-            id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-            name: 'Pier Admin',
-            area_id: areas[0].id,
-            latitude: 24.57,
-            longitude: -81.78,
-            radius_meters: 120,
-            active: true,
-          },
-        ],
+        locations,
         units: units.map((unit) => ({
           id: unit.id,
           name: unit.name,
@@ -277,7 +355,43 @@ test('captures kiosk dashboard', async ({ page }, testInfo) => {
   await expect(page.getByRole('heading', { name: 'Demo Installation' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Go here first' })).toBeVisible();
   await expect(page.getByText('Coverage picture')).toBeVisible();
-  await expect(page.locator('.kiosk-map-marker')).toBeVisible();
+  await expect(page.locator('.kiosk-map-marker')).toHaveCount(locations.length);
+  await expect(page.locator('.kiosk-action')).toHaveCount(3);
+  const mapBox = await page.locator('.kiosk-map-stage').boundingBox();
+  expect(mapBox?.width ?? 0).toBeGreaterThan(100);
+  expect(mapBox?.height ?? 0).toBeGreaterThan(100);
+  const markerPinsInsideMap = await page.locator('.kiosk-map-stage').evaluate((stage) => {
+    const stageRect = stage.getBoundingClientRect();
+    return Array.from(stage.querySelectorAll('.kiosk-map-marker')).every((marker) => {
+      const markerRect = marker.getBoundingClientRect();
+      return (
+        markerRect.left >= stageRect.left - 1 &&
+        markerRect.right <= stageRect.right + 1 &&
+        markerRect.top >= stageRect.top - 1 &&
+        markerRect.bottom <= stageRect.bottom + 1
+      );
+    });
+  });
+  expect(markerPinsInsideMap).toBe(true);
+  const noHorizontalOverflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1 &&
+      document.body.scrollWidth <= document.documentElement.clientWidth + 1,
+  );
+  expect(noHorizontalOverflow).toBe(true);
+  const actionsStayInsidePanel = await page.locator('.kiosk-actions-panel').evaluate((panel) => {
+    const panelRect = panel.getBoundingClientRect();
+    return Array.from(panel.querySelectorAll('.kiosk-action')).every((action) => {
+      const actionRect = action.getBoundingClientRect();
+      return (
+        actionRect.left >= panelRect.left - 1 &&
+        actionRect.right <= panelRect.right + 1 &&
+        actionRect.top >= panelRect.top - 1 &&
+        actionRect.bottom <= panelRect.bottom + 1
+      );
+    });
+  });
+  expect(actionsStayInsidePanel).toBe(true);
   await page.waitForTimeout(800);
   await screenshot(page, testInfo.project.name, '06-kiosk-dashboard');
 });

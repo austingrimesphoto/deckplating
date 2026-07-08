@@ -1096,49 +1096,61 @@ small,
 }
 
 .kiosk-map-marker {
+  --pin-color: var(--gray);
+  --pin-size: clamp(36px, 2.7vw, 56px);
   position: relative;
-  display: grid;
-  width: clamp(36px, 2.7vw, 56px);
-  height: clamp(36px, 2.7vw, 56px);
-  place-items: center;
-  border: 3px solid #fff;
-  border-radius: 999px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
+  display: block;
+  width: var(--pin-size);
+  height: calc(var(--pin-size) + 14px);
   color: #fff;
   font-size: clamp(0.85rem, 1.05vw, 1.2rem);
   font-weight: 900;
 }
 
+.kiosk-map-marker > span {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: var(--pin-size);
+  height: var(--pin-size);
+  place-items: center;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: var(--pin-color);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
+}
+
 .kiosk-map-marker::after {
   position: absolute;
-  bottom: -7px;
+  bottom: 0;
   left: 50%;
-  width: 14px;
-  height: 14px;
-  border-right: 3px solid #fff;
-  border-bottom: 3px solid #fff;
-  background: inherit;
+  width: 0;
+  height: 0;
+  border-top: 14px solid var(--pin-color);
+  border-right: 9px solid transparent;
+  border-left: 9px solid transparent;
   content: '';
-  transform: translateX(-50%) rotate(45deg);
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.25));
+  transform: translateX(-50%);
 }
 
 .kiosk-map-marker.green {
-  background: var(--green);
+  --pin-color: var(--green);
 }
 
 .kiosk-map-marker.yellow {
-  background: var(--yellow);
+  --pin-color: var(--yellow);
 }
 
 .kiosk-map-marker.red {
-  background: var(--red);
+  --pin-color: var(--red);
 }
 
 .kiosk-map-marker.gray {
-  background: var(--gray);
+  --pin-color: var(--gray);
 }
 
-.kiosk-map-marker.priority {
+.kiosk-map-marker.priority > span {
   box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.42), 0 14px 28px rgba(0, 0, 0, 0.34);
 }
 
@@ -1191,6 +1203,9 @@ small,
   gap: 8px;
   align-content: start;
   min-height: 0;
+}
+
+.kiosk-score-list {
   overflow: hidden;
 }
 
@@ -1198,10 +1213,10 @@ small,
 .kiosk-score-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
+  gap: 10px;
+  align-items: start;
   min-height: 0;
-  padding: clamp(10px, 1vw, 15px);
+  padding: clamp(8px, 0.75vw, 12px);
   border: 1px solid var(--line);
   border-left: 7px solid var(--brand-2);
   border-radius: 8px;
@@ -1210,6 +1225,8 @@ small,
 
 .kiosk-score-row {
   grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  padding: clamp(10px, 1vw, 15px);
 }
 
 .kiosk-action.green {
@@ -1237,14 +1254,14 @@ small,
 
 .kiosk-action-number {
   display: grid;
-  width: clamp(38px, 2.8vw, 48px);
-  height: clamp(38px, 2.8vw, 48px);
+  width: clamp(34px, 2.1vw, 42px);
+  height: clamp(34px, 2.1vw, 42px);
   flex: 0 0 auto;
   place-items: center;
   border-radius: 999px;
   background: var(--brand);
   color: #fff;
-  font-size: clamp(1rem, 1.25vw, 1.35rem);
+  font-size: clamp(0.95rem, 1.1vw, 1.25rem);
   font-weight: 900;
 }
 
@@ -1255,11 +1272,11 @@ small,
 }
 
 .kiosk-action-heading {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: start;
+  gap: 8px;
 }
 
 .kiosk-action strong,
@@ -1270,12 +1287,39 @@ small,
   white-space: nowrap;
 }
 
+.kiosk-action-heading strong {
+  display: -webkit-box;
+  min-width: 0;
+  flex: 1 1 auto;
+  line-height: 1.12;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.kiosk-action-heading .status-pill {
+  flex: 0 0 auto;
+  justify-self: end;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .kiosk-action small,
 .kiosk-score-row small {
   overflow: hidden;
   font-size: clamp(0.76rem, 0.9vw, 1rem);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.kiosk-action small {
+  display: -webkit-box;
+  line-height: 1.18;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
 }
 
 .kiosk-winners {
