@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './styles.css';
 import './fresh-location-bridge';
+import './kiosk-map-display-pins';
 import App from './App';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
