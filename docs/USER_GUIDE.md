@@ -14,6 +14,7 @@ Screenshots in this guide use scrubbed demo data only. Do not capture or share s
 
 ## Contents
 
+- [About Deckplating](#about-deckplating)
 - [Select Workspace](#select-workspace)
 - [Activate Workspace](#activate-workspace)
 - [Choose Name And PIN](#choose-name-and-pin)
@@ -34,6 +35,20 @@ Screenshots in this guide use scrubbed demo data only. Do not capture or share s
 - [Feedback](#feedback)
 - [Safe-Use Boundaries](#safe-use-boundaries)
 - [Troubleshooting](#troubleshooting)
+
+## About Deckplating
+
+Deckplating is a coverage-awareness tool for Religious Ministry Teams. It helps the team answer: where have we been, where has coverage gone stale, and where should we go next?
+
+What it is: a mobile-first web app for unclassified, non-sensitive check-ins, coverage status, map views, search, Mission Board recognition, admin corrections, and activity history.
+
+Who it is for: chaplains, Religious Program Specialists, RMT leads, and local teams responsible for many departments, divisions, tenant commands, or worksites.
+
+What it provides for RMTs: a shared picture of recent visits, neglected units, public/general mapped locations, safer handoffs across turnover, and a practical way to plan rounds by actual coverage need.
+
+Why it matters: without a simple coverage picture, busy teams can unintentionally revisit familiar spaces while quiet or scattered units go unseen. Deckplating helps protect ministry presence while keeping sensitive ministry details out of the system.
+
+Boundary: Deckplating is not a counseling record, medical tracker, case-management system, official record, CUI system, classified system, or place to store sensitive operational details.
 
 ## Select Workspace
 
