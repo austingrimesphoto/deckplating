@@ -165,6 +165,14 @@ try {
   }
   console.log('PASS Admin Activity Log can read the check-in.');
 
+  const pagedActivity = await request(`/api/admin/checkins?includeVoided=true&limit=1&search=${encodeURIComponent(unit.unit.name)}`, {
+    token: adminToken,
+  });
+  if (!pagedActivity.page || pagedActivity.page.limit !== 1 || pagedActivity.checkins[0]?.unit_id !== unit.unit.id) {
+    throw new Error('Admin Activity Log pagination/search did not return the expected check-in.');
+  }
+  console.log('PASS Admin Activity Log pagination/search returns the expected check-in.');
+
   await request(`/api/admin/checkins/${checkin.id}`, {
     method: 'PATCH',
     token: adminToken,
@@ -196,6 +204,26 @@ try {
     throw new Error('Edited indicators were not reflected in the indicator report.');
   }
   console.log('PASS edited indicators are reflected in Reports.');
+
+  const safeExport = await request(`/api/operator/organizations/${organization.id}/export`, {
+    token: operatorToken,
+  });
+  const serializedExport = JSON.stringify(safeExport);
+  for (const forbidden of ['pin_hash', 'passphrase_hash', 'device_token_hash', 'code_hash', 'device_id']) {
+    if (serializedExport.includes(forbidden)) throw new Error(`Safe export included forbidden field ${forbidden}.`);
+  }
+  if (safeExport.format !== 'deckplating-safe-operator-export-v1' || !safeExport.checkins?.some((row) => row.id === checkin.id)) {
+    throw new Error('Safe export did not include expected non-sensitive workspace data.');
+  }
+  console.log('PASS safe operator export excludes stored secrets and includes workspace data.');
+
+  const audit = await request(`/api/operator/audit-events?limit=10&search=${encodeURIComponent(organization.slug)}`, {
+    token: operatorToken,
+  });
+  if (!audit.page || !audit.events.some((event) => event.action === 'workspace_safe_export_downloaded')) {
+    throw new Error('Operator audit search did not include the safe export event.');
+  }
+  console.log('PASS operator audit pagination/search includes the safe export event.');
 
   console.log('\nFirst-pilot smoke check passed.');
 } finally {

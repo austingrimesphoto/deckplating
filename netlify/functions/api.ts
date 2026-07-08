@@ -74,6 +74,18 @@ const readBody = <T>(event: HandlerEvent): T => {
   return JSON.parse(event.body) as T;
 };
 
+const boundedInteger = (value: string | undefined, fallback: number, min: number, max: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.floor(parsed), min), max);
+};
+
+const matchesSearch = (query: string, values: unknown[]) => {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return values.some((value) => String(value ?? '').toLowerCase().includes(needle));
+};
+
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
 const legacyPinHash = (teamMemberId: string, pin: string) => sha256(`${teamMemberId}:${pin}`);
@@ -933,12 +945,17 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'GET' && path === '/operator/audit-events') {
-    const limit = Math.min(Math.max(Number(event.queryStringParameters?.limit ?? 100), 1), 250);
-    const { data: events, error } = await supabase
+    const params = event.queryStringParameters ?? {};
+    const limit = boundedInteger(params.limit, 50, 1, 250);
+    const offset = boundedInteger(params.offset, 0, 0, 100000);
+    const search = (params.search ?? '').trim();
+    const scanLimit = search ? Math.min(Math.max(offset + limit + 100, 250), 1000) : limit;
+    let query = supabase
       .from('operator_audit_events')
       .select('id, organization_id, actor, action, detail, created_at')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+      .order('created_at', { ascending: false });
+    query = search ? query.limit(scanLimit) : query.range(offset, offset + limit - 1);
+    const { data: events, error } = await query;
     if (error) return json(500, { error: error.message });
     const organizationIds = Array.from(
       new Set(
@@ -956,11 +973,31 @@ async function route(event: HandlerEvent) {
       if (orgError) return json(500, { error: orgError.message });
       organizationById = new Map((organizations ?? []).map((organization: any) => [organization.id, organization]));
     }
+    const mapped = (events ?? []).map((event: any) => ({
+      ...event,
+      organization: event.organization_id ? organizationById.get(event.organization_id) ?? null : null,
+    }));
+    const filtered = mapped.filter((auditEvent: any) =>
+      matchesSearch(search, [
+        auditEvent.action,
+        auditEvent.actor,
+        auditEvent.organization?.name,
+        auditEvent.organization?.slug,
+        auditEvent.organization_id,
+        auditEvent.created_at,
+        JSON.stringify(auditEvent.detail ?? {}),
+      ]),
+    );
+    const paged = search ? filtered.slice(offset, offset + limit) : filtered;
     return json(200, {
-      events: (events ?? []).map((event: any) => ({
-        ...event,
-        organization: event.organization_id ? organizationById.get(event.organization_id) ?? null : null,
-      })),
+      events: paged,
+      page: {
+        limit,
+        offset,
+        returned: paged.length,
+        total: search && events && events.length < scanLimit ? filtered.length : null,
+        hasMore: search ? filtered.length > offset + limit || (events ?? []).length === scanLimit : paged.length === limit,
+      },
     });
   }
 
@@ -1038,6 +1075,79 @@ async function route(event: HandlerEvent) {
       token: await createAdminToken({ organizationId, authMethod: 'superuser' }),
       organization: await organizationSummary(organizationId),
       authMethod: 'superuser',
+    });
+  }
+
+  const operatorExportMatch = path.match(/^\/operator\/organizations\/([^/]+)\/export$/);
+  if (method === 'GET' && operatorExportMatch) {
+    const organizationId = operatorExportMatch[1];
+    if (!isUuid(organizationId)) return json(400, { error: 'Organization ID must be a UUID.' });
+    const { data: organization, error: organizationError } = await supabase
+      .from('organizations')
+      .select('id, slug, name, active, created_at, updated_at')
+      .eq('id', organizationId)
+      .maybeSingle();
+    if (organizationError) return json(500, { error: organizationError.message });
+    if (!organization) return json(404, { error: 'Organization not found.' });
+
+    const [settings, areas, locations, units, teamMembers, batches, checkins] = await Promise.all([
+      scoped(supabase.from('app_settings').select('key, value').order('key'), organizationId),
+      scoped(supabase.from('areas').select('id, name, sort_order').order('sort_order'), organizationId),
+      scoped(
+        supabase
+          .from('locations')
+          .select('id, area_id, name, latitude, longitude, radius_meters, active, created_at, updated_at')
+          .order('name'),
+        organizationId,
+      ),
+      scoped(
+        supabase
+          .from('units')
+          .select('id, location_id, name, unit_type, visit_interval_days, active, created_at, updated_at')
+          .order('name'),
+        organizationId,
+      ),
+      scoped(supabase.from('team_members').select('id, name, role, active, created_at').order('name'), organizationId),
+      scoped(
+        supabase
+          .from('checkin_batches')
+          .select(
+            'id, client_batch_id, location_id, team_member_id, occurred_at, received_at, confidential_care_provided, referral_provided, outcomes_recorded_at, created_at, updated_at, updated_by_team_member_id',
+          )
+          .order('occurred_at', { ascending: false }),
+        organizationId,
+      ),
+      scoped(
+        supabase
+          .from('checkins')
+          .select(
+            'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, distance_meters, score_awarded, batch_id, voided_at, voided_by_team_member_id, void_reason, created_at, updated_at, updated_by_team_member_id',
+          )
+          .order('checked_in_at', { ascending: false }),
+        organizationId,
+      ),
+    ]);
+    const error =
+      settings.error ?? areas.error ?? locations.error ?? units.error ?? teamMembers.error ?? batches.error ?? checkins.error;
+    if (error) return json(500, { error: error.message });
+    await tryRecordOperatorAudit(organizationId, 'workspace_safe_export_downloaded', { slug: organization.slug });
+    return json(200, {
+      generatedAt: new Date().toISOString(),
+      format: 'deckplating-safe-operator-export-v1',
+      boundary: {
+        included:
+          'Workspace metadata, non-sensitive setup records, roster display names, visit timestamps, scores, void metadata, and generic care/referral indicators.',
+        excluded:
+          'Setup-code plaintext, setup-code hashes, passphrase hashes, PIN hashes, device-token hashes, devices, service keys, counseling notes, referral details, medical details, personal details, and sensitive operational details.',
+      },
+      organization,
+      settings: settings.data ?? [],
+      areas: areas.data ?? [],
+      locations: locations.data ?? [],
+      units: units.data ?? [],
+      teamMembers: teamMembers.data ?? [],
+      checkinBatches: batches.data ?? [],
+      checkins: checkins.data ?? [],
     });
   }
 
@@ -1991,14 +2101,19 @@ async function route(event: HandlerEvent) {
   if (method === 'GET' && path === '/admin/checkins') {
     const organizationId = adminContext!.organizationId;
     const params = event.queryStringParameters ?? {};
+    const limit = boundedInteger(params.limit, 75, 1, 250);
+    const offset = boundedInteger(params.offset, 0, 0, 100000);
+    const search = (params.search ?? '').trim();
+    const needsMappedFiltering = Boolean(params.areaId || search);
+    const scanLimit = needsMappedFiltering ? Math.min(Math.max(offset + limit + 200, 500), 2000) : limit;
     let query = scoped(
       supabase
         .from('checkins')
         .select(
           'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, updated_at, batch_id, checkin_batches!checkins_batch_id_fkey(client_batch_id, confidential_care_provided, referral_provided), units(id, name, unit_type, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name)), team_members!checkins_team_member_id_fkey(id, name)',
+          { count: 'exact' },
         )
-        .order('checked_in_at', { ascending: false })
-        .limit(300),
+        .order('checked_in_at', { ascending: false }),
       organizationId,
     );
 
@@ -2007,41 +2122,68 @@ async function route(event: HandlerEvent) {
     if (params.teamMemberId) query = query.eq('team_member_id', params.teamMemberId);
     if (params.unitId) query = query.eq('unit_id', params.unitId);
     if (params.includeVoided !== 'true') query = query.is('voided_at', null);
+    query = needsMappedFiltering ? query.limit(scanLimit) : query.range(offset, offset + limit - 1);
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) return json(500, { error: error.message });
 
-    const checkins = (data ?? [])
-      .map((checkin: any) => {
-        const directLocation = checkin.locations;
-        const unitLocation = checkin.units?.locations;
-        const location = directLocation ?? unitLocation ?? null;
-        const area = location?.areas ?? null;
-        return {
-          id: checkin.id,
-          unit_id: checkin.unit_id,
-          unit_name: checkin.units?.name ?? 'Unknown unit',
-          location_id: checkin.location_id,
-          location_name: location?.name ?? 'Unmapped',
-          area_id: area?.id ?? null,
-          area_name: area?.name ?? null,
-          team_member_id: checkin.team_member_id,
-          team_member_name: checkin.team_members?.name ?? 'Unknown member',
-          checked_in_at: checkin.checked_in_at,
-          geofence_verified: checkin.geofence_verified,
-          score_awarded: checkin.score_awarded,
-          voided_at: checkin.voided_at,
-          void_reason: checkin.void_reason,
-          updated_at: checkin.updated_at,
-          batch_id: checkin.batch_id,
-          client_batch_id: checkin.checkin_batches?.client_batch_id ?? null,
-          confidential_care_provided: checkin.checkin_batches?.confidential_care_provided ?? null,
-          referral_provided: checkin.checkin_batches?.referral_provided ?? null,
-        };
-      })
-      .filter((checkin: any) => !params.areaId || checkin.area_id === params.areaId);
-
-    return json(200, { checkins });
+    const mapped = (data ?? []).map((checkin: any) => {
+      const directLocation = checkin.locations;
+      const unitLocation = checkin.units?.locations;
+      const location = directLocation ?? unitLocation ?? null;
+      const area = location?.areas ?? null;
+      return {
+        id: checkin.id,
+        unit_id: checkin.unit_id,
+        unit_name: checkin.units?.name ?? 'Unknown unit',
+        location_id: checkin.location_id,
+        location_name: location?.name ?? 'Unmapped',
+        area_id: area?.id ?? null,
+        area_name: area?.name ?? null,
+        team_member_id: checkin.team_member_id,
+        team_member_name: checkin.team_members?.name ?? 'Unknown member',
+        checked_in_at: checkin.checked_in_at,
+        geofence_verified: checkin.geofence_verified,
+        score_awarded: checkin.score_awarded,
+        voided_at: checkin.voided_at,
+        void_reason: checkin.void_reason,
+        updated_at: checkin.updated_at,
+        batch_id: checkin.batch_id,
+        client_batch_id: checkin.checkin_batches?.client_batch_id ?? null,
+        confidential_care_provided: checkin.checkin_batches?.confidential_care_provided ?? null,
+        referral_provided: checkin.checkin_batches?.referral_provided ?? null,
+      };
+    });
+    const filtered = mapped
+      .filter((checkin: any) => !params.areaId || checkin.area_id === params.areaId)
+      .filter((checkin: any) =>
+        matchesSearch(search, [
+          checkin.unit_name,
+          checkin.location_name,
+          checkin.area_name,
+          checkin.team_member_name,
+          checkin.checked_in_at,
+          checkin.geofence_verified ? 'geofence verified' : 'manual unverified',
+          checkin.void_reason,
+          checkin.confidential_care_provided ? 'care counseling confidential' : '',
+          checkin.referral_provided ? 'referral' : '',
+        ]),
+      );
+    const checkins = needsMappedFiltering ? filtered.slice(offset, offset + limit) : filtered;
+    return json(200, {
+      checkins,
+      page: {
+        limit,
+        offset,
+        returned: checkins.length,
+        total: needsMappedFiltering && (data ?? []).length < scanLimit ? filtered.length : needsMappedFiltering ? null : count,
+        hasMore: needsMappedFiltering
+          ? filtered.length > offset + limit || (data ?? []).length === scanLimit
+          : count == null
+            ? checkins.length === limit
+            : offset + checkins.length < count,
+      },
+    });
   }
 
   const adminCheckinMatch = path.match(/^\/admin\/checkins\/([^/]+)$/);

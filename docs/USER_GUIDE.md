@@ -324,7 +324,8 @@ What they click:
 3. Apply filters.
 4. Correct unit, member, date/time, counseling indicator, or referral indicator mistakes.
 5. Click `Save edit`.
-6. Void accidental, duplicate, or incorrect records when needed.
+6. Use `Load more activity` if the record is older than the first page.
+7. Void accidental, duplicate, or incorrect records when needed.
 
 Expected result: corrected records stay auditable; indicator changes update the generic reports; voided records stop affecting coverage and score.
 

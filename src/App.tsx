@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
 import { registerSW } from 'virtual:pwa-register';
+import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 import type {
   AdminCheckin,
   Area,
@@ -86,6 +86,21 @@ type OperatorAuditEvent = {
   detail: Record<string, unknown> | null;
   created_at: string;
   organization: Pick<WorkspaceContext, 'id' | 'slug' | 'name'> | null;
+};
+
+type PageMetadata = {
+  limit: number;
+  offset: number;
+  returned: number;
+  total: number | null;
+  hasMore: boolean;
+};
+
+let maplibrePromise: Promise<typeof import('maplibre-gl')> | null = null;
+
+const loadMapLibre = () => {
+  maplibrePromise ??= import('maplibre-gl');
+  return maplibrePromise;
 };
 
 type InstallationSearchResult = {
@@ -791,6 +806,9 @@ function OperatorConsole({
   const [workspaceSearch, setWorkspaceSearch] = useState('');
   const [auditEvents, setAuditEvents] = useState<OperatorAuditEvent[]>([]);
   const [auditSearch, setAuditSearch] = useState('');
+  const [auditPage, setAuditPage] = useState<PageMetadata | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditQueryKey, setAuditQueryKey] = useState('');
   const [auditMessage, setAuditMessage] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -806,13 +824,23 @@ function OperatorConsole({
     setOrganizations(result.organizations);
   }
 
-  async function loadAuditEvents(currentToken = token) {
+  async function loadAuditEvents(currentToken = token, nextOffset = 0, append = false) {
     setAuditMessage('');
-    const result = await api<{ events: OperatorAuditEvent[] }>('/api/operator/audit-events', {
-      headers: { authorization: `Bearer ${currentToken}` },
-    });
-    setAuditEvents(result.events);
-    if (!result.events.length) setAuditMessage('No operator audit events found.');
+    setAuditLoading(true);
+    const queryKey = auditSearch.trim();
+    try {
+      const params = new URLSearchParams({ limit: '50', offset: String(nextOffset) });
+      if (queryKey) params.set('search', queryKey);
+      const result = await api<{ events: OperatorAuditEvent[]; page?: PageMetadata }>(`/api/operator/audit-events?${params.toString()}`, {
+        headers: { authorization: `Bearer ${currentToken}` },
+      });
+      setAuditEvents((current) => (append ? [...current, ...result.events] : result.events));
+      setAuditPage(result.page ?? null);
+      setAuditQueryKey(queryKey);
+      if (!result.events.length && !append) setAuditMessage('No operator audit events found.');
+    } finally {
+      setAuditLoading(false);
+    }
   }
 
   async function login(event: FormEvent) {
@@ -1004,6 +1032,35 @@ function OperatorConsole({
     }
   }
 
+  async function downloadWorkspaceExport(organization: OperatorOrganization) {
+    setError('');
+    setMessage('');
+    const confirmed = window.confirm(
+      `Download a safe JSON export for ${organization.name}?\n\nThis excludes setup codes, credential hashes, PIN hashes, device-token hashes, and detailed notes. Treat the file as controlled operational data.`,
+    );
+    if (!confirmed) return;
+    try {
+      const payload = await api<Record<string, unknown>>(`/api/operator/organizations/${organization.id}/export`, {
+        headers: { authorization: `Bearer ${token}` },
+        timeoutMs: 15000,
+      });
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const datestamp = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `deckplating-${organization.slug}-safe-export-${datestamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setMessage(`Safe export downloaded for ${organization.name}.`);
+      await loadAuditEvents(token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Safe export failed.');
+    }
+  }
+
   useEffect(() => {
     if (!token) return;
     void Promise.all([loadOrganizations(token), loadAuditEvents(token)]).catch((err) => {
@@ -1126,10 +1183,13 @@ function OperatorConsole({
             value={auditSearch}
             onChange={(event) => setAuditSearch(event.target.value)}
           />
+          <button className="secondary" onClick={() => void loadAuditEvents(token)}>
+            Search audit
+          </button>
         </div>
         {auditMessage && <p className="notice">{auditMessage}</p>}
         <div className="activity-list">
-          {filteredAuditEvents.slice(0, 40).map((event) => (
+          {filteredAuditEvents.map((event) => (
             <article key={event.id} className="activity-row">
               <div className="activity-summary">
                 <div>
@@ -1145,6 +1205,15 @@ function OperatorConsole({
           ))}
           {auditEvents.length > 0 && !filteredAuditEvents.length && <p className="notice">No audit events match that search.</p>}
         </div>
+        {auditPage?.hasMore && auditQueryKey === auditSearch.trim() && (
+          <button
+            className="secondary"
+            onClick={() => void loadAuditEvents(token, auditPage.offset + auditPage.returned, true)}
+            disabled={auditLoading}
+          >
+            {auditLoading ? 'Loading...' : 'Load more audit events'}
+          </button>
+        )}
       </section>
       <section className="coverage-list">
         {filteredOrganizations.map((organization) => {
@@ -1229,6 +1298,9 @@ function OperatorConsole({
                   disabled={!organization.active}
                 >
                   Open admin as system administrator
+                </button>
+                <button className="secondary" onClick={() => void downloadWorkspaceExport(organization)}>
+                  Download safe export
                 </button>
                 <button className="secondary danger-text" onClick={() => void deleteWorkspace(organization)}>
                   Delete workspace and data
@@ -2355,9 +2427,10 @@ function MapScreen({
   offlineMode: boolean;
 }) {
   const container = useRef<HTMLDivElement | null>(null);
-  const map = useRef<maplibregl.Map | null>(null);
+  const map = useRef<MapLibreMap | null>(null);
   const [expandedLocationId, setExpandedLocationId] = useState<string | null>(null);
   const [mapSearch, setMapSearch] = useState('');
+  const [mapReady, setMapReady] = useState(false);
   const locations = useMemo(() => {
     const grouped = new Map<string, LocationSummary>();
     for (const unit of units) {
@@ -2399,107 +2472,121 @@ function MapScreen({
 
   useEffect(() => {
     if (offlineMode || !container.current || map.current) return;
-    map.current = new maplibregl.Map({
-      container: container.current,
-      style: mapTileUrl || {
-        version: 8,
-        sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: 'OpenStreetMap',
+    let cancelled = false;
+    void loadMapLibre().then((maplibregl) => {
+      if (cancelled || !container.current || map.current) return;
+      map.current = new maplibregl.Map({
+        container: container.current,
+        style: mapTileUrl || {
+          version: 8,
+          sources: {
+            osm: {
+              type: 'raster',
+              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+              tileSize: 256,
+              attribution: 'OpenStreetMap',
+            },
           },
+          layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
         },
-        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-      },
-      center: [mapDefaultLongitude, mapDefaultLatitude],
-      zoom: 11,
+        center: [mapDefaultLongitude, mapDefaultLatitude],
+        zoom: 11,
+      });
+      setMapReady(true);
     });
     return () => {
+      cancelled = true;
+      setMapReady(false);
       map.current?.remove();
       map.current = null;
     };
   }, [mapDefaultLatitude, mapDefaultLongitude, mapTileUrl, offlineMode]);
 
   useEffect(() => {
-    if (!map.current) return;
-    const markers: maplibregl.Marker[] = [];
-    const drawRadii = () => {
-      const sourceData = {
-        type: 'FeatureCollection' as const,
-        features: filteredLocations.map((location) => ({
-          type: 'Feature' as const,
-          properties: { status: location.status },
-          geometry: {
-            type: 'Polygon' as const,
-            coordinates: [circlePolygon(location.longitude, location.latitude, location.radius_meters)],
+    if (!mapReady || !map.current) return;
+    let cancelled = false;
+    const markers: MapLibreMarker[] = [];
+    void loadMapLibre().then((maplibregl) => {
+      if (cancelled || !map.current) return;
+      const drawRadii = () => {
+        const sourceData = {
+          type: 'FeatureCollection' as const,
+          features: filteredLocations.map((location) => ({
+            type: 'Feature' as const,
+            properties: { status: location.status },
+            geometry: {
+              type: 'Polygon' as const,
+              coordinates: [circlePolygon(location.longitude, location.latitude, location.radius_meters)],
+            },
+          })),
+        };
+        const existing = map.current!.getSource('location-radii') as GeoJSONSource | undefined;
+        if (existing) {
+          existing.setData(sourceData);
+          return;
+        }
+        map.current!.addSource('location-radii', { type: 'geojson', data: sourceData });
+        map.current!.addLayer({
+          id: 'location-radii-fill',
+          type: 'fill',
+          source: 'location-radii',
+          paint: {
+            'fill-color': [
+              'match',
+              ['get', 'status'],
+              'red',
+              statusColor.red,
+              'yellow',
+              statusColor.yellow,
+              'green',
+              statusColor.green,
+              statusColor.gray,
+            ],
+            'fill-opacity': 0.15,
           },
-        })),
+        });
+        map.current!.addLayer({
+          id: 'location-radii-line',
+          type: 'line',
+          source: 'location-radii',
+          paint: {
+            'line-color': [
+              'match',
+              ['get', 'status'],
+              'red',
+              statusColor.red,
+              'yellow',
+              statusColor.yellow,
+              'green',
+              statusColor.green,
+              statusColor.gray,
+            ],
+            'line-width': 2,
+            'line-opacity': 0.55,
+          },
+        });
       };
-      const existing = map.current!.getSource('location-radii') as maplibregl.GeoJSONSource | undefined;
-      if (existing) {
-        existing.setData(sourceData);
-        return;
-      }
-      map.current!.addSource('location-radii', { type: 'geojson', data: sourceData });
-      map.current!.addLayer({
-        id: 'location-radii-fill',
-        type: 'fill',
-        source: 'location-radii',
-        paint: {
-          'fill-color': [
-            'match',
-            ['get', 'status'],
-            'red',
-            statusColor.red,
-            'yellow',
-            statusColor.yellow,
-            'green',
-            statusColor.green,
-            statusColor.gray,
-          ],
-          'fill-opacity': 0.15,
-        },
+      if (map.current.isStyleLoaded()) drawRadii();
+      else map.current.once('load', drawRadii);
+      filteredLocations.forEach((location) => {
+        const marker = new maplibregl.Marker({ color: statusColor[location.status] })
+          .setLngLat([location.longitude, location.latitude])
+          .setPopup(
+            new maplibregl.Popup().setHTML(
+              `<strong>${location.name}</strong><br>${location.area_name}<br>Radius: ${location.radius_meters}m<br>${location.units
+                .map((unit) => `${unit.name}: ${statusLabel(unit)} (${niceDate(unit.last_visit_at)})`)
+                .join('<br>')}`,
+            ),
+          )
+          .addTo(map.current!);
+        markers.push(marker);
       });
-      map.current!.addLayer({
-        id: 'location-radii-line',
-        type: 'line',
-        source: 'location-radii',
-        paint: {
-          'line-color': [
-            'match',
-            ['get', 'status'],
-            'red',
-            statusColor.red,
-            'yellow',
-            statusColor.yellow,
-            'green',
-            statusColor.green,
-            statusColor.gray,
-          ],
-          'line-width': 2,
-          'line-opacity': 0.55,
-        },
-      });
-    };
-    if (map.current.isStyleLoaded()) drawRadii();
-    else map.current.once('load', drawRadii);
-    filteredLocations.forEach((location) => {
-      const marker = new maplibregl.Marker({ color: statusColor[location.status] })
-        .setLngLat([location.longitude, location.latitude])
-        .setPopup(
-          new maplibregl.Popup().setHTML(
-            `<strong>${location.name}</strong><br>${location.area_name}<br>Radius: ${location.radius_meters}m<br>${location.units
-              .map((unit) => `${unit.name}: ${statusLabel(unit)} (${niceDate(unit.last_visit_at)})`)
-              .join('<br>')}`,
-          ),
-        )
-        .addTo(map.current!);
-      markers.push(marker);
     });
-    return () => markers.forEach((marker) => marker.remove());
-  }, [filteredLocations]);
+    return () => {
+      cancelled = true;
+      markers.forEach((marker) => marker.remove());
+    };
+  }, [filteredLocations, mapReady]);
 
   return (
     <main className="screen map-screen">
@@ -2704,40 +2791,47 @@ function AdminMapPicker({
   onChange: (coords: { latitude: number; longitude: number }) => void;
 }) {
   const container = useRef<HTMLDivElement | null>(null);
-  const map = useRef<maplibregl.Map | null>(null);
-  const marker = useRef<maplibregl.Marker | null>(null);
+  const map = useRef<MapLibreMap | null>(null);
+  const marker = useRef<MapLibreMarker | null>(null);
 
   useEffect(() => {
     if (!container.current || map.current) return;
-    map.current = new maplibregl.Map({
-      container: container.current,
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: 'OpenStreetMap',
+    let cancelled = false;
+    void loadMapLibre().then((maplibregl) => {
+      if (cancelled || !container.current || map.current) return;
+      const nextMap = new maplibregl.Map({
+        container: container.current,
+        style: {
+          version: 8,
+          sources: {
+            osm: {
+              type: 'raster',
+              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+              tileSize: 256,
+              attribution: 'OpenStreetMap',
+            },
           },
+          layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
         },
-        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-      },
-      center: [longitude, latitude],
-      zoom: 13,
-    });
-    marker.current = new maplibregl.Marker({ draggable: true, color: statusColor.red })
-      .setLngLat([longitude, latitude])
-      .addTo(map.current);
-    marker.current.on('dragend', () => {
-      const point = marker.current!.getLngLat();
-      onChange({ latitude: point.lat, longitude: point.lng });
-    });
-    map.current.on('click', (event) => {
-      marker.current!.setLngLat(event.lngLat);
-      onChange({ latitude: event.lngLat.lat, longitude: event.lngLat.lng });
+        center: [longitude, latitude],
+        zoom: 13,
+      });
+      map.current = nextMap;
+      const nextMarker = new maplibregl.Marker({ draggable: true, color: statusColor.red })
+        .setLngLat([longitude, latitude])
+        .addTo(nextMap);
+      marker.current = nextMarker;
+      nextMarker.on('dragend', () => {
+        const point = nextMarker.getLngLat();
+        onChange({ latitude: point.lat, longitude: point.lng });
+      });
+      nextMap.on('click', (event) => {
+        nextMarker.setLngLat(event.lngLat);
+        onChange({ latitude: event.lngLat.lat, longitude: event.lngLat.lng });
+      });
     });
     return () => {
+      cancelled = true;
       map.current?.remove();
       map.current = null;
       marker.current = null;
@@ -2909,6 +3003,9 @@ function AdminScreen({
     unitId: '',
     includeVoided: false,
   });
+  const [activityPage, setActivityPage] = useState<PageMetadata | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityQueryKey, setActivityQueryKey] = useState('');
   const [actingTeamMemberId, setActingTeamMemberId] = useState('');
   const [gamificationTone, setGamificationTone] = useState<GamificationTone>('professional');
   const [adminAuthMethod, setAdminAuthMethod] = useState('');
@@ -3094,18 +3191,29 @@ function AdminScreen({
     await load();
   }
 
-  async function loadActivity() {
+  async function loadActivity(nextOffset = 0, append = false) {
     const params = new URLSearchParams();
+    const queryKey = JSON.stringify(activityFilters);
+    params.set('limit', '75');
+    params.set('offset', String(nextOffset));
+    if (activityFilters.search.trim()) params.set('search', activityFilters.search.trim());
     if (activityFilters.from) params.set('from', activityFilters.from);
     if (activityFilters.to) params.set('to', activityFilters.to);
     if (activityFilters.teamMemberId) params.set('teamMemberId', activityFilters.teamMemberId);
     if (activityFilters.areaId) params.set('areaId', activityFilters.areaId);
     if (activityFilters.unitId) params.set('unitId', activityFilters.unitId);
     if (activityFilters.includeVoided) params.set('includeVoided', 'true');
-    const result = await api<{ checkins: AdminCheckin[] }>(`/api/admin/checkins?${params.toString()}`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    setActivity(result.checkins);
+    setActivityLoading(true);
+    try {
+      const result = await api<{ checkins: AdminCheckin[]; page?: PageMetadata }>(`/api/admin/checkins?${params.toString()}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      setActivity((current) => (append ? [...current, ...result.checkins] : result.checkins));
+      setActivityPage(result.page ?? null);
+      setActivityQueryKey(queryKey);
+    } finally {
+      setActivityLoading(false);
+    }
   }
 
   async function patchCheckin(id: string, body: Record<string, unknown>) {
@@ -3117,7 +3225,7 @@ function AdminScreen({
     setMessage('Activity log updated.');
     refresh();
     await load();
-    await loadActivity();
+    await loadActivity(0, false);
   }
 
   const filteredActivity = useMemo(
@@ -3328,7 +3436,7 @@ function AdminScreen({
                 ))}
               </select>
             </label>
-            <button className="primary" onClick={loadActivity}>
+            <button className="primary" onClick={() => void loadActivity(0, false)}>
               Apply filters
             </button>
           </section>
@@ -3344,6 +3452,15 @@ function AdminScreen({
               />
             ))}
             {!filteredActivity.length && <p className="notice">No check-ins match the current filters.</p>}
+            {activityPage?.hasMore && activityQueryKey === JSON.stringify(activityFilters) && (
+              <button
+                className="secondary"
+                onClick={() => void loadActivity(activityPage.offset + activityPage.returned, true)}
+                disabled={activityLoading}
+              >
+                {activityLoading ? 'Loading...' : 'Load more activity'}
+              </button>
+            )}
           </section>
         </>
       )}

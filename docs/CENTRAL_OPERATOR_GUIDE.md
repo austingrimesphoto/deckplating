@@ -90,13 +90,13 @@ Each workspace card shows readiness counts and the latest non-voided check-in, i
 
 Use `Operator audit` in `System Administration` to review recent central-operator actions, including workspace creation, setup-code changes, workspace suspend/reactivate/delete actions, local-admin recovery, and superuser admin entry.
 
-Audit search matches action, workspace, timestamp, and action detail. Treat audit details as operational metadata. Do not paste secrets, setup codes, passphrases, or sensitive command information into audit-related notes.
+Audit search matches action, workspace, timestamp, and action detail. Use `Load more audit events` when reviewing older actions. Treat audit details as operational metadata. Do not paste secrets, setup codes, passphrases, or sensitive command information into audit-related notes.
 
 API fallback:
 
 `GET /api/operator/audit-events`
 
-Returns recent operator audit rows and the associated workspace summary when available.
+Returns recent operator audit rows, page metadata, and the associated workspace summary when available. Query parameters: `search`, `limit`, and `offset`.
 
 ### 6. Local RMT Lead Activates the Workspace
 
@@ -129,13 +129,19 @@ Use this only for support, recovery, or quality-control work where the central s
 
 In the app, use `Open admin as system administrator` on an active workspace card.
 
-## Export Boundary
+## Safe Export
 
-The operator console still does not provide a full downloadable workspace export. That is intentional until the export format is reviewed against the safe-use boundary.
+The operator console provides `Download safe export` on each workspace card. This is a JSON backup/export for operational continuity and migration support, not a counseling record or case file.
 
-Any future operator export should include only operational metadata needed for backup or migration, such as workspace summary, areas, public/general locations, units, roster display names, visit timestamps, scores, void status, and generic care/referral counts.
+The export includes only operational metadata needed for backup or migration, such as workspace summary, app settings, areas, public/general locations, units, roster display names, visit timestamps, scores, void status, and generic care/referral counts.
 
-Any future operator export must exclude setup-code plaintext, setup-code hashes, passphrase hashes, PIN hashes, device-token hashes, service keys, counseling notes, referral details, medical details, personal details, and sensitive operational locations.
+The export excludes setup-code plaintext, setup-code hashes, passphrase hashes, PIN hashes, device-token hashes, devices, service keys, counseling notes, referral details, medical details, personal details, and sensitive operational details.
+
+API fallback:
+
+`GET /api/operator/organizations/{organizationId}/export`
+
+Every export records an operator audit event.
 
 ## Operator Guardrails
 

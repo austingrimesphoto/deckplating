@@ -75,6 +75,8 @@ Search the `Operator audit` panel for the workspace slug and confirm the expecte
 - setup code used during activation
 - superuser admin session, only if you used it
 
+If the local lead asks about backup or handoff, use `Download safe export` from the workspace card. Confirm they understand this is operational metadata only and excludes setup codes, hashes, device records, passphrases, PINs, counseling notes, referral details, and sensitive personal or operational details.
+
 ## What To Say To The Local Lead
 
 Use this plain-language boundary:

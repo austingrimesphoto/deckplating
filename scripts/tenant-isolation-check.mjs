@@ -34,6 +34,7 @@ const indicatorRoute = section(api, 'const indicatorMatch', "if (method === 'GET
 const operatorRoutes = section(api, "if (method === 'GET' && path === '/operator/organizations')", "if (method === 'GET' && path === '/workspaces/resolve')");
 const operatorOrganizations = section(api, "if (method === 'GET' && path === '/operator/organizations')", "if (method === 'POST' && path === '/operator/organizations')");
 const operatorAdminSession = section(api, 'const operatorAdminSessionMatch', 'const operatorSetupCodeMatch');
+const operatorExport = section(api, 'const operatorExportMatch', 'const operatorSetupCodeMatch');
 const operatorSetupCodeCreate = section(api, 'const operatorSetupCodeMatch', 'const operatorCodeRevokeMatch');
 const operatorSetupCodeRevoke = section(api, 'const operatorCodeRevokeMatch', 'const operatorOrganizationStatusMatch');
 const operatorStatusRoute = section(api, 'const operatorOrganizationStatusMatch', 'const operatorAdminRecoveryMatch');
@@ -96,6 +97,18 @@ check(
     has(operatorAdminSession, "authMethod: 'superuser'") &&
     has(operatorAdminSession, 'createAdminToken({ organizationId, authMethod:') &&
     has(files.migration008, 'operator_audit_events')
+);
+check(
+  'Operator safe export is scoped, audited, and excludes stored secrets',
+  has(operatorExport, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/export$/)") &&
+    has(operatorExport, "tryRecordOperatorAudit(organizationId, 'workspace_safe_export_downloaded'") &&
+    has(operatorExport, "format: 'deckplating-safe-operator-export-v1'") &&
+    !has(operatorExport, 'passphrase_hash') &&
+    !has(operatorExport, 'pin_hash') &&
+    !has(operatorExport, 'device_token_hash') &&
+    !has(operatorExport, 'code_hash') &&
+    !has(operatorExport, "from('devices')") &&
+    !has(operatorExport, 'device_id')
 );
 check(
   'Operator workspace lifecycle controls update only intended workspace state',
