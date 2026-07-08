@@ -1095,92 +1095,6 @@ small,
   font-size: 0.62rem;
 }
 
-.kiosk-map-marker {
-  --pin-color: var(--gray);
-  --pin-size: clamp(36px, 2.7vw, 56px);
-  position: relative;
-  display: block;
-  width: var(--pin-size);
-  height: calc(var(--pin-size) + 14px);
-  color: #fff;
-  font-size: clamp(0.85rem, 1.05vw, 1.2rem);
-  font-weight: 900;
-}
-
-.kiosk-map-marker > span {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  width: var(--pin-size);
-  height: var(--pin-size);
-  place-items: center;
-  border: 3px solid #fff;
-  border-radius: 999px;
-  background: var(--pin-color);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
-}
-
-.kiosk-map-marker::after {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-top: 14px solid var(--pin-color);
-  border-right: 9px solid transparent;
-  border-left: 9px solid transparent;
-  content: '';
-  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.25));
-  transform: translateX(-50%);
-}
-
-.kiosk-map-marker.green {
-  --pin-color: var(--green);
-}
-
-.kiosk-map-marker.yellow {
-  --pin-color: var(--yellow);
-}
-
-.kiosk-map-marker.red {
-  --pin-color: var(--red);
-}
-
-.kiosk-map-marker.gray {
-  --pin-color: var(--gray);
-}
-
-.kiosk-map-marker.priority > span {
-  box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.42), 0 14px 28px rgba(0, 0, 0, 0.34);
-}
-
-.kiosk-map-marker strong {
-  position: absolute;
-  top: 50%;
-  left: calc(100% + 12px);
-  display: grid;
-  width: clamp(150px, 13vw, 240px);
-  max-width: 28vw;
-  padding: 8px 10px;
-  border: 1px solid rgba(23, 50, 77, 0.14);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
-  color: var(--text);
-  font-size: clamp(0.78rem, 0.92vw, 1.08rem);
-  line-height: 1.12;
-  transform: translateY(-50%);
-}
-
-.kiosk-map-marker strong small {
-  margin-top: 3px;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 0.72em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .kiosk-map-empty {
   position: absolute;
   inset: 0;
@@ -1469,10 +1383,6 @@ small,
 
   .kiosk-winners {
     grid-template-columns: 1fr;
-  }
-
-  .kiosk-map-marker strong {
-    display: none;
   }
 }
 

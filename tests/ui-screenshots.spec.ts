@@ -151,6 +151,7 @@ async function mockAppApi(page: import('@playwright/test').Page) {
     route.fulfill({
       json: {
         version: 8,
+        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
         sources: {},
         layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#dbe4eb' } }],
       },
@@ -355,24 +356,19 @@ test('captures kiosk dashboard', async ({ page }, testInfo) => {
   await expect(page.getByRole('heading', { name: 'Demo Installation' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Go here first' })).toBeVisible();
   await expect(page.getByText('Coverage picture')).toBeVisible();
-  await expect(page.locator('.kiosk-map-marker')).toHaveCount(locations.length);
+  await expect(page.locator('.kiosk-map-stage')).toHaveAttribute('data-marker-count', String(locations.length));
   await expect(page.locator('.kiosk-action')).toHaveCount(3);
   const mapBox = await page.locator('.kiosk-map-stage').boundingBox();
   expect(mapBox?.width ?? 0).toBeGreaterThan(100);
   expect(mapBox?.height ?? 0).toBeGreaterThan(100);
-  const markerPinsInsideMap = await page.locator('.kiosk-map-stage').evaluate((stage) => {
+  const canvasFillsMap = await page.locator('.kiosk-map-stage').evaluate((stage) => {
     const stageRect = stage.getBoundingClientRect();
-    return Array.from(stage.querySelectorAll('.kiosk-map-marker')).every((marker) => {
-      const markerRect = marker.getBoundingClientRect();
-      return (
-        markerRect.left >= stageRect.left - 1 &&
-        markerRect.right <= stageRect.right + 1 &&
-        markerRect.top >= stageRect.top - 1 &&
-        markerRect.bottom <= stageRect.bottom + 1
-      );
-    });
+    const canvas = stage.querySelector('canvas');
+    if (!canvas) return false;
+    const canvasRect = canvas.getBoundingClientRect();
+    return canvasRect.width > stageRect.width - 4 && canvasRect.height > stageRect.height - 4;
   });
-  expect(markerPinsInsideMap).toBe(true);
+  expect(canvasFillsMap).toBe(true);
   const noHorizontalOverflow = await page.evaluate(
     () =>
       document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1 &&
