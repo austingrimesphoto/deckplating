@@ -3083,6 +3083,30 @@ function MapScreen({
   );
 }
 
+type KioskProjectedMarker = {
+  location: LocationSummary;
+  x: number;
+  y: number;
+  labelSide: 'left' | 'right';
+};
+
+function sameKioskProjectedMarkers(current: KioskProjectedMarker[], next: KioskProjectedMarker[]) {
+  if (current.length !== next.length) return false;
+  return next.every((marker, index) => {
+    const existing = current[index];
+    return (
+      existing?.location.id === marker.location.id &&
+      existing.x === marker.x &&
+      existing.y === marker.y &&
+      existing.labelSide === marker.labelSide &&
+      existing.location.status === marker.location.status &&
+      existing.location.units.length === marker.location.units.length &&
+      existing.location.name === marker.location.name &&
+      existing.location.area_name === marker.location.area_name
+    );
+  });
+}
+
 function KioskMap({
   locations,
   mapTileUrl,
@@ -3101,17 +3125,44 @@ function KioskMap({
   const [mapReady, setMapReady] = useState(false);
   const [mapFailed, setMapFailed] = useState(false);
   const [resizeTick, setResizeTick] = useState(0);
+  const [projectedMarkers, setProjectedMarkers] = useState<KioskProjectedMarker[]>([]);
   const resizeFrame = useRef<number | null>(null);
+  const projectionFrame = useRef<number | null>(null);
   const safeMapDefaultLatitude = validLatitude(mapDefaultLatitude) ? mapDefaultLatitude : 24.57;
   const safeMapDefaultLongitude = validLongitude(mapDefaultLongitude) ? mapDefaultLongitude : -81.78;
   const displayLocations = useMemo(
-    () =>
-      locations.filter(
-        (location) =>
-          validLatitude(location.latitude) && validLongitude(location.longitude) && validLocationRadius(location.radius_meters),
-      ),
+    () => locations.filter((location) => validLatitude(location.latitude) && validLongitude(location.longitude)),
     [locations],
   );
+  const displayLocationsRef = useRef(displayLocations);
+  displayLocationsRef.current = displayLocations;
+
+  function updateProjectedMarkers() {
+    const element = container.current;
+    if (!map.current || !element || element.clientWidth === 0 || element.clientHeight === 0) {
+      setProjectedMarkers((current) => (current.length ? [] : current));
+      return;
+    }
+    const width = element.clientWidth;
+    const next = displayLocationsRef.current.map((location) => {
+      const point = map.current!.project([location.longitude, location.latitude]);
+      return {
+        location,
+        x: Math.round(point.x * 10) / 10,
+        y: Math.round(point.y * 10) / 10,
+        labelSide: point.x > width * 0.62 ? 'left' : 'right',
+      } satisfies KioskProjectedMarker;
+    });
+    setProjectedMarkers((current) => (sameKioskProjectedMarkers(current, next) ? current : next));
+  }
+
+  function scheduleMarkerProjection() {
+    if (projectionFrame.current != null) window.cancelAnimationFrame(projectionFrame.current);
+    projectionFrame.current = window.requestAnimationFrame(() => {
+      projectionFrame.current = null;
+      updateProjectedMarkers();
+    });
+  }
 
   function scheduleMapResize() {
     if (resizeFrame.current != null) window.cancelAnimationFrame(resizeFrame.current);
@@ -3120,7 +3171,25 @@ function KioskMap({
       const element = container.current;
       if (!map.current || !element || element.clientWidth === 0 || element.clientHeight === 0) return;
       map.current.resize();
+      scheduleMarkerProjection();
       setResizeTick((current) => current + 1);
+    });
+  }
+
+  function removeKioskMapLayers() {
+    if (!map.current?.isStyleLoaded()) return;
+    [
+      'kiosk-location-point-label',
+      'kiosk-location-point-count',
+      'kiosk-location-point',
+      'kiosk-location-point-halo',
+      'kiosk-location-radii-line',
+      'kiosk-location-radii-fill',
+    ].forEach((layerId) => {
+      if (map.current?.getLayer(layerId)) map.current.removeLayer(layerId);
+    });
+    ['kiosk-location-points', 'kiosk-location-radii'].forEach((sourceId) => {
+      if (map.current?.getSource(sourceId)) map.current.removeSource(sourceId);
     });
   }
 
@@ -3135,7 +3204,6 @@ function KioskMap({
           container: container.current,
           style: mapTileUrl || {
             version: 8,
-            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
             sources: {
               osm: {
                 type: 'raster',
@@ -3155,6 +3223,7 @@ function KioskMap({
         nextMap.once('load', () => {
           if (cancelled) return;
           scheduleMapResize();
+          scheduleMarkerProjection();
           setMapReady(true);
         });
         map.current = nextMap;
@@ -3170,6 +3239,10 @@ function KioskMap({
       if (resizeFrame.current != null) {
         window.cancelAnimationFrame(resizeFrame.current);
         resizeFrame.current = null;
+      }
+      if (projectionFrame.current != null) {
+        window.cancelAnimationFrame(projectionFrame.current);
+        projectionFrame.current = null;
       }
     };
   }, [safeMapDefaultLatitude, safeMapDefaultLongitude, mapTileUrl]);
@@ -3197,162 +3270,7 @@ function KioskMap({
       const element = container.current;
       if (!element || element.clientWidth === 0 || element.clientHeight === 0) return;
       map.current.resize();
-      const upsertMapData = () => {
-        if (!map.current?.isStyleLoaded()) return;
-        const radiiData = {
-          type: 'FeatureCollection' as const,
-          features: displayLocations.map((location) => ({
-            type: 'Feature' as const,
-            properties: { status: location.status, id: location.id },
-            geometry: {
-              type: 'Polygon' as const,
-              coordinates: [circlePolygon(location.longitude, location.latitude, location.radius_meters)],
-            },
-          })),
-        };
-        const pointData = {
-          type: 'FeatureCollection' as const,
-          features: displayLocations.map((location) => ({
-            type: 'Feature' as const,
-            properties: {
-              id: location.id,
-              status: location.status,
-              count: String(location.units.length),
-              priority: priorityLocationIds.has(location.id),
-              name: location.name,
-              area: location.area_name || 'Mapped area',
-            },
-            geometry: {
-              type: 'Point' as const,
-              coordinates: [location.longitude, location.latitude],
-            },
-          })),
-        };
-        const existingRadii = map.current.getSource('kiosk-location-radii') as GeoJSONSource | undefined;
-        if (existingRadii) {
-          existingRadii.setData(radiiData);
-        } else {
-          map.current.addSource('kiosk-location-radii', { type: 'geojson', data: radiiData });
-          map.current.addLayer({
-            id: 'kiosk-location-radii-fill',
-            type: 'fill',
-            source: 'kiosk-location-radii',
-            paint: {
-              'fill-color': [
-                'match',
-                ['get', 'status'],
-                'red',
-                statusColor.red,
-                'yellow',
-                statusColor.yellow,
-                'green',
-                statusColor.green,
-                statusColor.gray,
-              ],
-              'fill-opacity': 0.18,
-            },
-          });
-          map.current.addLayer({
-            id: 'kiosk-location-radii-line',
-            type: 'line',
-            source: 'kiosk-location-radii',
-            paint: {
-              'line-color': [
-                'match',
-                ['get', 'status'],
-                'red',
-                statusColor.red,
-                'yellow',
-                statusColor.yellow,
-                'green',
-                statusColor.green,
-                statusColor.gray,
-              ],
-              'line-width': 2,
-              'line-opacity': 0.65,
-            },
-          });
-        }
-        const existingPoints = map.current.getSource('kiosk-location-points') as GeoJSONSource | undefined;
-        if (existingPoints) {
-          existingPoints.setData(pointData);
-          return;
-        }
-        map.current.addSource('kiosk-location-points', { type: 'geojson', data: pointData });
-        map.current.addLayer({
-          id: 'kiosk-location-point-halo',
-          type: 'circle',
-          source: 'kiosk-location-points',
-          paint: {
-            'circle-radius': ['case', ['==', ['get', 'priority'], true], 24, 18],
-            'circle-color': '#ffffff',
-            'circle-opacity': 0.82,
-            'circle-blur': 0.08,
-            'circle-stroke-color': 'rgba(23, 50, 77, 0.12)',
-            'circle-stroke-width': 1,
-          },
-        });
-        map.current.addLayer({
-          id: 'kiosk-location-point',
-          type: 'circle',
-          source: 'kiosk-location-points',
-          paint: {
-            'circle-radius': ['case', ['==', ['get', 'priority'], true], 16, 14],
-            'circle-color': [
-              'match',
-              ['get', 'status'],
-              'red',
-              statusColor.red,
-              'yellow',
-              statusColor.yellow,
-              'green',
-              statusColor.green,
-              statusColor.gray,
-            ],
-            'circle-stroke-color': '#ffffff',
-            'circle-stroke-width': 3,
-          },
-        });
-        map.current.addLayer({
-          id: 'kiosk-location-point-count',
-          type: 'symbol',
-          source: 'kiosk-location-points',
-          layout: {
-            'text-field': ['get', 'count'],
-            'text-size': 16,
-            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-            'text-allow-overlap': true,
-            'text-ignore-placement': true,
-          },
-          paint: {
-            'text-color': '#ffffff',
-            'text-halo-color': 'rgba(23, 50, 77, 0.16)',
-            'text-halo-width': 1,
-          },
-        });
-        map.current.addLayer({
-          id: 'kiosk-location-point-label',
-          type: 'symbol',
-          source: 'kiosk-location-points',
-          filter: ['==', ['get', 'priority'], true],
-          layout: {
-            'text-field': ['format', ['get', 'name'], { 'font-scale': 1 }, '\n', {}, ['get', 'area'], { 'font-scale': 0.72 }],
-            'text-size': 13,
-            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-            'text-anchor': 'left',
-            'text-offset': [1.8, 0],
-            'text-max-width': 16,
-            'text-optional': true,
-          },
-          paint: {
-            'text-color': '#17324d',
-            'text-halo-color': '#ffffff',
-            'text-halo-width': 2,
-          },
-        });
-      };
-      if (map.current.isStyleLoaded()) upsertMapData();
-      else map.current.once('load', upsertMapData);
+      removeKioskMapLayers();
 
       if (displayLocations.length === 1) {
         map.current.setCenter([displayLocations[0].longitude, displayLocations[0].latitude]);
@@ -3372,12 +3290,15 @@ function KioskMap({
         map.current.setZoom(12);
       }
 
-      map.current.triggerRepaint();
+      const scheduleAfterCameraChange = () => scheduleMarkerProjection();
+      map.current.once('moveend', scheduleAfterCameraChange);
+      map.current.once('idle', scheduleAfterCameraChange);
+      scheduleMarkerProjection();
     });
     return () => {
       cancelled = true;
     };
-  }, [displayLocations, safeMapDefaultLatitude, safeMapDefaultLongitude, mapReady, priorityLocationIds, resizeTick]);
+  }, [displayLocations, safeMapDefaultLatitude, safeMapDefaultLongitude, mapReady, resizeTick]);
 
   return (
     <div
@@ -3386,6 +3307,29 @@ function KioskMap({
       aria-label="Color-coded map with workspace pins"
       data-marker-count={displayLocations.length}
     >
+      <div className="kiosk-map-overlay" aria-hidden="true">
+        {projectedMarkers.map((marker) => {
+          const priority = priorityLocationIds.has(marker.location.id);
+          return (
+            <div
+              key={marker.location.id}
+              className={`kiosk-map-marker ${marker.location.status} label-${marker.labelSide} ${priority ? 'priority' : ''}`}
+              data-testid="kiosk-map-marker"
+              data-location-id={marker.location.id}
+              data-status={marker.location.status}
+              style={{ left: `${marker.x}px`, top: `${marker.y}px` }}
+            >
+              <div className="kiosk-map-pin" aria-hidden="true">
+                <span className="kiosk-map-pin-count">{marker.location.units.length}</span>
+              </div>
+              <strong className="kiosk-map-marker-label">
+                <span>{marker.location.name}</span>
+                <small>{marker.location.area_name || 'Mapped area'}</small>
+              </strong>
+            </div>
+          );
+        })}
+      </div>
       {mapFailed && <p className="kiosk-map-empty">Map tiles are unavailable.</p>}
       {!mapFailed && !displayLocations.length && <p className="kiosk-map-empty">No mapped locations yet.</p>}
     </div>

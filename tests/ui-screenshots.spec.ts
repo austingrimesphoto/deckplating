@@ -151,7 +151,6 @@ async function mockAppApi(page: import('@playwright/test').Page) {
     route.fulfill({
       json: {
         version: 8,
-        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
         sources: {},
         layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#dbe4eb' } }],
       },
@@ -349,6 +348,7 @@ test('captures core user and admin screens', async ({ page }, testInfo) => {
 });
 
 test('captures kiosk dashboard', async ({ page }, testInfo) => {
+  if (testInfo.project.name === 'desktop') await page.setViewportSize({ width: 1366, height: 768 });
   await mockAppApi(page);
   await page.goto('/?kiosk=1');
   await page.getByLabel('4-digit PIN').fill('2468');
@@ -357,6 +357,16 @@ test('captures kiosk dashboard', async ({ page }, testInfo) => {
   await expect(page.getByRole('heading', { name: 'Go here first' })).toBeVisible();
   await expect(page.getByText('Coverage picture')).toBeVisible();
   await expect(page.locator('.kiosk-map-stage')).toHaveAttribute('data-marker-count', String(locations.length));
+  await expect(page.getByTestId('kiosk-map-marker')).toHaveCount(locations.length);
+  for (const location of locations) {
+    const marker = page.locator(`[data-testid="kiosk-map-marker"][data-location-id="${location.id}"]`);
+    await expect(marker).toBeVisible();
+    await expect(marker.locator('.kiosk-map-marker-label span')).toHaveText(location.name);
+  }
+  await expect(page.locator('[data-testid="kiosk-map-marker"][data-location-id="cccccccc-cccc-4ccc-8ccc-cccccccccccc"]')).toHaveClass(/gray/);
+  await expect(page.locator('[data-testid="kiosk-map-marker"][data-location-id="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"]')).toHaveClass(/red/);
+  await expect(page.locator('[data-testid="kiosk-map-marker"][data-location-id="ffffffff-ffff-4fff-8fff-ffffffffffff"]')).toHaveClass(/red/);
+  await expect(page.locator('.kiosk-map-marker-label')).toHaveCount(locations.length);
   await expect(page.locator('.kiosk-action')).toHaveCount(3);
   const mapBox = await page.locator('.kiosk-map-stage').boundingBox();
   expect(mapBox?.width ?? 0).toBeGreaterThan(100);
@@ -369,6 +379,21 @@ test('captures kiosk dashboard', async ({ page }, testInfo) => {
     return canvasRect.width > stageRect.width - 4 && canvasRect.height > stageRect.height - 4;
   });
   expect(canvasFillsMap).toBe(true);
+  const markersAreInsideMap = () => page.locator('.kiosk-map-stage').evaluate((stage) => {
+    const stageRect = stage.getBoundingClientRect();
+    return Array.from(stage.querySelectorAll('[data-testid="kiosk-map-marker"]')).every((marker) => {
+      const markerRect = marker.getBoundingClientRect();
+      return (
+        markerRect.width > 0 &&
+        markerRect.height > 0 &&
+        markerRect.left >= stageRect.left - 1 &&
+        markerRect.right <= stageRect.right + 1 &&
+        markerRect.top >= stageRect.top - 1 &&
+        markerRect.bottom <= stageRect.bottom + 1
+      );
+    });
+  });
+  await expect.poll(markersAreInsideMap).toBe(true);
   const noHorizontalOverflow = await page.evaluate(
     () =>
       document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1 &&
@@ -388,6 +413,13 @@ test('captures kiosk dashboard', async ({ page }, testInfo) => {
     });
   });
   expect(actionsStayInsidePanel).toBe(true);
+  if (testInfo.project.name === 'desktop') {
+    await page.setViewportSize({ width: 1180, height: 760 });
+    await expect(page.getByTestId('kiosk-map-marker')).toHaveCount(locations.length);
+    await expect.poll(markersAreInsideMap).toBe(true);
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await expect.poll(markersAreInsideMap).toBe(true);
+  }
   await page.waitForTimeout(800);
   await screenshot(page, testInfo.project.name, '06-kiosk-dashboard');
 });
