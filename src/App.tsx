@@ -3314,7 +3314,9 @@ function KioskMap({
               style={{ left: `${marker.x}px`, top: `${marker.y}px` }}
             >
               <div className="kiosk-map-pin" aria-hidden="true">
-                <span className="kiosk-map-pin-count">{marker.location.units.length}</span>
+                <span className="kiosk-map-pin-count">
+                  <span>{marker.location.units.length}</span>
+                </span>
               </div>
             </div>
           );

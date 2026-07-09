@@ -1105,18 +1105,18 @@ small,
 
 .kiosk-map-marker {
   --pin-color: var(--gray);
-  --pin-size: 34px;
-  --pin-half: 17px;
-  --pin-tail: 9px;
-  --pin-total-height: 43px;
+  --pin-size: 32px;
+  --pin-half: 16px;
   position: absolute;
   top: 0;
   left: 0;
   width: var(--pin-size);
-  height: var(--pin-total-height);
+  height: var(--pin-size);
+  border-left: 0;
+  background: transparent;
   color: var(--text);
-  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.2));
-  transform: translate(calc(var(--pin-half) * -1), -100%);
+  filter: drop-shadow(0 4px 8px rgba(23, 50, 77, 0.22));
+  transform: translate(-50%, -50%);
 }
 
 .kiosk-map-marker.green {
@@ -1139,43 +1139,30 @@ small,
   position: relative;
   display: grid;
   width: var(--pin-size);
-  height: var(--pin-total-height);
-  justify-items: center;
-  align-items: start;
-}
-
-.kiosk-map-pin::after {
-  position: absolute;
-  top: var(--pin-size);
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-top: var(--pin-tail) solid var(--pin-color);
-  border-right: 7px solid transparent;
-  border-left: 7px solid transparent;
-  content: '';
-  transform: translateX(-50%);
+  height: var(--pin-size);
+  place-items: center;
 }
 
 .kiosk-map-pin-count {
   position: relative;
   z-index: 1;
+  box-sizing: border-box;
   display: grid;
   width: var(--pin-size);
   height: var(--pin-size);
   place-items: center;
-  border: 3px solid #fff;
+  border: 0;
   border-radius: 999px;
   background: var(--pin-color);
   color: #fff;
   font-size: 0.9rem;
   font-weight: 900;
   line-height: 1;
-  box-shadow: 0 0 0 1px rgba(23, 50, 77, 0.12);
+  box-shadow: 0 0 0 1px rgba(23, 50, 77, 0.24);
 }
 
 .kiosk-map-marker.priority .kiosk-map-pin-count {
-  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.5), 0 0 0 8px rgba(23, 50, 77, 0.1);
+  box-shadow: 0 0 0 2px rgba(23, 50, 77, 0.18);
 }
 
 .kiosk-map-empty {
