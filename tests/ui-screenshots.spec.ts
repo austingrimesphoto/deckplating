@@ -344,6 +344,7 @@ test('captures core user and admin screens', async ({ page }, testInfo) => {
   await page.getByLabel('Local admin passphrase').fill('demo-admin-passphrase');
   await page.getByRole('button', { name: 'Unlock' }).click();
   await expect(page.getByRole('heading', { name: /Quality controls/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Complete onboarding' })).toHaveCount(0);
   await screenshot(page, testInfo.project.name, '05-admin-release-note');
 });
 

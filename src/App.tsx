@@ -3969,8 +3969,14 @@ function AdminScreen({
   const [organizationAdminAvailable, setOrganizationAdminAvailable] = useState(false);
   const [organizationAdminPassphrase, setOrganizationAdminPassphrase] = useState('');
   const [onboardingSummary, setOnboardingSummary] = useState<OnboardingSummary | null>(null);
-  const [showOnboardingChecklist, setShowOnboardingChecklist] = useState(true);
+  const [showOnboardingChecklist, setShowOnboardingChecklist] = useState(false);
   const kioskHref = kioskLinkForWorkspace(workspace);
+  const onboardingChecklistStorageKey = `deckplate.onboardingChecklist.${workspace?.id ?? 'default'}`;
+
+  function dismissOnboardingChecklist() {
+    localStorage.setItem(onboardingChecklistStorageKey, 'dismissed');
+    setShowOnboardingChecklist(false);
+  }
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -4015,9 +4021,8 @@ function AdminScreen({
       setAdminAuthMethod(settings.adminAuthMethod ?? adminAuthMethod);
       setOrganizationAdminAvailable(Boolean(settings.organizationAdminAvailable));
       setOnboardingSummary(settings.onboarding ?? null);
-      if (!settings.onboarding?.readyForCheckins) {
-        setShowOnboardingChecklist(true);
-      }
+      const checklistDismissed = localStorage.getItem(onboardingChecklistStorageKey) === 'dismissed';
+      setShowOnboardingChecklist(Boolean(settings.onboarding && !settings.onboarding.readyForCheckins && !checklistDismissed));
       setLocationForm((current) => ({ ...current, area_id: result.areas[0]?.id ?? current.area_id }));
       setActingTeamMemberId((current) => current || result.teamMembers[0]?.id || '');
     } catch (err) {
@@ -4469,7 +4474,7 @@ function AdminScreen({
       {adminSection === 'setup' && (
         <>
           {showOnboardingChecklist && (
-            <OnboardingChecklist onboarding={onboardingSummary} onComplete={() => setShowOnboardingChecklist(false)} />
+            <OnboardingChecklist onboarding={onboardingSummary} onComplete={dismissOnboardingChecklist} />
           )}
           <section className="filters">
             <input
