@@ -3087,7 +3087,6 @@ type KioskProjectedMarker = {
   location: LocationSummary;
   x: number;
   y: number;
-  labelSide: 'left' | 'right';
 };
 
 function sameKioskProjectedMarkers(current: KioskProjectedMarker[], next: KioskProjectedMarker[]) {
@@ -3098,11 +3097,8 @@ function sameKioskProjectedMarkers(current: KioskProjectedMarker[], next: KioskP
       existing?.location.id === marker.location.id &&
       existing.x === marker.x &&
       existing.y === marker.y &&
-      existing.labelSide === marker.labelSide &&
       existing.location.status === marker.location.status &&
-      existing.location.units.length === marker.location.units.length &&
-      existing.location.name === marker.location.name &&
-      existing.location.area_name === marker.location.area_name
+      existing.location.units.length === marker.location.units.length
     );
   });
 }
@@ -3143,14 +3139,12 @@ function KioskMap({
       setProjectedMarkers((current) => (current.length ? [] : current));
       return;
     }
-    const width = element.clientWidth;
     const next = displayLocationsRef.current.map((location) => {
       const point = map.current!.project([location.longitude, location.latitude]);
       return {
         location,
         x: Math.round(point.x * 10) / 10,
         y: Math.round(point.y * 10) / 10,
-        labelSide: point.x > width * 0.62 ? 'left' : 'right',
       } satisfies KioskProjectedMarker;
     });
     setProjectedMarkers((current) => (sameKioskProjectedMarkers(current, next) ? current : next));
@@ -3313,7 +3307,7 @@ function KioskMap({
           return (
             <div
               key={marker.location.id}
-              className={`kiosk-map-marker ${marker.location.status} label-${marker.labelSide} ${priority ? 'priority' : ''}`}
+              className={`kiosk-map-marker ${marker.location.status} ${priority ? 'priority' : ''}`}
               data-testid="kiosk-map-marker"
               data-location-id={marker.location.id}
               data-status={marker.location.status}
@@ -3322,10 +3316,6 @@ function KioskMap({
               <div className="kiosk-map-pin" aria-hidden="true">
                 <span className="kiosk-map-pin-count">{marker.location.units.length}</span>
               </div>
-              <strong className="kiosk-map-marker-label">
-                <span>{marker.location.name}</span>
-                <small>{marker.location.area_name || 'Mapped area'}</small>
-              </strong>
             </div>
           );
         })}

@@ -361,12 +361,12 @@ test('captures kiosk dashboard', async ({ page }, testInfo) => {
   for (const location of locations) {
     const marker = page.locator(`[data-testid="kiosk-map-marker"][data-location-id="${location.id}"]`);
     await expect(marker).toBeVisible();
-    await expect(marker.locator('.kiosk-map-marker-label span')).toHaveText(location.name);
+    await expect(marker.locator('.kiosk-map-pin-count')).not.toHaveText('');
   }
   await expect(page.locator('[data-testid="kiosk-map-marker"][data-location-id="cccccccc-cccc-4ccc-8ccc-cccccccccccc"]')).toHaveClass(/gray/);
   await expect(page.locator('[data-testid="kiosk-map-marker"][data-location-id="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"]')).toHaveClass(/red/);
   await expect(page.locator('[data-testid="kiosk-map-marker"][data-location-id="ffffffff-ffff-4fff-8fff-ffffffffffff"]')).toHaveClass(/red/);
-  await expect(page.locator('.kiosk-map-marker-label')).toHaveCount(locations.length);
+  await expect(page.locator('.kiosk-map-marker-label')).toHaveCount(0);
   await expect(page.locator('.kiosk-action')).toHaveCount(3);
   const mapBox = await page.locator('.kiosk-map-stage').boundingBox();
   expect(mapBox?.width ?? 0).toBeGreaterThan(100);
