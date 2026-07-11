@@ -18,6 +18,17 @@ declare
   v_registered_device_id uuid;
   v_count integer;
   v_conflict_seen boolean := false;
+  v_admin_hash text := encode(gen_random_bytes(32), 'hex');
+  v_expected_pin_hash text := encode(gen_random_bytes(32), 'hex');
+  v_upgraded_pin_hash text := encode(gen_random_bytes(32), 'hex');
+  v_stale_pin_hash text := encode(gen_random_bytes(32), 'hex');
+  v_setup_code_hash text := encode(gen_random_bytes(32), 'hex');
+  v_primary_device_hash text := encode(gen_random_bytes(32), 'hex');
+  v_registration_device_hash text := encode(gen_random_bytes(32), 'hex');
+  v_stale_device_hash text := encode(gen_random_bytes(32), 'hex');
+  v_first_fingerprint text := encode(gen_random_bytes(32), 'hex');
+  v_second_fingerprint text := encode(gen_random_bytes(32), 'hex');
+  v_conflict_fingerprint text := encode(gen_random_bytes(32), 'hex');
 begin
   insert into public.organizations (id, name, slug, active)
   values (v_organization_id, 'Migration 011 Test', 'migration-011-' || substr(v_organization_id::text, 1, 8), true);
@@ -33,7 +44,7 @@ begin
   ) values (
     v_setup_code_id,
     v_organization_id,
-    'migration-' || v_setup_code_id::text,
+    v_setup_code_hash,
     'Migration test',
     'pilot_setup',
     true,
@@ -50,7 +61,7 @@ begin
     'Migration Test Installation',
     24.57,
     -81.78,
-    'test-admin-hash',
+    v_admin_hash,
     now()
   );
   if v_organization_updated_at is null or v_admin_credential_updated_at is null then
@@ -96,7 +107,7 @@ begin
     true
   );
   insert into public.team_members (id, organization_id, name, active, pin_hash)
-  values (v_member_id, v_organization_id, 'Migration Test Member', true, 'expected-pin-hash');
+  values (v_member_id, v_organization_id, 'Migration Test Member', true, v_expected_pin_hash);
   insert into public.devices (
     id,
     organization_id,
@@ -108,7 +119,7 @@ begin
     v_device_id,
     v_organization_id,
     v_member_id,
-    repeat('a', 64),
+    v_primary_device_hash,
     true,
     now()
   );
@@ -120,7 +131,7 @@ begin
     v_member_id,
     v_device_id,
     v_client_batch_id,
-    repeat('b', 64),
+    v_first_fingerprint,
     v_occurred_at,
     v_location_id,
     array[v_unit_id],
@@ -139,7 +150,7 @@ begin
     v_member_id,
     v_device_id,
     v_client_batch_id,
-    repeat('b', 64),
+    v_first_fingerprint,
     v_occurred_at,
     v_location_id,
     array[v_unit_id],
@@ -163,7 +174,7 @@ begin
     v_member_id,
     v_device_id,
     v_second_batch_id,
-    repeat('c', 64),
+    v_second_fingerprint,
     v_occurred_at + interval '1 minute',
     v_location_id,
     array[v_unit_id],
@@ -183,7 +194,7 @@ begin
       v_member_id,
       v_device_id,
       v_client_batch_id,
-      repeat('d', 64),
+      v_conflict_fingerprint,
       v_occurred_at,
       v_location_id,
       array[v_unit_id],
@@ -203,9 +214,9 @@ begin
   from public.register_member_device(
     v_organization_id,
     v_member_id,
-    'expected-pin-hash',
-    'upgraded-pin-hash',
-    repeat('e', 64),
+    v_expected_pin_hash,
+    v_upgraded_pin_hash,
+    v_registration_device_hash,
     'Migration registration',
     now()
   );
@@ -216,9 +227,9 @@ begin
   from public.register_member_device(
     v_organization_id,
     v_member_id,
-    'expected-pin-hash',
-    'stale-overwrite',
-    repeat('f', 64),
+    v_expected_pin_hash,
+    v_stale_pin_hash,
+    v_stale_device_hash,
     'Stale registration',
     now()
   );

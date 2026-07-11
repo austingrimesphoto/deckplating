@@ -98,3 +98,23 @@ test('both Netlify deployments define baseline security and cache headers', asyn
   assert.match(setupHeaders, /https:\/\/deckplating\.netlify\.app/);
   assert.match(setupHeaders, /\/assets\/\*/);
 });
+
+test('database CI resets an isolated Supabase stack and preserves teardown and concurrency gates', async () => {
+  const [workflow, runner, behavior, config] = await Promise.all([
+    fs.readFile(new URL('../.github/workflows/database-behavior.yml', import.meta.url), 'utf8'),
+    fs.readFile(new URL('../scripts/run-database-behavior-suite.sh', import.meta.url), 'utf8'),
+    fs.readFile(new URL('../scripts/database-behavior-check.mjs', import.meta.url), 'utf8'),
+    fs.readFile(new URL('../supabase/config.toml', import.meta.url), 'utf8'),
+  ]);
+  assert.match(workflow, /pull_request:/);
+  assert.match(workflow, /supabase\/setup-cli@v1/);
+  assert.match(workflow, /supabase stop --no-backup/);
+  assert.doesNotMatch(workflow, /upload-artifact/);
+  assert.match(runner, /supabase db reset --local --no-seed/);
+  assert.match(runner, /011_security_reliability_hardening\.sql/);
+  assert.match(runner, /trap cleanup EXIT INT TERM/);
+  assert.match(behavior, /async function runOverlapping/);
+  assert.match(behavior, /expectedCompositeConstraints/);
+  assert.match(behavior, /assertLoopbackUrl/);
+  assert.match(config, /major_version = 17/);
+});
