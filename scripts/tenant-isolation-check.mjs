@@ -2,6 +2,7 @@ import fs from 'node:fs';
 
 const files = {
   api: fs.readFileSync(new URL('../netlify/functions/api.ts', import.meta.url), 'utf8'),
+  credentialCodec: fs.readFileSync(new URL('../netlify/functions/lib/credential-codec.ts', import.meta.url), 'utf8'),
   app: fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8'),
   offline: fs.readFileSync(new URL('../src/offline.ts', import.meta.url), 'utf8'),
   migration005: fs.readFileSync(new URL('../supabase/migrations/005_multi_site_foundation.sql', import.meta.url), 'utf8'),
@@ -30,6 +31,7 @@ function has(source, pattern) {
 }
 
 const api = files.api;
+const credentialCodec = files.credentialCodec;
 const userToken = section(api, 'async function requireUser', 'async function getCoverage');
 const adminToken = section(api, 'async function requireAdmin', 'async function tryOrganizationAdminLogin');
 const checkinRoute = section(api, "if (method === 'POST' && path === '/checkins')", "if (method === 'POST' && path === '/checkins/undo')");
@@ -68,9 +70,14 @@ check(
     has(registerDevice, 'legacyPinHash(body.teamMemberId, body.pin)') &&
     has(registerDevice, 'createCredentialHash(pinCredentialContext(') &&
     has(registerDevice, 'scoped(update, organizationId)') &&
-    has(api, "const pepperedCredentialHashPrefix = 'scrypt-v2'") &&
-    has(api, 'prefix === pepperedCredentialHashPrefix ? credentialPepper') &&
-    has(api, 'managedHostEnabled && Buffer.byteLength(credentialPepper'),
+    has(credentialCodec, "rawDedicated: 'scrypt-v2'") &&
+    has(credentialCodec, "sessionDerived: 'scrypt-v3'") &&
+    has(credentialCodec, "dedicated: 'scrypt-v4'") &&
+    has(credentialCodec, "deriveCredentialPepper(adminSessionSecret, 'session-root-v1')") &&
+    has(credentialCodec, 'verificationPepper = credentialPepper') &&
+    has(credentialCodec, 'verificationPepper = sessionDerivedCredentialPepper') &&
+    has(credentialCodec, 'verificationPepper = dedicatedCredentialPepper') &&
+    has(api, 'configuredCredentialPepper && Buffer.byteLength(configuredCredentialPepper'),
 );
 check('Signed user sessions derive organization scope server-side', has(userToken, 'parsed.organizationId') && has(userToken, 'scoped(baseQuery, organizationId)') && has(userToken, 'member.organization_id !== organizationId'));
 check(

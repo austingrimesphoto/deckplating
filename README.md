@@ -122,7 +122,9 @@ ENABLE_MINISTRY_INDICATORS
 VITE_ENABLE_MINISTRY_INDICATORS
 ```
 
-Managed hosting should set `DECKPLATING_MANAGED_HOST=true`, a dedicated random `ADMIN_SESSION_SECRET` of at least 32 bytes, a separate random `CREDENTIAL_PEPPER` of at least 32 bytes, and `CENTRAL_OPERATOR_PASSPHRASE_HASH`. Keep the pepper only in the function environment; changing or losing it prevents verification of credentials created with it. Local development can leave managed hosting disabled.
+Managed hosting should explicitly set `DECKPLATING_MANAGED_HOST=true`, `CENTRAL_OPERATOR_PASSPHRASE_HASH`, and a dedicated random `ADMIN_SESSION_SECRET` of at least 32 bytes. For backward compatibility, a configured central-operator hash also activates managed-host behavior when the explicit flag is absent. A separate random `CREDENTIAL_PEPPER` of at least 32 bytes is strongly recommended. Without it, the API derives a domain-separated credential pepper from `ADMIN_SESSION_SECRET` and writes `scrypt-v3` credential hashes; with it, the API writes `scrypt-v4` hashes. Successful logins and credential resets upgrade older hashes to the active format, including legacy raw-pepper `scrypt-v2` hashes.
+
+Keep both secrets only in the function environment. Changing or losing `CREDENTIAL_PEPPER` prevents verification of `scrypt-v2` and `scrypt-v4` credentials created with it. Before rotating `ADMIN_SESSION_SECRET` when any `scrypt-v3` credentials may remain, first configure a dedicated pepper and migrate those credentials through successful logins and resets, or plan resets for every remaining credential. Local development can leave managed hosting disabled.
 
 `DECKPLATING_ALLOWED_ORIGINS` optionally adds comma-separated HTTPS origins for reviewed setup-site previews or alternate frontends. The configured app and setup-site origins are always included; arbitrary origins are not allowed.
 

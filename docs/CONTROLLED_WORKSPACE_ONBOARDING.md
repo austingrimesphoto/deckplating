@@ -89,7 +89,7 @@ Body:
 
 Behavior:
 
-- Managed hosting should explicitly set `DECKPLATING_MANAGED_HOST=true`, a function-only `CREDENTIAL_PEPPER` of at least 32 bytes, and `CENTRAL_OPERATOR_PASSPHRASE_HASH`.
+- Managed hosting should explicitly set `DECKPLATING_MANAGED_HOST=true`, a function-only `ADMIN_SESSION_SECRET` of at least 32 bytes, and `CENTRAL_OPERATOR_PASSPHRASE_HASH`. A separate function-only `CREDENTIAL_PEPPER` of at least 32 bytes is strongly recommended; otherwise the API derives a domain-separated pepper from `ADMIN_SESSION_SECRET` and writes `scrypt-v3` credentials instead of `scrypt-v4` credentials.
 - Uses a separate central operator passphrase, not a local organization admin passphrase.
 - Returns a short-lived central operator token.
 

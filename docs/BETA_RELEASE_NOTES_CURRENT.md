@@ -46,7 +46,7 @@ Use this as the draft release note for the current beta build.
 
 ## Environment Variable Changes
 
-- Managed hosting requires `DECKPLATING_MANAGED_HOST=true`, a dedicated random `ADMIN_SESSION_SECRET` of at least 32 bytes, and a separate random `CREDENTIAL_PEPPER` of at least 32 bytes.
+- Managed hosting should explicitly set `DECKPLATING_MANAGED_HOST=true` and requires a dedicated random `ADMIN_SESSION_SECRET` of at least 32 bytes. A configured central-operator hash also activates managed behavior for compatibility when the explicit flag is absent. A separate random `CREDENTIAL_PEPPER` of at least 32 bytes is strongly recommended: its absence uses an `ADMIN_SESSION_SECRET`-derived, domain-separated `scrypt-v3` pepper, while its presence produces `scrypt-v4` credentials. Migrate v3 credentials through logins or resets before rotating `ADMIN_SESSION_SECRET`; legacy raw-pepper v2 credentials remain verifiable and upgrade to v4.
 - Notification delivery defaults to disabled; use only the documented `disabled`, `mailto`, or Resend-compatible `provider` mode.
 
 ## Known Issues

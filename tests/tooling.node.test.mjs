@@ -46,6 +46,13 @@ test('JSON client times out stalled requests', async () => {
   await assert.rejects(() => request('https://other.example.com/api/health'), /must stay on the configured origin/);
 });
 
+test('production smoke cleanup rediscovers an ambiguously submitted request by slug', async () => {
+  const source = await fs.readFile(new URL('../scripts/first-pilot-smoke-check.mjs', import.meta.url), 'utf8');
+  assert.match(source, /async function findPendingSmokeRequest\(\)/);
+  assert.match(source, /candidate\.preferred_workspace_slug === slug/);
+  assert.match(source, /workspaceRequestId = pendingRequest\?\.id \?\? ''/);
+});
+
 test('environment file serialization prevents line injection and validates setup inputs', () => {
   const env = buildEnvFile({
     SUPABASE_URL: 'https://example.supabase.co',

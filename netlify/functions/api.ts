@@ -2,6 +2,7 @@ import type { Handler, HandlerEvent } from '@netlify/functions';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
 import { normalizeNotificationMode, sendWorkspaceApprovedNotification } from '../../src/lib/notifications';
+import { createCredentialCodec } from './lib/credential-codec';
 
 type Status = 'green' | 'yellow' | 'red' | 'gray';
 type FixedVoidReason = 'accidental' | 'wrong_unit' | 'duplicate' | 'incorrect_datetime' | 'incorrect_member';
@@ -82,7 +83,7 @@ const adminPassphraseHash = process.env.ADMIN_PASSPHRASE_HASH ?? '';
 const configuredAdminSessionSecret = process.env.ADMIN_SESSION_SECRET?.trim() ?? '';
 const adminSessionSecret = configuredAdminSessionSecret || serviceRoleKey;
 const centralOperatorPassphraseHash = process.env.CENTRAL_OPERATOR_PASSPHRASE_HASH ?? '';
-const credentialPepper = process.env.CREDENTIAL_PEPPER?.trim() ?? '';
+const configuredCredentialPepper = process.env.CREDENTIAL_PEPPER?.trim() ?? '';
 const managedHostRequested = /^true$/i.test(process.env.DECKPLATING_MANAGED_HOST ?? '');
 const managedHostEnabled = managedHostRequested || Boolean(centralOperatorPassphraseHash);
 const defaultOrganizationId =
@@ -206,66 +207,14 @@ const constantTimeEqual = (left: string, right: string) => {
 const matchesSha256 = (value: string, expectedHash: string) =>
   Boolean(expectedHash) && constantTimeEqual(sha256(value), expectedHash);
 
-const legacyCredentialHashPrefix = 'scrypt-v1';
-const pepperedCredentialHashPrefix = 'scrypt-v2';
-const credentialHashPrefix = credentialPepper ? pepperedCredentialHashPrefix : legacyCredentialHashPrefix;
-
-const deriveCredentialKey = (context: string, secret: string, salt: Buffer, pepper = '') =>
-  new Promise<Buffer>((resolve, reject) => {
-    crypto.scrypt(
-      `${context}\0${secret}${pepper ? `\0${pepper}` : ''}`,
-      salt,
-      32,
-      { N: 16_384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 },
-      (error, derivedKey) => (error ? reject(error) : resolve(derivedKey)),
-    );
-  });
-
-const createCredentialHash = async (context: string, secret: string) => {
-  const salt = crypto.randomBytes(16);
-  const derivedKey = await deriveCredentialKey(context, secret, salt, credentialPepper);
-  return `${credentialHashPrefix}$${salt.toString('base64url')}$${derivedKey.toString('base64url')}`;
-};
-
-const isVersionedCredentialHash = (value: string) =>
-  value.startsWith(`${legacyCredentialHashPrefix}$`) || value.startsWith(`${pepperedCredentialHashPrefix}$`);
-
-const isCurrentCredentialHash = (value: string) => value.startsWith(`${credentialHashPrefix}$`);
-
-const verifyCredentialHash = async (
-  storedHash: string,
-  context: string,
-  secret: string,
-  legacyHashes: string[] = [],
-) => {
-  if (!isVersionedCredentialHash(storedHash)) {
-    return legacyHashes.some((candidate) => constantTimeEqual(storedHash, candidate));
-  }
-  const [prefix, encodedSalt, encodedHash, extra] = storedHash.split('$');
-  if (
-    (prefix !== legacyCredentialHashPrefix && prefix !== pepperedCredentialHashPrefix) ||
-    !encodedSalt ||
-    !encodedHash ||
-    extra
-  ) return false;
-  if (prefix === pepperedCredentialHashPrefix && !credentialPepper) return false;
-  let salt: Buffer;
-  let expected: Buffer;
-  try {
-    salt = Buffer.from(encodedSalt, 'base64url');
-    expected = Buffer.from(encodedHash, 'base64url');
-  } catch {
-    return false;
-  }
-  if (salt.length !== 16 || expected.length !== 32) return false;
-  const actual = await deriveCredentialKey(
-    context,
-    secret,
-    salt,
-    prefix === pepperedCredentialHashPrefix ? credentialPepper : '',
-  );
-  return crypto.timingSafeEqual(actual, expected);
-};
+const {
+  createCredentialHash,
+  isCurrentCredentialHash,
+  verifyCredentialHash,
+} = createCredentialCodec({
+  adminSessionSecret: configuredAdminSessionSecret,
+  credentialPepper: configuredCredentialPepper,
+});
 
 const legacyPinHash = (teamMemberId: string, pin: string) => sha256(`${teamMemberId}:${pin}`);
 
@@ -1937,7 +1886,7 @@ async function route(event: HandlerEvent) {
   if (
     Buffer.byteLength(adminSessionSecret, 'utf8') < 32 ||
     (managedHostEnabled && Buffer.byteLength(configuredAdminSessionSecret, 'utf8') < 32) ||
-    (managedHostEnabled && Buffer.byteLength(credentialPepper, 'utf8') < 32) ||
+    (configuredCredentialPepper && Buffer.byteLength(configuredCredentialPepper, 'utf8') < 32) ||
     (managedHostRequested && !centralOperatorPassphraseHash)
   ) {
     throw new Error('Server token signing is not configured securely.');

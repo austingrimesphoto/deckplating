@@ -64,10 +64,12 @@ Always name the destination site explicitly. The repo root is linked to the appl
 
 ```bash
 npm run build
-netlify deploy --prod --no-build --dir=dist --site deckplating --message "v0.6.0-beta"
+netlify deploy --prod --no-build --skip-functions-cache --dir=dist --functions=netlify/functions \
+  --site 5292a083-c91f-4c45-a2dc-00cf8598ce6c --message "v0.6.0-beta"
 
 npm --prefix setup-site run build
-netlify deploy --prod --no-build --dir=setup-site/dist --site deckplatingsetup --message "v0.6.0-beta"
+netlify deploy --prod --no-build --dir=setup-site/dist \
+  --site a8a90c90-5d21-4ef6-9136-ca88dc8e1674 --message "v0.6.0-beta"
 ```
 
 Run the production smoke and two-workspace isolation suites only with the explicit production mutation override. Confirm that each suite reports successful cleanup before considering the release complete.

@@ -8,7 +8,8 @@ Prerequisites:
 
 - run from the linked Deckplating repo
 - Netlify CLI authenticated to the linked production site
-- production has `DECKPLATING_MANAGED_HOST=true`, a dedicated random `ADMIN_SESSION_SECRET`, and a separate random `CREDENTIAL_PEPPER`, each at least 32 bytes
+- production has managed-host behavior active and a dedicated random `ADMIN_SESSION_SECRET` of at least 32 bytes; explicitly set `DECKPLATING_MANAGED_HOST=true` when possible, while a configured central-operator hash also activates managed behavior for compatibility
+- a separate random `CREDENTIAL_PEPPER` of at least 32 bytes is strongly recommended; without it, credential hashing derives a domain-separated pepper from `ADMIN_SESSION_SECRET`
 
 Command:
 
@@ -25,6 +26,8 @@ Procedure:
 5. Existing versioned operator sessions become invalid when the function environment refreshes. Deploy the reviewed production build and verify the new passphrase.
 
 Use the same helper later for emergency central-operator passphrase rotation.
+
+Credential hashes written without a dedicated `CREDENTIAL_PEPPER` use the `scrypt-v3` format. Configuring a dedicated pepper changes new and successfully verified credentials to `scrypt-v4`; legacy raw-pepper `scrypt-v2` credentials also migrate to v4 after successful verification. Before rotating `ADMIN_SESSION_SECRET`, configure a dedicated pepper and migrate every remaining v3 credential through a successful login or reset; use planned resets for credentials that cannot be migrated through normal use.
 
 ## Enter The Operator Console
 

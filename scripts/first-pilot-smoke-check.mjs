@@ -32,6 +32,20 @@ async function findSmokeOrganization() {
   return result.organizations.find((candidate) => candidate.slug === slug) ?? null;
 }
 
+async function findPendingSmokeRequest() {
+  let offset = 0;
+  while (offset <= 100_000) {
+    const result = await request(`/api/operator/workspace-requests?status=pending&limit=250&offset=${offset}`, {
+      token: operatorToken,
+    });
+    const match = result.requests.find((candidate) => candidate.preferred_workspace_slug === slug);
+    if (match) return match;
+    if (!result.page?.hasMore || !result.page.returned) return null;
+    offset += result.page.returned;
+  }
+  throw new Error('Workspace request cleanup exceeded the supported queue range.');
+}
+
 async function cleanup() {
   if (!operatorToken) return true;
   try {
@@ -39,6 +53,15 @@ async function cleanup() {
   } catch (error) {
     console.error(`CLEANUP could not inspect workspaces for ${slug}: ${error.message}`);
     return false;
+  }
+  if (!organization && !workspaceRequestId) {
+    try {
+      const pendingRequest = await findPendingSmokeRequest();
+      workspaceRequestId = pendingRequest?.id ?? '';
+    } catch (error) {
+      console.error(`CLEANUP could not inspect pending workspace requests for ${slug}: ${error.message}`);
+      return false;
+    }
   }
   if (!organization && workspaceRequestId) {
     try {

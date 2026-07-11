@@ -12,7 +12,9 @@ Managed dry run status:
 
 ## Enable Operator Access
 
-Set `DECKPLATING_MANAGED_HOST=true`, `CENTRAL_OPERATOR_PASSPHRASE_HASH`, a dedicated `ADMIN_SESSION_SECRET`, and a separate `CREDENTIAL_PEPPER` in the managed host environment.
+Set `DECKPLATING_MANAGED_HOST=true`, `CENTRAL_OPERATOR_PASSPHRASE_HASH`, and a dedicated `ADMIN_SESSION_SECRET` in the managed host environment. A separate `CREDENTIAL_PEPPER` is strongly recommended.
+
+For backward compatibility, configuring `CENTRAL_OPERATOR_PASSPHRASE_HASH` also activates managed-host behavior when the explicit flag is absent. Prefer the explicit flag so the deployment intent is visible in environment audits.
 
 The value is a SHA-256 hash of the central operator passphrase. Do not reuse the local organization admin passphrase.
 
@@ -24,12 +26,14 @@ The managed host also needs the normal production values already in place:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `ADMIN_PASSPHRASE_HASH`
 - `ADMIN_SESSION_SECRET`
-- `CREDENTIAL_PEPPER`
+- optional but strongly recommended `CREDENTIAL_PEPPER`
 - `MAP_TILE_URL`
 - optional `MAP_TILE_KEY`
 - optional `DECKPLATING_ALLOWED_ORIGINS` for reviewed alternate frontend origins
 
-`ADMIN_SESSION_SECRET` and `CREDENTIAL_PEPPER` must be separate random values of at least 32 bytes; managed hosting does not fall back to the Supabase service-role key. Generate each with an approved secret generator (for example, `openssl rand -hex 32`) and store them only in the function environment. Do not rotate or remove the credential pepper without a credential migration plan. Explicit managed mode also fails closed unless the central operator hash is configured.
+`ADMIN_SESSION_SECRET` must be a dedicated random value of at least 32 bytes; managed hosting does not fall back to the Supabase service-role key. If `CREDENTIAL_PEPPER` is configured, it must be a separate random value of at least 32 bytes. Generate each with an approved secret generator (for example, `openssl rand -hex 32`) and store them only in the function environment. Explicit managed mode also fails closed unless the central operator hash is configured.
+
+Without `CREDENTIAL_PEPPER`, the API derives a domain-separated pepper from `ADMIN_SESSION_SECRET` and writes `scrypt-v3` credential hashes. A dedicated pepper makes new credentials `scrypt-v4`; successful logins and credential resets upgrade older hashes to the active format. Legacy raw-pepper `scrypt-v2` hashes remain verifiable while the same dedicated pepper is configured. Before rotating `ADMIN_SESSION_SECRET` while any v3 credentials may remain, configure a dedicated pepper, allow active credentials to migrate through login or reset, and plan resets for every remaining credential. Do not rotate or remove a dedicated pepper without a separate credential migration plan, because existing v2 and v4 credentials require it for verification.
 
 If `CENTRAL_OPERATOR_PASSPHRASE_HASH` is added or rotated, redeploy the site before testing operator login.
 
@@ -37,9 +41,10 @@ If `CENTRAL_OPERATOR_PASSPHRASE_HASH` is added or rotated, redeploy the site bef
 
 Before each managed deployment:
 
-- Confirm `DECKPLATING_MANAGED_HOST=true` in the production environment.
+- Confirm managed-host behavior is active; prefer an explicit `DECKPLATING_MANAGED_HOST=true`, while a configured central-operator hash also activates it for compatibility.
 - Confirm the dedicated `ADMIN_SESSION_SECRET` is at least 32 bytes and is not the service-role key, an admin passphrase, or an operator passphrase.
-- Confirm the separate `CREDENTIAL_PEPPER` is at least 32 bytes, function-scoped, and recoverably stored through the approved secret-management process.
+- Prefer a separate `CREDENTIAL_PEPPER`; when configured, confirm it is at least 32 bytes, function-scoped, and recoverably stored through the approved secret-management process.
+- Before rotating `ADMIN_SESSION_SECRET`, confirm no `scrypt-v3` credentials remain or schedule resets for all remaining v3 credentials.
 - Confirm `CENTRAL_OPERATOR_PASSPHRASE_HASH` is present and the plaintext passphrase is stored only through the approved administrative process.
 - Apply and review every Supabase migration in numeric order.
 - Run `npm ci`, `npm run validate`, `npm run test:ui`, and `npm audit --audit-level=high` against the reviewed commit.
