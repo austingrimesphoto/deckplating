@@ -27,12 +27,24 @@ if [[ -z "$first_passphrase" ]]; then
   exit 1
 fi
 
+if (( ${#first_passphrase} < 12 )); then
+  printf 'Passphrase must contain at least 12 characters.\n' >&2
+  exit 1
+fi
+
 if [[ "$first_passphrase" != "$second_passphrase" ]]; then
   printf 'Passphrases did not match.\n' >&2
   exit 1
 fi
 
-hash_value="$(printf '%s' "$first_passphrase" | shasum -a 256 | awk '{print $1}')"
+if command -v shasum >/dev/null 2>&1; then
+  hash_value="$(printf '%s' "$first_passphrase" | shasum -a 256 | awk '{print $1}')"
+elif command -v sha256sum >/dev/null 2>&1; then
+  hash_value="$(printf '%s' "$first_passphrase" | sha256sum | awk '{print $1}')"
+else
+  printf 'A SHA-256 utility (shasum or sha256sum) is required.\n' >&2
+  exit 1
+fi
 unset first_passphrase
 unset second_passphrase
 
@@ -40,4 +52,5 @@ netlify env:set CENTRAL_OPERATOR_PASSPHRASE_HASH "$hash_value" --context product
 unset hash_value
 
 printf 'CENTRAL_OPERATOR_PASSPHRASE_HASH updated on the linked Netlify production site.\n'
-printf 'Next step: deploy the reviewed build so operator login uses the new passphrase.\n'
+printf 'Existing versioned operator sessions are invalid after the function environment refreshes.\n'
+printf 'Next step: deploy the reviewed build and verify operator login with the new passphrase.\n'

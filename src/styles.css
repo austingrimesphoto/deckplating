@@ -1,6 +1,6 @@
 :root {
   --bg: #f4f6f8;
-  --page-background: url('/deckplate-coverage-page-background.png');
+  --page-background: url('/deckplate-coverage-page-background.jpg');
   --surface: #ffffff;
   --text: #17212b;
   --muted: #647181;
@@ -34,7 +34,7 @@ body {
 body {
   margin: 0;
   background: var(--bg) var(--page-background) center / cover no-repeat fixed;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
 }
 
 #root {
@@ -58,6 +58,24 @@ button {
   border: 0;
   border-radius: 8px;
   font-weight: 700;
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgba(37, 90, 130, 0.42);
+  outline-offset: 2px;
 }
 
 input,
@@ -145,10 +163,7 @@ h2 {
 }
 
 .sync-bar {
-  position: fixed;
-  top: env(safe-area-inset-top);
-  right: 0;
-  left: 0;
+  position: relative;
   z-index: 30;
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -163,8 +178,8 @@ h2 {
 }
 
 .sync-bar button {
-  min-height: 32px;
-  padding: 4px 8px;
+  min-height: 44px;
+  padding: 6px 10px;
   font-size: 0.72rem;
 }
 
@@ -176,16 +191,13 @@ h2 {
 }
 
 .pin-refresh {
-  position: fixed;
-  top: calc(42px + env(safe-area-inset-top));
-  right: 10px;
-  left: 10px;
+  position: relative;
   z-index: 31;
   display: grid;
   grid-template-columns: 1fr 110px;
   gap: 8px;
   max-width: 720px;
-  margin: 0 auto;
+  margin: 10px auto 0;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -193,10 +205,53 @@ h2 {
   box-shadow: 0 8px 24px rgba(20, 30, 40, 0.16);
 }
 
+.pin-refresh ~ .screen {
+  padding-top: 18px;
+}
+
 .mission-brief {
   width: min(calc(100% - 28px), 760px);
-  margin: calc(42px + env(safe-area-inset-top)) auto -48px;
+  margin: 8px auto -48px;
   padding: 0 0 8px;
+}
+
+.sync-bar ~ .screen {
+  padding-top: 18px;
+}
+
+.sync-recovery {
+  width: min(calc(100% - 28px), 760px);
+  margin: 10px auto 0;
+  padding: 12px;
+  border: 1px solid rgba(189, 48, 48, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.sync-recovery p {
+  margin-bottom: 4px;
+}
+
+.sync-recovery-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sync-recovery-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.sync-recovery-row div,
+.sync-recovery-row small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .mission-brief.expanded {
@@ -536,6 +591,10 @@ small,
   margin-bottom: 14px;
 }
 
+.filter-search {
+  grid-column: 1 / -1;
+}
+
 .toggle {
   display: flex;
   min-height: 46px;
@@ -564,7 +623,19 @@ small,
 }
 
 .unit-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-items: flex-start;
+}
+
+.unit-card > div,
+.unit-card dl > div {
+  min-width: 0;
+}
+
+.unit-card strong,
+.unit-card dd {
+  overflow-wrap: anywhere;
 }
 
 .card-with-detail {
@@ -594,7 +665,7 @@ small,
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
-  margin: 8px 0 0;
+  margin: 0;
 }
 
 .unit-card dt {
@@ -699,7 +770,6 @@ small,
 .mission-row {
   display: grid;
   align-items: stretch;
-  cursor: pointer;
 }
 
 .mission-row-main {
@@ -722,6 +792,8 @@ small,
 }
 
 .mission-badge {
+  min-height: 32px;
+  border: 1px solid rgba(37, 90, 130, 0.2);
   background: #eef6fb;
   color: var(--brand);
 }
@@ -1175,6 +1247,22 @@ small,
   font-weight: 800;
 }
 
+.kiosk-auth-overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(23, 33, 43, 0.72);
+}
+
+.kiosk-auth-overlay .panel {
+  width: min(100%, 440px);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
 .kiosk-actions-panel,
 .kiosk-leaderboard-panel {
   display: grid;
@@ -1383,6 +1471,14 @@ small,
 
   .filters {
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  .filter-search {
+    grid-column: auto;
+  }
+
+  .unit-card {
+    grid-template-columns: minmax(0, 1.4fr) minmax(270px, 1fr);
   }
 
   .admin-row {

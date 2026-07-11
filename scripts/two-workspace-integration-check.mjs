@@ -1,44 +1,42 @@
 import crypto from 'node:crypto';
+import { createJsonClient, liveCheckSuffix, normalizeLiveCheckBaseUrl } from './lib/live-check.mjs';
 
-const baseUrl = (process.env.DECKPLATING_INTEGRATION_BASE_URL ?? '').replace(/\/$/, '');
 const operatorPassphrase = process.env.DECKPLATING_INTEGRATION_OPERATOR_PASSPHRASE ?? '';
 const allowProd = process.env.DECKPLATING_INTEGRATION_ALLOW_PROD === 'YES';
 
-if (!baseUrl || !operatorPassphrase) {
+if (!process.env.DECKPLATING_INTEGRATION_BASE_URL || !operatorPassphrase) {
   console.error('Set DECKPLATING_INTEGRATION_BASE_URL and DECKPLATING_INTEGRATION_OPERATOR_PASSPHRASE to run this live integration check.');
   process.exit(1);
 }
 
-if (baseUrl.includes('deckplating.netlify.app') && !allowProd) {
-  console.error('Refusing to run against production unless DECKPLATING_INTEGRATION_ALLOW_PROD=YES is set.');
+let baseUrl;
+try {
+  baseUrl = normalizeLiveCheckBaseUrl(process.env.DECKPLATING_INTEGRATION_BASE_URL, {
+    allowProduction: allowProd,
+    productionHostname: 'deckplating.netlify.app',
+  });
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
 
-const suffix = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+const suffix = liveCheckSuffix();
 const createdOrganizations = [];
+const expectedSlugs = new Set();
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-async function request(path, { method = 'GET', token, body, expected = [200] } = {}) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    body: body == null ? undefined : JSON.stringify(body),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!expected.includes(response.status)) {
-    throw new Error(`${method} ${path} returned ${response.status}: ${data.error ?? 'Unexpected response.'}`);
-  }
-  return { status: response.status, data };
+const jsonRequest = createJsonClient(baseUrl);
+
+async function request(path, options) {
+  return { data: await jsonRequest(path, options) };
 }
 
 async function createWorkspace(operatorToken, label, pin) {
   const slug = `it-${label}-${suffix}`.toLowerCase();
+  expectedSlugs.add(slug);
   const created = await request('/api/operator/organizations', {
     method: 'POST',
     token: operatorToken,
@@ -105,11 +103,12 @@ async function createWorkspace(operatorToken, label, pin) {
   });
 
   const deviceToken = crypto.randomUUID();
+  const registrationPin = member.data.temporaryPin ?? pin;
   const registered = await request('/api/device/register', {
     method: 'POST',
     body: {
       teamMemberId: member.data.teamMember.id,
-      pin,
+      pin: registrationPin,
       deviceToken,
       deviceLabel: `integration-${label}`,
       organizationId: organization.id,
@@ -125,12 +124,23 @@ async function createWorkspace(operatorToken, label, pin) {
     location: location.data.location,
     unit: unit.data.unit,
     member: member.data.teamMember,
-    pin,
+    pin: registrationPin,
   };
 }
 
 async function cleanup(operatorToken) {
-  for (const organization of createdOrganizations.reverse()) {
+  let succeeded = true;
+  const byId = new Map(createdOrganizations.map((organization) => [organization.id, organization]));
+  try {
+    const listed = await request('/api/operator/organizations', { token: operatorToken });
+    for (const organization of listed.data.organizations) {
+      if (expectedSlugs.has(organization.slug)) byId.set(organization.id, organization);
+    }
+  } catch (error) {
+    console.error(`CLEANUP could not inspect integration workspaces: ${error.message}`);
+    return false;
+  }
+  for (const organization of Array.from(byId.values()).reverse()) {
     try {
       await request(`/api/operator/organizations/${organization.id}/delete`, {
         method: 'DELETE',
@@ -141,8 +151,10 @@ async function cleanup(operatorToken) {
       console.log(`CLEANUP deleted ${organization.slug}`);
     } catch (error) {
       console.error(`CLEANUP failed for ${organization.slug}: ${error.message}`);
+      succeeded = false;
     }
   }
+  return succeeded;
 }
 
 let operatorToken = '';
@@ -154,6 +166,7 @@ try {
     body: { passphrase: operatorPassphrase },
   });
   operatorToken = login.data.token;
+  assert(typeof operatorToken === 'string' && operatorToken, 'Operator login did not return a token.');
 
   const alpha = await createWorkspace(operatorToken, 'alpha', '1234');
   const bravo = await createWorkspace(operatorToken, 'bravo', '5678');
@@ -212,5 +225,5 @@ try {
 
   console.log('\nTwo-workspace integration checks passed.');
 } finally {
-  if (operatorToken) await cleanup(operatorToken);
+  if (operatorToken && !(await cleanup(operatorToken))) process.exitCode = 1;
 }

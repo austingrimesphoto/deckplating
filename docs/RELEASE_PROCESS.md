@@ -23,12 +23,16 @@ Suggested meaning:
 Run:
 
 ```bash
-npm run build
+npm ci
+npm run validate
+npm run test:ui
+npm audit --audit-level=moderate
 ```
 
 Check:
 
-- The app builds successfully.
+- The complete validation and browser workflow suites pass.
+- The dependency audit has no moderate, high, or critical advisories.
 - `README.md` is current.
 - `docs/SETUP_GUIDE.md` is current.
 - `docs/PILOT_READINESS_GUIDE.md` and `docs/PILOT_FEEDBACK_TEMPLATE.md` are current before outside-team pilots.
@@ -37,6 +41,47 @@ Check:
 - `setup-site/` is current if setup instructions changed.
 - Any database changes are documented.
 - Any new environment variables are documented.
+
+## Database Migration Order
+
+When a release adds a migration, apply it before deploying API code that depends on it:
+
+```bash
+supabase backups list
+supabase db push --linked --dry-run
+supabase db push --linked
+supabase db lint --linked --level warning
+supabase migration list --linked
+```
+
+Do not migrate until a provider recovery point or a locally verified logical archive exists. A local archive must include schema and data, have owner-only permissions, pass its checksum, and produce a valid `pg_restore --list` inventory. Keep it in an ignored directory and never commit database contents.
+
+Confirm the dry run lists only reviewed migrations. For this release, `011_security_reliability_hardening.sql` and `supabase/tests/011_security_reliability_hardening.sql` were also executed together inside a rollback-only transaction before the real push. Migration `011` must be applied before the matching Netlify deployment; the API intentionally fails closed when its transaction, credential, and rate-limit functions are missing.
+
+## Deploy The Reviewed Artifacts
+
+Always name the destination site explicitly. The repo root is linked to the application site, so an unqualified setup-site deploy can overwrite the application.
+
+```bash
+npm run build
+netlify deploy --prod --no-build --dir=dist --site deckplating --message "v0.6.0-beta"
+
+npm --prefix setup-site run build
+netlify deploy --prod --no-build --dir=setup-site/dist --site deckplatingsetup --message "v0.6.0-beta"
+```
+
+Run the production smoke and two-workspace isolation suites only with the explicit production mutation override. Confirm that each suite reports successful cleanup before considering the release complete.
+
+## Rollback
+
+Restore the previous application deploy first if the new frontend or function bundle fails. Leave additive migration `011` in place unless it is proven to be the cause; the previous API remains compatible with its preserved PostgREST relationship names.
+
+The pre-`v0.6.0-beta` production deploy IDs are:
+
+- application: `6a4ef839bccb57000814254d`
+- setup site: `6a4eb25722959356b1f5918d`
+
+Restore through the Netlify deploy UI or the reviewed `restoreSiteDeploy` API operation. Restore the database archive only during stopped writes and only for demonstrated database corruption, because a database restore discards all activity after the backup.
 
 ## Create A GitHub Release
 

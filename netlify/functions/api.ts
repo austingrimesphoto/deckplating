@@ -1,7 +1,7 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
-import { sendWorkspaceApprovedNotification } from '../../src/lib/notifications';
+import { normalizeNotificationMode, sendWorkspaceApprovedNotification } from '../../src/lib/notifications';
 
 type Status = 'green' | 'yellow' | 'red' | 'gray';
 type FixedVoidReason = 'accidental' | 'wrong_unit' | 'duplicate' | 'incorrect_datetime' | 'incorrect_member';
@@ -28,6 +28,17 @@ type WorkspaceOnboardingSummary = {
   lastCheckinUnitName: string | null;
 };
 type WorkspaceRequestStatus = 'pending' | 'approved' | 'rejected';
+type OrganizationSetupCodeRow = {
+  id: string;
+  organization_id: string;
+  label: string | null;
+  purpose: string;
+  active: boolean;
+  expires_at: string | null;
+  used_at: string | null;
+  used_by_label: string | null;
+  created_at: string;
+};
 type WorkspaceRequestRow = {
   id: string;
   installation_or_command: string;
@@ -53,16 +64,7 @@ type WorkspaceRequestRow = {
   created_at: string;
   updated_at: string;
   organizations?: { id: string; slug: string; name: string; active: boolean } | null;
-  organization_setup_codes?: {
-    id: string;
-    label: string | null;
-    purpose: string;
-    active: boolean;
-    expires_at: string | null;
-    used_at: string | null;
-    used_by_label: string | null;
-    created_at: string;
-  } | null;
+  organization_setup_codes?: OrganizationSetupCodeRow | null;
 };
 
 class RequestValidationError extends Error {
@@ -77,9 +79,12 @@ class RequestValidationError extends Error {
 const supabaseUrl = process.env.SUPABASE_URL ?? '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const adminPassphraseHash = process.env.ADMIN_PASSPHRASE_HASH ?? '';
-const adminSessionSecret = process.env.ADMIN_SESSION_SECRET ?? serviceRoleKey;
+const configuredAdminSessionSecret = process.env.ADMIN_SESSION_SECRET?.trim() ?? '';
+const adminSessionSecret = configuredAdminSessionSecret || serviceRoleKey;
 const centralOperatorPassphraseHash = process.env.CENTRAL_OPERATOR_PASSPHRASE_HASH ?? '';
-const managedHostEnabled = Boolean(centralOperatorPassphraseHash);
+const credentialPepper = process.env.CREDENTIAL_PEPPER?.trim() ?? '';
+const managedHostRequested = /^true$/i.test(process.env.DECKPLATING_MANAGED_HOST ?? '');
+const managedHostEnabled = managedHostRequested || Boolean(centralOperatorPassphraseHash);
 const defaultOrganizationId =
   process.env.DECKPLATING_DEFAULT_ORGANIZATION_ID ?? '00000000-0000-4000-8000-000000000001';
 const appBaseUrl = (process.env.DECKPLATING_APP_BASE_URL ?? 'https://deckplating.netlify.app').replace(/\/+$/, '');
@@ -89,8 +94,10 @@ const fromEmail = process.env.DECKPLATING_FROM_EMAIL ?? '';
 const resendApiKey = process.env.RESEND_API_KEY ?? '';
 const ministryIndicatorsEnabled = /^true$/i.test(process.env.ENABLE_MINISTRY_INDICATORS ?? '');
 const notificationMode = process.env.NOTIFICATION_MODE ?? 'disabled';
+const normalizedNotificationMode = normalizeNotificationMode(notificationMode);
 const notificationFrom = process.env.NOTIFICATION_FROM ?? fromEmail;
 const notificationReplyTo = process.env.NOTIFICATION_REPLY_TO ?? '';
+const notificationProviderApiKey = process.env.NOTIFICATION_PROVIDER_API_KEY ?? resendApiKey;
 
 const supabase =
   supabaseUrl && serviceRoleKey
@@ -99,14 +106,16 @@ const supabase =
       })
     : (null as unknown as ReturnType<typeof createClient>);
 
-const json = (statusCode: number, body: unknown) => ({
+const json = (statusCode: number, body: unknown, additionalHeaders: Record<string, string> = {}) => ({
   statusCode,
   headers: {
     'content-type': 'application/json',
     'cache-control': 'no-store',
-    'access-control-allow-origin': '*',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
     'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'access-control-allow-headers': 'content-type,authorization',
+    ...additionalHeaders,
   },
   body: JSON.stringify(body),
 });
@@ -115,7 +124,8 @@ const empty = (statusCode: number) => ({
   statusCode,
   headers: {
     'cache-control': 'no-store',
-    'access-control-allow-origin': '*',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
     'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'access-control-allow-headers': 'content-type,authorization',
   },
@@ -130,18 +140,41 @@ const errorMessage = (error: unknown) => {
   return 'Unexpected error.';
 };
 
+const maxRequestBodyBytes = 100_000;
+
+const parseJsonObject = <T>(body: string): T => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    throw new RequestValidationError(400, 'Request body must contain valid JSON.');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new RequestValidationError(400, 'Request body must be a JSON object.');
+  }
+  return parsed as T;
+};
+
+const assertBodySize = (body: string) => {
+  if (Buffer.byteLength(body, 'utf8') > maxRequestBodyBytes) {
+    throw new RequestValidationError(413, 'Request body is too large.');
+  }
+};
+
 const readBody = <T>(event: HandlerEvent): T => {
   if (!event.body) return {} as T;
-  return JSON.parse(event.body) as T;
+  assertBodySize(event.body);
+  return parseJsonObject<T>(event.body);
 };
 
 const readRequestBody = <T>(event: HandlerEvent): T => {
   if (!event.body) return {} as T;
+  assertBodySize(event.body);
   const contentType = event.headers['content-type'] ?? event.headers['Content-Type'] ?? '';
   if (contentType.includes('application/x-www-form-urlencoded')) {
     return Object.fromEntries(new URLSearchParams(event.body)) as T;
   }
-  return JSON.parse(event.body) as T;
+  return parseJsonObject<T>(event.body);
 };
 
 const boundedInteger = (value: string | undefined, fallback: number, min: number, max: number) => {
@@ -164,10 +197,83 @@ const clampText = (value: unknown, max = 2000) => String(value ?? '').trim().sli
 
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
+const constantTimeEqual = (left: string, right: string) => {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+};
+
+const matchesSha256 = (value: string, expectedHash: string) =>
+  Boolean(expectedHash) && constantTimeEqual(sha256(value), expectedHash);
+
+const legacyCredentialHashPrefix = 'scrypt-v1';
+const pepperedCredentialHashPrefix = 'scrypt-v2';
+const credentialHashPrefix = credentialPepper ? pepperedCredentialHashPrefix : legacyCredentialHashPrefix;
+
+const deriveCredentialKey = (context: string, secret: string, salt: Buffer, pepper = '') =>
+  new Promise<Buffer>((resolve, reject) => {
+    crypto.scrypt(
+      `${context}\0${secret}${pepper ? `\0${pepper}` : ''}`,
+      salt,
+      32,
+      { N: 16_384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 },
+      (error, derivedKey) => (error ? reject(error) : resolve(derivedKey)),
+    );
+  });
+
+const createCredentialHash = async (context: string, secret: string) => {
+  const salt = crypto.randomBytes(16);
+  const derivedKey = await deriveCredentialKey(context, secret, salt, credentialPepper);
+  return `${credentialHashPrefix}$${salt.toString('base64url')}$${derivedKey.toString('base64url')}`;
+};
+
+const isVersionedCredentialHash = (value: string) =>
+  value.startsWith(`${legacyCredentialHashPrefix}$`) || value.startsWith(`${pepperedCredentialHashPrefix}$`);
+
+const isCurrentCredentialHash = (value: string) => value.startsWith(`${credentialHashPrefix}$`);
+
+const verifyCredentialHash = async (
+  storedHash: string,
+  context: string,
+  secret: string,
+  legacyHashes: string[] = [],
+) => {
+  if (!isVersionedCredentialHash(storedHash)) {
+    return legacyHashes.some((candidate) => constantTimeEqual(storedHash, candidate));
+  }
+  const [prefix, encodedSalt, encodedHash, extra] = storedHash.split('$');
+  if (
+    (prefix !== legacyCredentialHashPrefix && prefix !== pepperedCredentialHashPrefix) ||
+    !encodedSalt ||
+    !encodedHash ||
+    extra
+  ) return false;
+  if (prefix === pepperedCredentialHashPrefix && !credentialPepper) return false;
+  let salt: Buffer;
+  let expected: Buffer;
+  try {
+    salt = Buffer.from(encodedSalt, 'base64url');
+    expected = Buffer.from(encodedHash, 'base64url');
+  } catch {
+    return false;
+  }
+  if (salt.length !== 16 || expected.length !== 32) return false;
+  const actual = await deriveCredentialKey(
+    context,
+    secret,
+    salt,
+    prefix === pepperedCredentialHashPrefix ? credentialPepper : '',
+  );
+  return crypto.timingSafeEqual(actual, expected);
+};
+
 const legacyPinHash = (teamMemberId: string, pin: string) => sha256(`${teamMemberId}:${pin}`);
 
 const pinHash = (teamMemberId: string, pin: string, organizationId: string | null) =>
   sha256(`${organizationId ?? 'single-org'}:${teamMemberId}:${pin}`);
+
+const pinCredentialContext = (teamMemberId: string, organizationId: string | null) =>
+  `pin:${organizationId ?? 'single-org'}:${teamMemberId}`;
 
 let organizationSchemaEnabledCache: boolean | null = null;
 let organizationAdminSchemaEnabledCache: boolean | null = null;
@@ -175,7 +281,13 @@ let organizationAdminSchemaEnabledCache: boolean | null = null;
 const isMissingRelationError = (error: unknown) => {
   const value = error as { code?: string; message?: string } | null;
   const message = value?.message?.toLowerCase() ?? '';
-  return value?.code === '42P01' || value?.code === 'PGRST205' || message.includes('does not exist');
+  return (
+    value?.code === '42P01' ||
+    value?.code === '42883' ||
+    value?.code === 'PGRST202' ||
+    value?.code === 'PGRST205' ||
+    message.includes('does not exist')
+  );
 };
 
 async function organizationSchemaEnabled() {
@@ -198,28 +310,28 @@ async function resolveOrganizationId(value?: string | null) {
   if (!(await organizationSchemaEnabled())) return null;
   const requested = value?.trim();
   if (!requested) return defaultOrganizationId;
-  if (!isUuid(requested)) throw new Error('organizationId must be a UUID.');
+  if (!isUuid(requested)) throw new RequestValidationError(400, 'organizationId must be a UUID.');
   const { data, error } = await supabase
     .from('organizations')
     .select('id, active')
     .eq('id', requested)
     .maybeSingle();
   if (error) throw error;
-  if (!data || !data.active) throw new Error('Workspace not found or inactive.');
+  if (!data || !data.active) throw new RequestValidationError(404, 'Workspace not found or inactive.');
   return data.id as string;
 }
 
 async function resolveOrganizationSlug(slug: string) {
   if (!(await organizationSchemaEnabled())) return null;
   const normalized = slugify(slug);
-  if (!normalized) throw new Error('workspace slug is required.');
+  if (!normalized) throw new RequestValidationError(400, 'workspace slug is required.');
   const { data, error } = await supabase
     .from('organizations')
     .select('id, slug, name, active')
     .eq('slug', normalized)
     .maybeSingle();
   if (error) throw error;
-  if (!data || !data.active) throw new Error('Workspace not found or inactive.');
+  if (!data || !data.active) throw new RequestValidationError(404, 'Workspace not found or inactive.');
   return (await organizationSummary(data.id)) as Awaited<ReturnType<typeof organizationSummary>>;
 }
 
@@ -230,7 +342,8 @@ async function organizationSummary(organizationId: string | null) {
     .select('id, slug, name, active')
     .eq('id', organizationId)
     .maybeSingle();
-  if (error || !data || !data.active) return null;
+  if (error) throw error;
+  if (!data || !data.active) return null;
   const mapSettings = await getWorkspaceMapSettings(organizationId);
   return { ...data, ...mapSettings } as {
     id: string;
@@ -289,6 +402,7 @@ async function getWorkspaceMapSettings(organizationId: string | null) {
     organizationId,
   );
   if (error) {
+    if (managedHostEnabled) throw error;
     return {
       installationName: fallbackInstallationName,
       mapDefaultLatitude: fallbackMapDefaultLatitude,
@@ -305,11 +419,15 @@ async function getWorkspaceMapSettings(organizationId: string | null) {
   };
 }
 
-async function searchInstallations(query: string) {
+async function searchInstallations(query: string, event: HandlerEvent) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [];
   const cached = installationSearchCache.get(normalized);
   if (cached && cached.expiresAt > Date.now()) return cached.results;
+  const upstreamLimit = await consumeRateLimit(event, 'nominatim-search-global', 1, 1, 'public-search', false);
+  if (!upstreamLimit.allowed) {
+    throw new RequestValidationError(429, 'Installation search is busy. Try again in a moment.');
+  }
 
   const url = new URL('https://nominatim.openstreetmap.org/search');
   url.searchParams.set('q', query);
@@ -320,9 +438,10 @@ async function searchInstallations(query: string) {
 
   const response = await fetch(url, {
     headers: {
-      'user-agent': 'Deckplating controlled demonstration',
+      'user-agent': 'Deckplating/0.1 (+https://deckplating.netlify.app)',
       referer: 'https://deckplating.netlify.app',
     },
+    signal: AbortSignal.timeout(8000),
   });
   if (!response.ok) {
     throw new Error(`Installation lookup failed with status ${response.status}.`);
@@ -388,6 +507,8 @@ async function validateTeamMemberReferences(ids: unknown[], organizationId: stri
 const organizationAdminHash = (organizationId: string, passphrase: string) =>
   sha256(`${organizationId}:admin:${passphrase}`);
 
+const organizationAdminCredentialContext = (organizationId: string) => `organization-admin:${organizationId}`;
+
 async function organizationSessionState(organizationId: string | null) {
   if (!organizationId || !(await organizationSchemaEnabled())) return null;
   const { data, error } = await supabase
@@ -395,7 +516,8 @@ async function organizationSessionState(organizationId: string | null) {
     .select('id, active, updated_at')
     .eq('id', organizationId)
     .maybeSingle();
-  if (error || !data || !data.active) return null;
+  if (error) throw error;
+  if (!data || !data.active) return null;
   return data as { id: string; active: boolean; updated_at: string };
 }
 
@@ -407,7 +529,8 @@ async function organizationAdminCredentialState(organizationId: string | null) {
     .eq('organization_id', organizationId)
     .eq('active', true)
     .maybeSingle();
-  if (error || !data) return null;
+  if (error) throw error;
+  if (!data) return null;
   return data as { id: string; active: boolean; updated_at: string };
 }
 
@@ -417,6 +540,121 @@ const hmac = (value: string) =>
 const base64url = (value: string) => Buffer.from(value).toString('base64url');
 
 const fromBase64url = (value: string) => Buffer.from(value, 'base64url').toString('utf8');
+
+const getBearerToken = (event: HandlerEvent) => {
+  const header = event.headers.authorization ?? event.headers.Authorization ?? '';
+  const match = header.match(/^Bearer\s+([^\s]+)$/i);
+  return match?.[1] ?? '';
+};
+
+const readSignedPayload = (event: HandlerEvent) => {
+  const token = getBearerToken(event);
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  const [payload, signature] = parts;
+  const expected = hmac(payload);
+  if (!constantTimeEqual(signature, expected)) return null;
+  return payload;
+};
+
+const tokenTimesAreValid = (
+  claims: { issuedAt?: number; expires?: number },
+  maximumLifetimeMs: number,
+) => {
+  const now = Date.now();
+  const clockSkewMs = 60_000;
+  if (!Number.isSafeInteger(claims.expires) || claims.expires! <= now || claims.expires! > now + maximumLifetimeMs + clockSkewMs) {
+    return false;
+  }
+  if (claims.issuedAt === undefined) return true;
+  if (
+    !Number.isSafeInteger(claims.issuedAt) ||
+    claims.issuedAt! > now + clockSkewMs ||
+    claims.issuedAt! < now - maximumLifetimeMs - clockSkewMs ||
+    claims.expires! <= claims.issuedAt! ||
+    claims.expires! - claims.issuedAt! > maximumLifetimeMs + clockSkewMs
+  ) {
+    return false;
+  }
+  return true;
+};
+
+const createSignedToken = (claims: Record<string, unknown>) => {
+  const payload = base64url(JSON.stringify(claims));
+  return `${payload}.${hmac(payload)}`;
+};
+
+type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };
+
+const localRateLimits = new Map<string, { count: number; expiresAt: number }>();
+
+const clientAddress = (event: HandlerEvent) => {
+  const netlifyAddress = event.headers['x-nf-client-connection-ip'];
+  if (netlifyAddress) return netlifyAddress.trim();
+  const forwarded = event.headers['x-forwarded-for'] ?? event.headers['X-Forwarded-For'];
+  return forwarded?.split(',')[0]?.trim() || 'unknown';
+};
+
+const consumeLocalRateLimit = (key: string, limit: number, windowSeconds: number): RateLimitResult => {
+  const now = Date.now();
+  const existing = localRateLimits.get(key);
+  const entry = !existing || existing.expiresAt <= now
+    ? { count: 1, expiresAt: now + windowSeconds * 1000 }
+    : { count: existing.count + 1, expiresAt: existing.expiresAt };
+  localRateLimits.set(key, entry);
+  return {
+    allowed: entry.count <= limit,
+    retryAfterSeconds: entry.count <= limit ? 0 : Math.max(1, Math.ceil((entry.expiresAt - now) / 1000)),
+  };
+};
+
+async function consumeRateLimit(
+  event: HandlerEvent,
+  scope: string,
+  limit: number,
+  windowSeconds: number,
+  discriminator = '',
+  includeClientAddress = true,
+): Promise<RateLimitResult> {
+  const address = includeClientAddress ? clientAddress(event) : 'all-clients';
+  const keyHash = hmac(`rate-limit:${scope}:${address}:${discriminator}`);
+  const { data, error } = await supabase.rpc('consume_api_rate_limit', {
+    p_scope: scope,
+    p_key_hash: keyHash,
+    p_limit: limit,
+    p_window_seconds: windowSeconds,
+  });
+  if (error) {
+    if (isMissingRelationError(error) && !managedHostEnabled) {
+      return consumeLocalRateLimit(`${scope}:${keyHash}`, limit, windowSeconds);
+    }
+    console.error('Rate-limit check failed.', { scope, code: error.code });
+    throw new RequestValidationError(503, 'Authentication service is temporarily unavailable.');
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  return {
+    allowed: result?.allowed === true,
+    retryAfterSeconds: Math.max(1, Number(result?.retry_after_seconds) || windowSeconds),
+  };
+}
+
+async function rateLimitResponse(
+  event: HandlerEvent,
+  scope: string,
+  limit: number,
+  windowSeconds: number,
+  discriminator = '',
+  includeClientAddress = true,
+) {
+  const result = await consumeRateLimit(event, scope, limit, windowSeconds, discriminator, includeClientAddress);
+  if (result.allowed) return null;
+  return json(
+    429,
+    { error: 'Too many attempts. Try again later.', retryAfterSeconds: result.retryAfterSeconds },
+    { 'retry-after': String(result.retryAfterSeconds) },
+  );
+}
 
 const normalizePath = (event: HandlerEvent) => {
   const raw = event.path.replace('/.netlify/functions/api', '').replace(/^\/api/, '');
@@ -440,6 +678,130 @@ const minLocationRadiusMeters = 25;
 const maxLocationRadiusMeters = 750;
 
 const hasOwn = (values: Record<string, unknown>, key: string) => Object.prototype.hasOwnProperty.call(values, key);
+
+const assertAllowedFields = (values: Record<string, unknown>, allowedFields: readonly string[]) => {
+  const allowed = new Set(allowedFields);
+  const unexpected = Object.keys(values).filter((key) => !allowed.has(key));
+  if (unexpected.length) {
+    throw new RequestValidationError(400, `Unexpected request field: ${unexpected[0]}.`);
+  }
+};
+
+const requiredText = (value: unknown, label: string, minLength: number, maxLength: number) => {
+  if (typeof value !== 'string') throw new RequestValidationError(400, `${label} is required.`);
+  const normalized = value.trim();
+  if (normalized.length < minLength || normalized.length > maxLength) {
+    throw new RequestValidationError(400, `${label} must contain ${minLength} to ${maxLength} characters.`);
+  }
+  return normalized;
+};
+
+const optionalText = (value: unknown, label: string, maxLength: number) => {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string') throw new RequestValidationError(400, `${label} must be text.`);
+  const normalized = value.trim();
+  if (normalized.length > maxLength) throw new RequestValidationError(400, `${label} is too long.`);
+  return normalized || null;
+};
+
+const positiveInteger = (value: unknown, label: string, minimum: number, maximum: number) => {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new RequestValidationError(400, `${label} must be an integer between ${minimum} and ${maximum}.`);
+  }
+  return value;
+};
+
+const parseDateOnly = (value: unknown, label: string) => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new RequestValidationError(400, `${label} must use YYYY-MM-DD format.`);
+  }
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) {
+    throw new RequestValidationError(400, `${label} must be a real calendar date.`);
+  }
+  return value;
+};
+
+const parseIsoInstant = (value: unknown, label: string) => {
+  if (typeof value !== 'string' || value.length > 40 || !value.includes('T')) {
+    throw new RequestValidationError(400, `${label} must be an ISO timestamp.`);
+  }
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) throw new RequestValidationError(400, `${label} must be an ISO timestamp.`);
+  return parsed.toISOString();
+};
+
+const dateRangeFilters = (params: Record<string, string | undefined>) => {
+  const from = params.fromIso
+    ? parseIsoInstant(params.fromIso, 'fromIso')
+    : params.from
+      ? `${parseDateOnly(params.from, 'from')}T00:00:00.000Z`
+      : null;
+  const to = params.toIso
+    ? parseIsoInstant(params.toIso, 'toIso')
+    : params.to
+      ? `${parseDateOnly(params.to, 'to')}T23:59:59.999Z`
+      : null;
+  if (from && to && new Date(from).getTime() > new Date(to).getTime()) {
+    throw new RequestValidationError(400, 'The start of the date range must not be after the end.');
+  }
+  return { from, to };
+};
+
+const parseTimeZone = (value: string | undefined) => {
+  const timeZone = value?.trim() || 'UTC';
+  if (timeZone.length > 100) throw new RequestValidationError(400, 'timeZone is invalid.');
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format(0);
+  } catch {
+    throw new RequestValidationError(400, 'timeZone must be a valid IANA time zone.');
+  }
+  return timeZone;
+};
+
+const zonedMidnight = (calendarDate: Date, timeZone: string) => {
+  const year = calendarDate.getUTCFullYear();
+  const month = calendarDate.getUTCMonth();
+  const day = calendarDate.getUTCDate();
+  const target = Date.UTC(year, month, day);
+  const formatter = new Intl.DateTimeFormat('en-GB-u-hc-h23', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  let candidate = target;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const values = Object.fromEntries(
+      formatter
+        .formatToParts(candidate)
+        .filter((part) => part.type !== 'literal')
+        .map((part) => [part.type, Number(part.value)]),
+    );
+    const rendered = Date.UTC(values.year, values.month - 1, values.day, values.hour, values.minute, values.second);
+    const adjustment = target - rendered;
+    candidate += adjustment;
+    if (adjustment === 0) break;
+  }
+  return new Date(candidate);
+};
+
+const zonedDayKeyFormatter = (timeZone: string) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+
+const zonedDayKey = (value: string, formatter: Intl.DateTimeFormat) => {
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(new Date(value))
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
 
 const isLatitude = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= -90 && value <= 90;
 
@@ -502,6 +864,82 @@ async function validateLocationCoordinates(
   }
 }
 
+const normalizeAreaMutation = (body: Record<string, unknown>, requireName: boolean) => {
+  assertAllowedFields(body, ['name', 'sort_order']);
+  const values: Record<string, unknown> = {};
+  if (hasOwn(body, 'name')) values.name = requiredText(body.name, 'Area name', 2, 120);
+  if (hasOwn(body, 'sort_order')) values.sort_order = positiveInteger(body.sort_order, 'sort_order', 0, 100_000);
+  if (requireName && !values.name) throw new RequestValidationError(400, 'Area name is required.');
+  if (!Object.keys(values).length) throw new RequestValidationError(400, 'At least one editable area field is required.');
+  return values;
+};
+
+const normalizeLocationMutation = (body: Record<string, unknown>, requireAll: boolean) => {
+  assertAllowedFields(body, ['name', 'area_id', 'latitude', 'longitude', 'radius_meters', 'active', 'unitIds']);
+  const values: Record<string, unknown> = {};
+  if (hasOwn(body, 'name')) values.name = requiredText(body.name, 'Location name', 2, 160);
+  if (hasOwn(body, 'area_id')) {
+    if (!isUuid(body.area_id)) throw new RequestValidationError(400, 'area_id must be a UUID.');
+    values.area_id = body.area_id;
+  }
+  if (hasOwn(body, 'latitude')) values.latitude = body.latitude;
+  if (hasOwn(body, 'longitude')) values.longitude = body.longitude;
+  if (hasOwn(body, 'radius_meters')) values.radius_meters = body.radius_meters;
+  if (hasOwn(body, 'active')) {
+    if (typeof body.active !== 'boolean') throw new RequestValidationError(400, 'active must be true or false.');
+    values.active = body.active;
+  }
+  if (requireAll && !values.name) throw new RequestValidationError(400, 'Location name is required.');
+  if (requireAll && !values.area_id) throw new RequestValidationError(400, 'area_id is required.');
+  if (!requireAll && !Object.keys(values).length && !hasOwn(body, 'unitIds')) {
+    throw new RequestValidationError(400, 'At least one editable location field is required.');
+  }
+  return values;
+};
+
+const normalizeUnitMutation = (body: Record<string, unknown>, requireAll: boolean) => {
+  assertAllowedFields(body, ['name', 'location_id', 'unit_type', 'visit_interval_days', 'active']);
+  const values: Record<string, unknown> = {};
+  if (hasOwn(body, 'name')) values.name = requiredText(body.name, 'Unit name', 2, 160);
+  if (hasOwn(body, 'location_id')) {
+    if (body.location_id !== null && !isUuid(body.location_id)) {
+      throw new RequestValidationError(400, 'location_id must be a UUID or null.');
+    }
+    values.location_id = body.location_id;
+  }
+  if (hasOwn(body, 'unit_type')) {
+    if (!['department', 'division', 'tenant'].includes(String(body.unit_type))) {
+      throw new RequestValidationError(400, 'unit_type must be department, division, or tenant.');
+    }
+    values.unit_type = body.unit_type;
+  }
+  if (hasOwn(body, 'visit_interval_days')) {
+    values.visit_interval_days = positiveInteger(body.visit_interval_days, 'visit_interval_days', 1, 3650);
+  }
+  if (hasOwn(body, 'active')) {
+    if (typeof body.active !== 'boolean') throw new RequestValidationError(400, 'active must be true or false.');
+    values.active = body.active;
+  }
+  if (requireAll && !values.name) throw new RequestValidationError(400, 'Unit name is required.');
+  if (requireAll && !values.unit_type) throw new RequestValidationError(400, 'unit_type is required.');
+  if (!Object.keys(values).length) throw new RequestValidationError(400, 'At least one editable unit field is required.');
+  return values;
+};
+
+const normalizeTeamMemberMutation = (body: Record<string, unknown>, requireName: boolean) => {
+  assertAllowedFields(body, ['name', 'role', 'active']);
+  const values: Record<string, unknown> = {};
+  if (hasOwn(body, 'name')) values.name = requiredText(body.name, 'Team member name', 2, 120);
+  if (hasOwn(body, 'role')) values.role = optionalText(body.role, 'Role', 120);
+  if (hasOwn(body, 'active')) {
+    if (typeof body.active !== 'boolean') throw new RequestValidationError(400, 'active must be true or false.');
+    values.active = body.active;
+  }
+  if (requireName && !values.name) throw new RequestValidationError(400, 'Team member name is required.');
+  if (!Object.keys(values).length) throw new RequestValidationError(400, 'At least one editable team member field is required.');
+  return values;
+};
+
 const statusFromDays = (days: number | null, interval: number): Status => {
   if (days === null) return 'gray';
   const ratio = days / interval;
@@ -515,12 +953,6 @@ const worstStatus = (statuses: Status[]): Status => {
   return statuses.sort((a, b) => rank[b] - rank[a])[0] ?? 'gray';
 };
 
-const envNumber = (value: string | undefined, fallback: number) => {
-  if (value == null || value.trim() === '') return fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
 const fixedVoidReasons = new Set<FixedVoidReason>([
   'accidental',
   'wrong_unit',
@@ -531,7 +963,7 @@ const fixedVoidReasons = new Set<FixedVoidReason>([
 
 const gamificationTones = new Set<GamificationTone>(['professional', 'friendly', 'banter']);
 
-const isUuid = (value: unknown) =>
+const isUuid = (value: unknown): value is string =>
   typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 const normalizeIndicator = (value: unknown): IndicatorValue => {
@@ -548,12 +980,6 @@ const parseOccurredAt = (value: unknown) => {
   if (time > now + 10 * 60000) throw new Error('occurredAt cannot be more than 10 minutes in the future.');
   if (time < now - 90 * 86400000) throw new Error('Queued visits older than 90 days cannot be uploaded.');
   return occurred.toISOString();
-};
-
-const statusBefore = (checkedInAt: string | null, occurredAt: string, interval: number): Status => {
-  if (!checkedInAt) return 'gray';
-  const days = Math.floor((new Date(occurredAt).getTime() - new Date(checkedInAt).getTime()) / 86400000);
-  return statusFromDays(days, interval);
 };
 
 async function getGamificationTone(organizationId: string | null): Promise<GamificationTone> {
@@ -611,35 +1037,38 @@ async function getWorkspaceOnboardingSummary(organizationId: string | null): Pro
   };
 }
 
-const createAdminToken = async (context: Pick<AdminContext, 'organizationId' | 'authMethod'>) => {
-  const organizationState = await organizationSessionState(context.organizationId);
-  const adminCredentialState =
-    context.authMethod === 'organization' ? await organizationAdminCredentialState(context.organizationId) : null;
-  const payload = base64url(
-    JSON.stringify({
-      organizationId: context.organizationId,
-      authMethod: context.authMethod,
-      organizationUpdatedAt: organizationState?.updated_at ?? null,
-      adminCredentialUpdatedAt: adminCredentialState?.updated_at ?? null,
-      expires: Date.now() + 1000 * 60 * 60 * 8,
-    }),
-  );
-  return `${payload}.${hmac(payload)}`;
+type AdminTokenContext = Pick<AdminContext, 'organizationId' | 'authMethod'> &
+  Partial<Pick<AdminContext, 'organizationUpdatedAt' | 'adminCredentialUpdatedAt'>>;
+
+const createAdminToken = async (context: AdminTokenContext) => {
+  const organizationUpdatedAt = context.organizationUpdatedAt !== undefined
+    ? context.organizationUpdatedAt
+    : (await organizationSessionState(context.organizationId))?.updated_at ?? null;
+  const adminCredentialUpdatedAt = context.authMethod === 'organization'
+    ? context.adminCredentialUpdatedAt !== undefined
+      ? context.adminCredentialUpdatedAt
+      : (await organizationAdminCredentialState(context.organizationId))?.updated_at ?? null
+    : null;
+  const issuedAt = Date.now();
+  return createSignedToken({
+    version: 1,
+    kind: 'admin',
+    organizationId: context.organizationId,
+    authMethod: context.authMethod,
+    organizationUpdatedAt,
+    adminCredentialUpdatedAt,
+    issuedAt,
+    expires: issuedAt + 1000 * 60 * 60 * 8,
+  });
 };
 
 async function requireAdmin(event: HandlerEvent): Promise<AdminContext | null> {
-  const header = event.headers.authorization ?? event.headers.Authorization;
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!token) return null;
-  const [payloadOrExpires, signature] = token.split('.');
-  if (!payloadOrExpires || !signature) return null;
-  const expected = hmac(payloadOrExpires);
-  if (signature.length !== expected.length) return null;
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  const payloadOrExpires = readSignedPayload(event);
+  if (!payloadOrExpires) return null;
 
   const legacyExpires = Number(payloadOrExpires);
   if (Number.isFinite(legacyExpires)) {
-    if (legacyExpires < Date.now()) return null;
+    if (!tokenTimesAreValid({ expires: legacyExpires }, 1000 * 60 * 60 * 8)) return null;
     const organizationId = await currentOrganizationId();
     const organizationState = await organizationSessionState(organizationId);
     if (organizationId && !organizationState) return null;
@@ -656,6 +1085,9 @@ async function requireAdmin(event: HandlerEvent): Promise<AdminContext | null> {
     authMethod?: AdminContext['authMethod'];
     organizationUpdatedAt?: string | null;
     adminCredentialUpdatedAt?: string | null;
+    kind?: string;
+    version?: number;
+    issuedAt?: number;
     expires?: number;
   };
   try {
@@ -663,9 +1095,18 @@ async function requireAdmin(event: HandlerEvent): Promise<AdminContext | null> {
   } catch {
     return null;
   }
-  if (!parsed.expires || parsed.expires < Date.now()) return null;
+  const allowedAuthMethods = new Set<AdminContext['authMethod']>(['organization', 'environment', 'superuser']);
+  if (
+    !parsed.authMethod ||
+    !allowedAuthMethods.has(parsed.authMethod) ||
+    (parsed.kind !== undefined && (parsed.kind !== 'admin' || parsed.version !== 1)) ||
+    !tokenTimesAreValid(parsed, 1000 * 60 * 60 * 8)
+  ) {
+    return null;
+  }
   if (parsed.organizationId && !isUuid(parsed.organizationId)) return null;
   const organizationId = parsed.organizationId ?? (await currentOrganizationId());
+  if ((parsed.authMethod === 'organization' || parsed.authMethod === 'superuser') && !organizationId) return null;
   const organizationState = await organizationSessionState(organizationId);
   if (organizationId && (!organizationState || organizationState.updated_at !== (parsed.organizationUpdatedAt ?? null))) {
     return null;
@@ -678,19 +1119,18 @@ async function requireAdmin(event: HandlerEvent): Promise<AdminContext | null> {
   }
   return {
     organizationId,
-    authMethod:
-      parsed.authMethod === 'organization'
-        ? 'organization'
-        : parsed.authMethod === 'superuser'
-          ? 'superuser'
-          : 'environment',
+    authMethod: parsed.authMethod,
     organizationUpdatedAt: organizationState?.updated_at ?? null,
     adminCredentialUpdatedAt:
       parsed.authMethod === 'organization' ? parsed.adminCredentialUpdatedAt ?? null : null,
   };
 }
 
-async function tryOrganizationAdminLogin(organizationId: string | null, passphrase: string): Promise<AdminContext | null> {
+async function tryOrganizationAdminLogin(
+  organizationId: string | null,
+  passphrase: string,
+  organizationUpdatedAt: string | null,
+): Promise<AdminContext | null> {
   if (!organizationId || !(await organizationAdminSchemaEnabled())) return null;
   const { data, error } = await supabase
     .from('organization_admin_credentials')
@@ -698,60 +1138,93 @@ async function tryOrganizationAdminLogin(organizationId: string | null, passphra
     .eq('organization_id', organizationId)
     .eq('active', true)
     .maybeSingle();
-  if (error || !data) return null;
-  if (data.passphrase_hash !== organizationAdminHash(organizationId, passphrase)) return null;
-  await supabase
-    .from('organization_admin_credentials')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('id', data.id)
-    .eq('organization_id', organizationId);
+  if (error) throw error;
+  if (!data) return null;
+  const modernHash = isCurrentCredentialHash(data.passphrase_hash);
+  const matches = await verifyCredentialHash(
+    data.passphrase_hash,
+    organizationAdminCredentialContext(organizationId),
+    passphrase,
+    [organizationAdminHash(organizationId, passphrase)],
+  );
+  if (!matches) return null;
+  let credentialUpdatedAt = data.updated_at ?? null;
+  if (!modernHash) {
+    const { data: upgraded, error: upgradeError } = await supabase
+      .from('organization_admin_credentials')
+      .update({ passphrase_hash: await createCredentialHash(organizationAdminCredentialContext(organizationId), passphrase) })
+      .eq('id', data.id)
+      .eq('organization_id', organizationId)
+      .eq('passphrase_hash', data.passphrase_hash)
+      .select('updated_at')
+      .maybeSingle();
+    if (upgradeError) throw upgradeError;
+    if (!upgraded) return null;
+    credentialUpdatedAt = upgraded.updated_at ?? null;
+  }
   return {
     organizationId,
     authMethod: 'organization',
-    organizationUpdatedAt: null,
-    adminCredentialUpdatedAt: data.updated_at ?? null,
+    organizationUpdatedAt,
+    adminCredentialUpdatedAt: credentialUpdatedAt,
   };
 }
 
-function tryEnvironmentAdminLogin(passphrase: string, organizationId: string | null): AdminContext | null {
+function tryEnvironmentAdminLogin(
+  passphrase: string,
+  organizationId: string | null,
+  organizationUpdatedAt: string | null,
+): AdminContext | null {
   if (managedHostEnabled && organizationId) return null;
-  if (!adminPassphraseHash || sha256(passphrase) !== adminPassphraseHash) return null;
+  if (!matchesSha256(passphrase, adminPassphraseHash)) return null;
   return {
     organizationId,
     authMethod: 'environment',
-    organizationUpdatedAt: null,
+    organizationUpdatedAt,
     adminCredentialUpdatedAt: null,
   };
 }
 
 const setupCodeHash = (code: string) => sha256(`setup-code:${code.trim()}`);
 
+const operatorCredentialVersion = () => hmac(`operator-credential:${centralOperatorPassphraseHash}`);
+
 const createOperatorToken = () => {
-  const payload = base64url(
-    JSON.stringify({
-      authMethod: 'central_operator',
-      expires: Date.now() + 1000 * 60 * 60 * 4,
-    }),
-  );
-  return `${payload}.${hmac(payload)}`;
+  const issuedAt = Date.now();
+  return createSignedToken({
+    version: 1,
+    kind: 'operator',
+    authMethod: 'central_operator',
+    credentialVersion: operatorCredentialVersion(),
+    issuedAt,
+    expires: issuedAt + 1000 * 60 * 60 * 4,
+  });
 };
 
 async function requireOperator(event: HandlerEvent): Promise<OperatorContext | null> {
-  const header = event.headers.authorization ?? event.headers.Authorization;
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!token) return null;
-  const [payload, signature] = token.split('.');
-  if (!payload || !signature) return null;
-  const expected = hmac(payload);
-  if (signature.length !== expected.length) return null;
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
-  let parsed: { authMethod?: string; expires?: number };
+  const payload = readSignedPayload(event);
+  if (!payload) return null;
+  let parsed: {
+    authMethod?: string;
+    credentialVersion?: string;
+    kind?: string;
+    version?: number;
+    issuedAt?: number;
+    expires?: number;
+  };
   try {
     parsed = JSON.parse(fromBase64url(payload));
   } catch {
     return null;
   }
-  if (parsed.authMethod !== 'central_operator' || !parsed.expires || parsed.expires < Date.now()) return null;
+  if (
+    parsed.authMethod !== 'central_operator' ||
+    !constantTimeEqual(parsed.credentialVersion ?? '', operatorCredentialVersion()) ||
+    (parsed.kind !== undefined && (parsed.kind !== 'operator' || parsed.version !== 1)) ||
+    !tokenTimesAreValid(parsed, 1000 * 60 * 60 * 4)
+  ) {
+    return null;
+  }
   return { authMethod: 'central_operator' };
 }
 
@@ -776,8 +1249,13 @@ async function tryRecordOperatorAudit(
 ) {
   try {
     await recordOperatorAudit(organizationId, action, detail);
-  } catch {
-    // Audit table is introduced in migration 008. Do not block older local development support paths.
+  } catch (error) {
+    console.error('Operator audit write failed.', {
+      action,
+      organizationId,
+      code: (error as { code?: string } | null)?.code,
+    });
+    if (managedHostEnabled) throw error;
   }
 }
 
@@ -796,6 +1274,8 @@ const createSetupCode = () => {
   for (let i = 0; i < 16; i += 1) value += alphabet[bytes[i] % alphabet.length];
   return `${value.slice(0, 4)}-${value.slice(4, 8)}-${value.slice(8, 12)}-${value.slice(12)}`;
 };
+
+const createTemporaryPin = () => crypto.randomInt(0, 10_000).toString().padStart(4, '0');
 
 const escapeHtml = (value: unknown) =>
   String(value ?? '')
@@ -817,34 +1297,49 @@ async function sendEmail({
   text,
   html,
   idempotencyKey,
+  apiKey = resendApiKey,
+  sender = fromEmail,
+  replyTo,
 }: {
   to: string | string[];
   subject: string;
   text: string;
   html: string;
   idempotencyKey: string;
+  apiKey?: string;
+  sender?: string;
+  replyTo?: string;
 }) {
   const recipients = Array.isArray(to) ? to : emailRecipients(to);
-  if (!resendApiKey || !fromEmail || !recipients.length) return 'skipped: email environment not configured';
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${resendApiKey}`,
-      'content-type': 'application/json',
-      'idempotency-key': idempotencyKey.slice(0, 256),
-      'user-agent': 'deckplating/1.0',
-    },
-    body: JSON.stringify({
-      from: fromEmail,
-      to: recipients,
-      subject,
-      text,
-      html,
-    }),
-  });
+  if (!apiKey || !sender || !recipients.length) return 'skipped: email environment not configured';
+  let response: Response;
+  try {
+    response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+        'idempotency-key': idempotencyKey.slice(0, 256),
+        'user-agent': 'deckplating/1.0',
+      },
+      body: JSON.stringify({
+        from: sender,
+        to: recipients,
+        subject,
+        text,
+        html,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (error) {
+    console.error('Email provider request failed.', { error: errorMessage(error) });
+    return 'failed: email provider unavailable';
+  }
   if (!response.ok) {
     const body = await response.text();
-    return `failed: resend ${response.status} ${body.slice(0, 180)}`;
+    console.error('Email provider rejected a request.', { status: response.status, detail: body.slice(0, 180) });
+    return `failed: email provider returned ${response.status}`;
   }
   return 'sent';
 }
@@ -862,13 +1357,44 @@ async function uniqueWorkspaceSlug(baseValue: string) {
 }
 
 function normalizeWorkspaceRequestBody(body: Record<string, unknown>) {
+  assertAllowedFields(body, [
+    'installation_or_command',
+    'installationOrCommand',
+    'preferred_workspace_slug',
+    'preferredWorkspaceSlug',
+    'lead_name',
+    'leadName',
+    'lead_role',
+    'leadRole',
+    'official_contact_email',
+    'officialContactEmail',
+    'rmt_size',
+    'rmtSize',
+    'expected_pilot_start_date',
+    'expectedPilotStartDate',
+    'short_use_case',
+    'shortUseCase',
+    'safe_use_boundaries_confirmed',
+    'safeUseBoundariesConfirmed',
+    'no_sensitive_data_acknowledged',
+    'noSensitiveDataAcknowledged',
+    'form-name',
+    'bot-field',
+  ]);
+  if (clampText(body['bot-field'], 200)) throw new RequestValidationError(400, 'Workspace request could not be accepted.');
+  if (body['form-name'] != null && body['form-name'] !== 'deckplating-workspace-request') {
+    throw new RequestValidationError(400, 'Workspace request form is invalid.');
+  }
   const installationOrCommand = clampText(body.installation_or_command ?? body.installationOrCommand, 160);
   const preferredWorkspaceSlug = slugify(clampText(body.preferred_workspace_slug ?? body.preferredWorkspaceSlug, 80));
   const leadName = clampText(body.lead_name ?? body.leadName, 120);
   const leadRole = clampText(body.lead_role ?? body.leadRole, 120);
   const officialContactEmail = clampText(body.official_contact_email ?? body.officialContactEmail, 254).toLowerCase();
   const rmtSize = Number(body.rmt_size ?? body.rmtSize);
-  const expectedPilotStartDate = clampText(body.expected_pilot_start_date ?? body.expectedPilotStartDate, 10);
+  const expectedPilotStartDate = parseDateOnly(
+    body.expected_pilot_start_date ?? body.expectedPilotStartDate,
+    'Expected pilot start date',
+  );
   const shortUseCase = clampText(body.short_use_case ?? body.shortUseCase, 2000);
   const safeUseBoundariesConfirmed = truthyFormValue(body.safe_use_boundaries_confirmed ?? body.safeUseBoundariesConfirmed);
   const noSensitiveDataAcknowledged = truthyFormValue(body.no_sensitive_data_acknowledged ?? body.noSensitiveDataAcknowledged);
@@ -879,7 +1405,6 @@ function normalizeWorkspaceRequestBody(body: Record<string, unknown>) {
   if (leadRole.length < 2) throw new RequestValidationError(400, 'Lead role is required.');
   if (!isEmail(officialContactEmail)) throw new RequestValidationError(400, 'A valid official contact email is required.');
   if (!Number.isInteger(rmtSize) || rmtSize < 1 || rmtSize > 999) throw new RequestValidationError(400, 'RMT size must be between 1 and 999.');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(expectedPilotStartDate)) throw new RequestValidationError(400, 'Expected pilot start date is required.');
   if (shortUseCase.length < 10) throw new RequestValidationError(400, 'Short use case must include at least 10 characters.');
   if (!safeUseBoundariesConfirmed || !noSensitiveDataAcknowledged) {
     throw new RequestValidationError(400, 'Safe-use acknowledgements are required.');
@@ -930,12 +1455,18 @@ async function notifyOperatorOfWorkspaceRequest(request: WorkspaceRequestRow) {
     <p>${escapeHtml(request.short_use_case)}</p>
     <p><a href="${escapeHtml(operatorLink)}">Review in System Administration</a></p>
   `;
+  if (normalizedNotificationMode !== 'provider') {
+    return normalizedNotificationMode === 'mailto' ? 'mailto: operator delivery required' : 'skipped: notifications disabled';
+  }
   return sendEmail({
     to: operatorEmail,
     subject: `Deckplating workspace request: ${request.installation_or_command}`,
     text,
     html,
     idempotencyKey: `workspace-request-operator-${request.id}`,
+    apiKey: notificationProviderApiKey,
+    sender: notificationFrom,
+    replyTo: notificationReplyTo,
   });
 }
 
@@ -948,24 +1479,36 @@ async function notifyRequestorOfApproval({
   organization: { id: string; slug: string; name: string; active: boolean };
   setupCode: string;
 }) {
-  return sendWorkspaceApprovedNotification({
-    workspaceDisplayName: organization.name,
-    workspaceSlug: organization.slug,
-    recipientEmail: request.official_contact_email,
-    setupCode,
-    includeSetupCode: true,
-  }, {
-    mode: notificationMode,
-    from: notificationFrom,
-    replyTo: notificationReplyTo,
-    appBaseUrl,
-    setupSiteBaseUrl,
-    smtpHost: process.env.SMTP_HOST,
-    smtpPort: process.env.SMTP_PORT,
-    smtpUser: process.env.SMTP_USER,
-    smtpPassword: process.env.SMTP_PASSWORD,
-    providerApiKey: process.env.NOTIFICATION_PROVIDER_API_KEY ?? resendApiKey,
-  });
+  return sendWorkspaceApprovedNotification(
+    {
+      workspaceDisplayName: organization.name,
+      workspaceSlug: organization.slug,
+      recipientEmail: request.official_contact_email,
+      setupCode,
+      includeSetupCode: true,
+    },
+    {
+      mode: notificationMode,
+      from: notificationFrom,
+      replyTo: notificationReplyTo,
+      appBaseUrl,
+      setupSiteBaseUrl,
+      providerApiKey: notificationProviderApiKey,
+    },
+    normalizedNotificationMode === 'provider'
+      ? ({ to, subject, text, from, replyTo }) =>
+          sendEmail({
+            to,
+            subject,
+            text,
+            html: `<pre style="font-family: sans-serif; white-space: pre-wrap">${escapeHtml(text)}</pre>`,
+            idempotencyKey: `workspace-request-approved-${request.id}`,
+            apiKey: notificationProviderApiKey,
+            sender: from,
+            replyTo,
+          })
+      : undefined,
+  );
 }
 
 async function notifyRequestorOfRejection(request: WorkspaceRequestRow) {
@@ -985,12 +1528,18 @@ async function notifyRequestorOfRejection(request: WorkspaceRequestRow) {
     ${request.operator_note ? `<p>Operator note: ${escapeHtml(request.operator_note)}</p>` : ''}
     <p>You can submit a revised request at <a href="${escapeHtml(`${setupSiteBaseUrl}/#request`)}">${escapeHtml(`${setupSiteBaseUrl}/#request`)}</a>.</p>
   `;
+  if (normalizedNotificationMode !== 'provider') {
+    return normalizedNotificationMode === 'mailto' ? 'mailto: operator delivery required' : 'skipped: notifications disabled';
+  }
   return sendEmail({
     to: request.official_contact_email,
     subject: `Deckplating request update: ${request.installation_or_command}`,
     text,
     html,
     idempotencyKey: `workspace-request-rejected-${request.id}`,
+    apiKey: notificationProviderApiKey,
+    sender: notificationFrom,
+    replyTo: notificationReplyTo,
   });
 }
 
@@ -1040,18 +1589,11 @@ async function verifySetupCode(code: string) {
     .eq('code_hash', hash)
     .eq('active', true)
     .maybeSingle();
-  if (error || !data || data.used_at) return null;
+  if (error) throw error;
+  if (!data || data.used_at) return null;
   if (data.expires_at && data.expires_at < now) return null;
   return data as { id: string; organization_id: string };
 }
-
-const markSetupCodeUsed = async (id: string, organizationId: string, usedByLabel: string | null) => {
-  await supabase
-    .from('organization_setup_codes')
-    .update({ used_at: new Date().toISOString(), used_by_label: usedByLabel, active: false })
-    .eq('id', id)
-    .eq('organization_id', organizationId);
-};
 
 /*
  * Legacy tokens are still accepted above so current beta sessions do not break.
@@ -1059,34 +1601,31 @@ const markSetupCodeUsed = async (id: string, organizationId: string, usedByLabel
  */
 const createUserToken = async (teamMemberId: string, deviceToken: string, organizationId: string | null) => {
   const organizationState = await organizationSessionState(organizationId);
-  const payload = base64url(
-    JSON.stringify({
-      teamMemberId,
-      deviceHash: sha256(deviceToken),
-      organizationId,
-      organizationUpdatedAt: organizationState?.updated_at ?? null,
-      expires: Date.now() + 1000 * 60 * 60 * 24 * 30,
-    }),
-  );
-  return `${payload}.${hmac(payload)}`;
+  const issuedAt = Date.now();
+  return createSignedToken({
+    version: 1,
+    kind: 'user',
+    teamMemberId,
+    deviceHash: sha256(deviceToken),
+    organizationId,
+    organizationUpdatedAt: organizationState?.updated_at ?? null,
+    issuedAt,
+    expires: issuedAt + 1000 * 60 * 60 * 24 * 30,
+  });
 };
 
 async function requireUser(event: HandlerEvent) {
-  const header = event.headers.authorization ?? event.headers.Authorization;
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!token) return null;
-
-  const [payload, signature] = token.split('.');
-  if (!payload || !signature) return null;
-  const expected = hmac(payload);
-  if (signature.length !== expected.length) return null;
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  const payload = readSignedPayload(event);
+  if (!payload) return null;
 
   let parsed: {
     teamMemberId?: string;
     deviceHash?: string;
     organizationId?: string | null;
     organizationUpdatedAt?: string | null;
+    kind?: string;
+    version?: number;
+    issuedAt?: number;
     expires?: number;
   };
   try {
@@ -1095,7 +1634,16 @@ async function requireUser(event: HandlerEvent) {
     return null;
   }
 
-  if (!parsed.teamMemberId || !parsed.deviceHash || !parsed.expires || parsed.expires < Date.now()) return null;
+  if (
+    !isUuid(parsed.teamMemberId) ||
+    !parsed.deviceHash ||
+    !/^[0-9a-f]{64}$/i.test(parsed.deviceHash) ||
+    (parsed.kind !== undefined && (parsed.kind !== 'user' || parsed.version !== 1)) ||
+    !tokenTimesAreValid(parsed, 1000 * 60 * 60 * 24 * 30)
+  ) {
+    return null;
+  }
+  if (parsed.organizationId != null && !isUuid(parsed.organizationId)) return null;
   const organizationId = (await organizationSchemaEnabled()) ? parsed.organizationId ?? defaultOrganizationId : null;
   const organizationState = await organizationSessionState(organizationId);
   if (organizationId && (!organizationState || organizationState.updated_at !== (parsed.organizationUpdatedAt ?? null))) {
@@ -1105,22 +1653,82 @@ async function requireUser(event: HandlerEvent) {
     .from('devices')
     .select(
       organizationId
-        ? 'id, team_member_id, organization_id, team_members!inner(id, name, active, organization_id)'
-        : 'id, team_member_id, team_members!inner(id, name, active)',
+        ? 'id, team_member_id, organization_id, last_seen_at, team_members!inner(id, name, active, organization_id)'
+        : 'id, team_member_id, last_seen_at, team_members!inner(id, name, active)',
     )
     .eq('team_member_id', parsed.teamMemberId)
     .eq('device_token_hash', parsed.deviceHash)
     .eq('active', true);
-  const { data, error } = await scoped(baseQuery, organizationId).single();
-  if (error || !data) return null;
+  const { data, error } = await scoped(baseQuery, organizationId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
 
   const member = data.team_members as { active?: boolean; organization_id?: string } | null;
   if (!member?.active) return null;
   if (organizationId && member.organization_id !== organizationId) return null;
-  let update = supabase.from('devices').update({ last_seen_at: new Date().toISOString() }).eq('id', data.id);
-  update = scoped(update, organizationId);
-  await update;
+  const lastSeenAt = data.last_seen_at ? new Date(data.last_seen_at).getTime() : 0;
+  if (!Number.isFinite(lastSeenAt) || lastSeenAt < Date.now() - 5 * 60_000) {
+    let update = supabase.from('devices').update({ last_seen_at: new Date().toISOString() }).eq('id', data.id);
+    update = scoped(update, organizationId);
+    await update;
+  }
   return { teamMemberId: parsed.teamMemberId, deviceId: data.id, organizationId };
+}
+
+async function getLatestActiveCheckins(organizationId: string | null) {
+  if (organizationId && (await organizationSchemaEnabled())) {
+    const { data, error } = await supabase.rpc('get_latest_active_checkins', {
+      p_organization_id: organizationId,
+    });
+    if (!error) return (data ?? []) as Array<{ unit_id: string; checked_in_at: string; visitor: string | null }>;
+    if (!isMissingRelationError(error)) throw error;
+  }
+  const query = scoped(
+    supabase
+      .from('checkins')
+      .select('unit_id, checked_in_at, team_members!checkins_team_member_id_fkey(name)')
+      .is('voided_at', null),
+    organizationId,
+  ).order('checked_in_at', { ascending: false });
+  const { data, error } = await query;
+  if (error) throw error;
+  const latest = new Map<string, { unit_id: string; checked_in_at: string; visitor: string | null }>();
+  for (const checkin of data ?? []) {
+    if (latest.has(checkin.unit_id)) continue;
+    const member = checkin.team_members as { name?: string } | null;
+    latest.set(checkin.unit_id, {
+      unit_id: checkin.unit_id,
+      checked_in_at: checkin.checked_in_at,
+      visitor: member?.name ?? null,
+    });
+  }
+  return Array.from(latest.values());
+}
+
+async function getFirstActiveCheckinsBefore(organizationId: string | null, before: string) {
+  if (organizationId && (await organizationSchemaEnabled())) {
+    const { data, error } = await supabase.rpc('get_first_active_checkins_before', {
+      p_organization_id: organizationId,
+      p_before: before,
+    });
+    if (!error) return (data ?? []) as Array<{ unit_id: string; checked_in_at: string }>;
+    if (!isMissingRelationError(error)) throw error;
+  }
+  const query = scoped(
+    supabase
+      .from('checkins')
+      .select('unit_id, checked_in_at')
+      .is('voided_at', null)
+      .lt('checked_in_at', before),
+    organizationId,
+  ).order('checked_in_at', { ascending: true });
+  const { data, error } = await query;
+  if (error) throw error;
+  const first = new Map<string, { unit_id: string; checked_in_at: string }>();
+  for (const checkin of data ?? []) {
+    if (!first.has(checkin.unit_id)) first.set(checkin.unit_id, checkin);
+  }
+  return Array.from(first.values());
 }
 
 async function getCoverage(organizationId: string | null) {
@@ -1132,27 +1740,19 @@ async function getCoverage(organizationId: string | null) {
       .eq('active', true),
     organizationId,
   ).order('name');
-  const checkinQuery = scoped(
-    supabase
-      .from('checkins')
-      .select('unit_id, checked_in_at, team_members!checkins_team_member_id_fkey(name)')
-      .is('voided_at', null),
-    organizationId,
-  ).order('checked_in_at', { ascending: false });
-  const [{ data: areas, error: areaError }, { data: units, error: unitError }, { data: checkins, error: checkinError }] =
-    await Promise.all([areaQuery, unitQuery, checkinQuery]);
+  const [{ data: areas, error: areaError }, { data: units, error: unitError }, checkins] =
+    await Promise.all([areaQuery, unitQuery, getLatestActiveCheckins(organizationId)]);
 
-  if (areaError || unitError || checkinError) {
-    throw areaError ?? unitError ?? checkinError;
+  if (areaError || unitError) {
+    throw areaError ?? unitError;
   }
 
   const latest = new Map<string, { checked_in_at: string; visitor: string | null }>();
-  for (const checkin of checkins ?? []) {
+  for (const checkin of checkins) {
     if (!latest.has(checkin.unit_id)) {
-      const tm = checkin.team_members as { name?: string } | null;
       latest.set(checkin.unit_id, {
         checked_in_at: checkin.checked_in_at,
-        visitor: tm?.name ?? null,
+        visitor: checkin.visitor,
       });
     }
   }
@@ -1173,7 +1773,7 @@ async function getCoverage(organizationId: string | null) {
       unit_type: unit.unit_type,
       visit_interval_days: unit.visit_interval_days,
       active: unit.active,
-      location_id: unit.location_id,
+      location_id: location?.id ?? null,
       location_name: location?.name ?? null,
       area_id: area?.id ?? null,
       area_name: area?.name ?? null,
@@ -1224,61 +1824,108 @@ async function verifyDevice(teamMemberId: string, deviceToken: string, organizat
     .eq('team_member_id', teamMemberId)
     .eq('device_token_hash', deviceHash)
     .eq('active', true);
-  const { data, error } = await scoped(query, organizationId).single();
-  if (error) return null;
-  let update = supabase.from('devices').update({ last_seen_at: new Date().toISOString() }).eq('id', data.id);
-  update = scoped(update, organizationId);
-  await update;
+  const { data, error } = await scoped(query, organizationId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
   return data;
 }
 
 async function registerDevice(body: { teamMemberId: string; pin: string; deviceToken: string; deviceLabel?: string; organizationId?: string | null }) {
-  if (!body.teamMemberId || !/^\d{4}$/.test(body.pin) || !body.deviceToken) {
+  if (!isUuid(body.teamMemberId) || !/^\d{4}$/.test(body.pin) || !isUuid(body.deviceToken)) {
     return json(400, { error: 'teamMemberId, 4-digit pin, and deviceToken are required.' });
   }
   let organizationId: string | null;
   try {
     organizationId = await resolveOrganizationId(body.organizationId);
   } catch (error) {
-    return json(400, { error: errorMessage(error) });
+    if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+    throw error;
   }
   const memberQuery = supabase
     .from('team_members')
     .select('*')
     .eq('id', body.teamMemberId)
     .eq('active', true);
-  const { data: member, error: memberError } = await scoped(memberQuery, organizationId).single();
-  if (memberError || !member) return json(404, { error: 'Team member not found.' });
-  const nextPinHash = pinHash(body.teamMemberId, body.pin, organizationId);
-  const oldPinHash = legacyPinHash(body.teamMemberId, body.pin);
-  if (member.pin_hash && member.pin_hash !== nextPinHash && member.pin_hash !== oldPinHash) {
+  const { data: member, error: memberError } = await scoped(memberQuery, organizationId).maybeSingle();
+  if (memberError) throw memberError;
+  if (!member) return json(404, { error: 'Team member not found.' });
+  if (!member.pin_hash && managedHostEnabled) {
+    return json(403, { error: 'This roster entry needs an initial PIN from the local administrator.' });
+  }
+  const existingPinIsModern = Boolean(member.pin_hash && isCurrentCredentialHash(member.pin_hash));
+  const pinMatches = member.pin_hash
+    ? await verifyCredentialHash(
+        member.pin_hash,
+        pinCredentialContext(body.teamMemberId, organizationId),
+        body.pin,
+        [pinHash(body.teamMemberId, body.pin, organizationId), legacyPinHash(body.teamMemberId, body.pin)],
+      )
+    : true;
+  if (!pinMatches) {
     return json(403, { error: 'PIN does not match.' });
   }
-  if (!member.pin_hash || member.pin_hash === oldPinHash) {
+  const nextPinHash = !member.pin_hash || !existingPinIsModern
+    ? await createCredentialHash(pinCredentialContext(body.teamMemberId, organizationId), body.pin)
+    : null;
+  const deviceTokenHash = sha256(body.deviceToken);
+  const deviceLabel = clampText(body.deviceLabel, 120) || null;
+  const lastSeenAt = new Date().toISOString();
+  let deviceId: string | null = null;
+
+  if (organizationId) {
+    const { data: registrationRows, error: registrationError } = await supabase.rpc('register_member_device', {
+      p_organization_id: organizationId,
+      p_team_member_id: body.teamMemberId,
+      p_expected_pin_hash: member.pin_hash ?? null,
+      p_next_pin_hash: nextPinHash,
+      p_device_token_hash: deviceTokenHash,
+      p_device_label: deviceLabel,
+      p_last_seen_at: lastSeenAt,
+    });
+    if (!registrationError) {
+      const registration = (Array.isArray(registrationRows) ? registrationRows[0] : registrationRows) as
+        | { device_id?: string }
+        | null;
+      if (!registration?.device_id) {
+        return json(403, { error: 'PIN no longer matches. Enter the current administrator-issued PIN.' });
+      }
+      deviceId = registration.device_id;
+    } else if (managedHostEnabled || !isMissingRelationError(registrationError)) {
+      throw registrationError;
+    }
+  }
+
+  // Compatibility path for local databases that predate the transactional helper.
+  if (!deviceId && (!organizationId || !managedHostEnabled)) {
+    if (nextPinHash) {
     let update = supabase.from('team_members').update({ pin_hash: nextPinHash }).eq('id', body.teamMemberId);
     update = scoped(update, organizationId);
-    await update;
-  }
-  const deviceValues = withOrganization(
-    {
+    const { error: updateError } = await update;
+    if (updateError) throw updateError;
+    }
+    const deviceValues = withOrganization(
+      {
         team_member_id: body.teamMemberId,
-        device_token_hash: sha256(body.deviceToken),
-        device_label: body.deviceLabel ?? null,
+        device_token_hash: deviceTokenHash,
+        device_label: deviceLabel,
         active: true,
-        last_seen_at: new Date().toISOString(),
+        last_seen_at: lastSeenAt,
       },
-    organizationId,
-  );
-  const { data: device, error } = await supabase
-    .from('devices')
-    .upsert(deviceValues, { onConflict: organizationId ? 'organization_id,device_token_hash' : 'device_token_hash' })
-    .select('id')
-    .single();
-  if (error) return json(500, { error: error.message });
+      organizationId,
+    );
+    const { data: device, error } = await supabase
+      .from('devices')
+      .upsert(deviceValues, { onConflict: organizationId ? 'organization_id,device_token_hash' : 'device_token_hash' })
+      .select('id')
+      .single();
+    if (error) throw error;
+    deviceId = device.id;
+  }
+  if (!deviceId) throw new Error('Device registration did not return a device.');
   return json(200, {
     organizationId,
     organization: await organizationSummary(organizationId),
-    deviceId: device.id,
+    deviceId,
     sessionToken: await createUserToken(body.teamMemberId, body.deviceToken, organizationId),
     teamMember: { id: member.id, name: member.name },
   });
@@ -1286,12 +1933,22 @@ async function registerDevice(body: { teamMemberId: string; pin: string; deviceT
 
 async function route(event: HandlerEvent) {
   if (event.httpMethod === 'OPTIONS') return empty(204);
-  if (!supabaseUrl || !serviceRoleKey) return json(500, { error: 'Supabase environment variables are missing.' });
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('Supabase environment variables are missing.');
+  if (
+    Buffer.byteLength(adminSessionSecret, 'utf8') < 32 ||
+    (managedHostEnabled && Buffer.byteLength(configuredAdminSessionSecret, 'utf8') < 32) ||
+    (managedHostEnabled && Buffer.byteLength(credentialPepper, 'utf8') < 32) ||
+    (managedHostRequested && !centralOperatorPassphraseHash)
+  ) {
+    throw new Error('Server token signing is not configured securely.');
+  }
 
   const path = normalizePath(event);
   const method = event.httpMethod;
 
   if (method === 'POST' && path === '/workspace-requests') {
+    const limited = await rateLimitResponse(event, 'workspace-request', 5, 60 * 60);
+    if (limited) return limited;
     let values: ReturnType<typeof normalizeWorkspaceRequestBody>;
     try {
       values = normalizeWorkspaceRequestBody(readRequestBody<Record<string, unknown>>(event));
@@ -1302,7 +1959,7 @@ async function route(event: HandlerEvent) {
     const { data, error } = await supabase.from('workspace_requests').insert(values).select('*').single();
     if (error) {
       if (isMissingRelationError(error)) return json(503, { error: 'Workspace request queue is not configured yet.' });
-      return json(500, { error: error.message });
+      throw error;
     }
     const request = data as WorkspaceRequestRow;
     const notificationStatus = await notifyOperatorOfWorkspaceRequest(request);
@@ -1326,20 +1983,31 @@ async function route(event: HandlerEvent) {
 
   if (method === 'GET' && path === '/installations/search') {
     const query = event.queryStringParameters?.q?.trim() ?? '';
-    if (query.length < 2) return json(400, { error: 'q is required.' });
+    if (query.length < 2 || query.length > 160) return json(400, { error: 'q must contain 2 to 160 characters.' });
+    const limited = await rateLimitResponse(event, 'installation-search', 30, 60);
+    if (limited) return limited;
     try {
-      return json(200, { results: await searchInstallations(query) });
+      return json(200, { results: await searchInstallations(query, event) });
     } catch (error) {
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
       return json(502, { error: errorMessage(error) });
     }
   }
 
   if (method === 'POST' && path === '/operator/login') {
-    const body = readBody<{ passphrase?: string }>(event);
+    const body = readBody<Record<string, unknown>>(event);
+    assertAllowedFields(body, ['passphrase']);
     if (!centralOperatorPassphraseHash) {
       return json(503, { error: 'Central operator access is not configured.' });
     }
-    if (sha256(body.passphrase ?? '') !== centralOperatorPassphraseHash) {
+    if (typeof body.passphrase !== 'string' || body.passphrase.length > 256) {
+      return json(400, { error: 'Central operator passphrase is required.' });
+    }
+    const limited = await rateLimitResponse(event, 'operator-login', 6, 15 * 60);
+    if (limited) return limited;
+    const distributedLimit = await rateLimitResponse(event, 'operator-login-global', 30, 24 * 60 * 60, 'central-operator', false);
+    if (distributedLimit) return distributedLimit;
+    if (!matchesSha256(body.passphrase, centralOperatorPassphraseHash)) {
       return json(403, { error: 'Invalid central operator passphrase.' });
     }
     return json(200, { token: createOperatorToken(), authMethod: 'central_operator' });
@@ -1370,7 +2038,7 @@ async function route(event: HandlerEvent) {
     const { data, error, count } = await query;
     if (error) {
       if (isMissingRelationError(error)) return json(503, { error: 'Workspace request queue is not configured yet.' });
-      return json(500, { error: error.message });
+      throw error;
     }
     const returned = data?.length ?? 0;
     return json(200, {
@@ -1389,13 +2057,14 @@ async function route(event: HandlerEvent) {
   if (method === 'POST' && operatorRequestApproveMatch) {
     const requestId = operatorRequestApproveMatch[1];
     if (!isUuid(requestId)) return json(400, { error: 'Workspace request ID must be a UUID.' });
-    const body = readBody<{ workspaceName?: string; workspaceSlug?: string; expiresInDays?: number; operatorNote?: string }>(event);
+    const body = readBody<Record<string, unknown>>(event);
+    assertAllowedFields(body, ['workspaceName', 'workspaceSlug', 'expiresInDays', 'operatorNote']);
     const { data: request, error: requestError } = await supabase
       .from('workspace_requests')
       .select('*')
       .eq('id', requestId)
       .maybeSingle();
-    if (requestError) return json(500, { error: requestError.message });
+    if (requestError) throw requestError;
     if (!request) return json(404, { error: 'Workspace request not found.' });
     const workspaceRequest = request as WorkspaceRequestRow;
     if (workspaceRequest.status !== 'pending') return json(400, { error: 'Only pending workspace requests can be approved.' });
@@ -1403,53 +2072,69 @@ async function route(event: HandlerEvent) {
     const workspaceName = clampText(body.workspaceName, 160) || workspaceRequest.installation_or_command;
     const slugBase = clampText(body.workspaceSlug, 80) || workspaceRequest.preferred_workspace_slug || workspaceName;
     const workspaceSlug = await uniqueWorkspaceSlug(slugBase);
-    const expiresInDays = body.expiresInDays == null ? 14 : Number(body.expiresInDays);
-    if (expiresInDays < 1 || expiresInDays > 90) return json(400, { error: 'expiresInDays must be between 1 and 90.' });
-
-    const { data: organization, error: organizationError } = await supabase
-      .from('organizations')
-      .insert({ name: workspaceName, slug: workspaceSlug, active: true })
-      .select('id, slug, name, active, created_at, updated_at')
-      .single();
-    if (organizationError) {
-      if (organizationError.code === '23505') return json(409, { error: 'An organization with that slug already exists.' });
-      return json(500, { error: organizationError.message });
-    }
-
-    await tryRecordOperatorAudit(organization.id, 'workspace_created', { slug: organization.slug, workspaceRequestId: workspaceRequest.id });
-    const setup = await issueOrganizationSetupCode({
-      organizationId: organization.id,
-      organization,
-      label: `${workspaceRequest.lead_name} approval setup`,
-      expiresInDays,
-      purpose: 'pilot_setup',
-    });
-
+    const expiresInDays = body.expiresInDays == null
+      ? 14
+      : positiveInteger(body.expiresInDays, 'expiresInDays', 1, 90);
+    const organizationId = crypto.randomUUID();
+    const setupCodeId = crypto.randomUUID();
+    const setupCode = createSetupCode();
+    const setupExpiresAt = new Date(Date.now() + expiresInDays * 86400000).toISOString();
+    const setupLabel = `${workspaceRequest.lead_name} approval setup`;
     const approvedAt = new Date().toISOString();
-    const { data: updatedRequest, error: updateError } = await supabase
-      .from('workspace_requests')
-      .update({
-        status: 'approved',
-        organization_id: organization.id,
-        setup_code_id: setup.setupCode.id,
-        approved_at: approvedAt,
-        rejected_at: null,
-        operator_note: clampText(body.operatorNote, 1000) || null,
-      })
-      .eq('id', workspaceRequest.id)
-      .select('*')
-      .single();
-    if (updateError) return json(500, { error: updateError.message });
+    const { data: approvalRows, error: approvalError } = await supabase.rpc('approve_workspace_request', {
+      p_request_id: workspaceRequest.id,
+      p_organization_id: organizationId,
+      p_organization_name: workspaceName,
+      p_organization_slug: workspaceSlug,
+      p_setup_code_id: setupCodeId,
+      p_setup_code_hash: setupCodeHash(setupCode),
+      p_setup_label: setupLabel,
+      p_setup_expires_at: setupExpiresAt,
+      p_operator_note: clampText(body.operatorNote, 1000) || null,
+      p_approved_at: approvedAt,
+    });
+    if (approvalError) {
+      if (approvalError.code === '23505') return json(409, { error: 'An organization with that slug already exists.' });
+      if (approvalError.message?.includes('workspace_request_not_found')) {
+        return json(404, { error: 'Workspace request not found.' });
+      }
+      if (approvalError.message?.includes('workspace_request_not_pending')) {
+        return json(409, { error: 'Only pending workspace requests can be approved.' });
+      }
+      if (isMissingRelationError(approvalError)) {
+        return json(503, { error: 'Workspace approval transaction is not configured yet.' });
+      }
+      throw approvalError;
+    }
+    const approval = (Array.isArray(approvalRows) ? approvalRows[0] : approvalRows) as
+      | { organization?: Record<string, unknown>; setup_code?: Record<string, unknown>; workspace_request?: Record<string, unknown> }
+      | null;
+    if (!approval?.organization || !approval.setup_code || !approval.workspace_request) {
+      throw new Error('Workspace approval transaction returned an incomplete result.');
+    }
+    const organization = approval.organization as { id: string; slug: string; name: string; active: boolean };
+    const setupCodeRecord = approval.setup_code as OrganizationSetupCodeRow;
+    const updatedRequest = approval.workspace_request as WorkspaceRequestRow;
+
+    await tryRecordOperatorAudit(organization.id, 'workspace_created', {
+      slug: organization.slug,
+      workspaceRequestId: workspaceRequest.id,
+    });
+    await tryRecordOperatorAudit(organization.id, 'setup_code_issued', {
+      setupCodeId: setupCodeRecord.id,
+      slug: organization.slug,
+      expiresAt: setupExpiresAt,
+    });
     await tryRecordOperatorAudit(organization.id, 'workspace_request_approved', {
       workspaceRequestId: workspaceRequest.id,
       slug: organization.slug,
-      setupCodeId: setup.setupCode.id,
+      setupCodeId: setupCodeRecord.id,
     });
 
     const requestorNotification = await notifyRequestorOfApproval({
-      request: updatedRequest as WorkspaceRequestRow,
+      request: updatedRequest,
       organization,
-      setupCode: setup.code,
+      setupCode,
     });
     const requestorNotificationStatus = requestorNotification.status;
     await tryRecordOperatorAudit(organization.id, 'workspace_approval_notification_prepared', {
@@ -1470,8 +2155,8 @@ async function route(event: HandlerEvent) {
     return json(200, {
       request: updatedRequest,
       organization,
-      code: setup.code,
-      setupCode: { ...setup.setupCode, code: setup.code },
+      code: setupCode,
+      setupCode: { ...setupCodeRecord, code: setupCode },
       requestorNotificationStatus,
       notification: {
         status: requestorNotification.status,
@@ -1492,24 +2177,32 @@ async function route(event: HandlerEvent) {
     const body = readBody<{ operatorNote?: string }>(event);
     const operatorNote = clampText(body.operatorNote, 1000);
     if (operatorNote.length < 3) return json(400, { error: 'An operator note is required when rejecting a request.' });
-    const { data: existing, error: existingError } = await supabase.from('workspace_requests').select('*').eq('id', requestId).maybeSingle();
-    if (existingError) return json(500, { error: existingError.message });
-    if (!existing) return json(404, { error: 'Workspace request not found.' });
-    const workspaceRequest = existing as WorkspaceRequestRow;
-    if (workspaceRequest.status !== 'pending') return json(400, { error: 'Only pending workspace requests can be rejected.' });
-    const { data: updatedRequest, error: updateError } = await supabase
-      .from('workspace_requests')
-      .update({
-        status: 'rejected',
-        rejected_at: new Date().toISOString(),
-        operator_note: operatorNote,
-      })
-      .eq('id', requestId)
-      .select('*')
-      .single();
-    if (updateError) return json(500, { error: updateError.message });
+    const { data: rejectionRows, error: rejectionError } = await supabase.rpc('reject_workspace_request', {
+      p_request_id: requestId,
+      p_operator_note: operatorNote,
+      p_rejected_at: new Date().toISOString(),
+    });
+    if (rejectionError) {
+      if (rejectionError.message?.includes('workspace_request_not_found')) {
+        return json(404, { error: 'Workspace request not found.' });
+      }
+      if (rejectionError.message?.includes('workspace_request_not_pending')) {
+        return json(409, { error: 'Only pending workspace requests can be rejected.' });
+      }
+      if (isMissingRelationError(rejectionError)) {
+        return json(503, { error: 'Workspace rejection transaction is not configured yet.' });
+      }
+      throw rejectionError;
+    }
+    const rejection = (Array.isArray(rejectionRows) ? rejectionRows[0] : rejectionRows) as
+      | { workspace_request?: Record<string, unknown> }
+      | null;
+    if (!rejection?.workspace_request) {
+      throw new Error('Workspace rejection transaction returned an incomplete result.');
+    }
+    const updatedRequest = rejection.workspace_request as unknown as WorkspaceRequestRow;
     await tryRecordOperatorAudit(null, 'workspace_request_rejected', { workspaceRequestId: requestId });
-    const requestorNotificationStatus = await notifyRequestorOfRejection(updatedRequest as WorkspaceRequestRow);
+    const requestorNotificationStatus = await notifyRequestorOfRejection(updatedRequest);
     await supabase
       .from('workspace_requests')
       .update({
@@ -1532,7 +2225,7 @@ async function route(event: HandlerEvent) {
       .order('created_at', { ascending: false });
     query = search ? query.limit(scanLimit) : query.range(offset, offset + limit - 1);
     const { data: events, error } = await query;
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     const organizationIds = Array.from(
       new Set(
         (events ?? [])
@@ -1546,7 +2239,7 @@ async function route(event: HandlerEvent) {
         .from('organizations')
         .select('id, slug, name')
         .in('id', organizationIds);
-      if (orgError) return json(500, { error: orgError.message });
+      if (orgError) throw orgError;
       organizationById = new Map((organizations ?? []).map((organization: any) => [organization.id, organization]));
     }
     const mapped = (events ?? []).map((event: any) => ({
@@ -1585,8 +2278,8 @@ async function route(event: HandlerEvent) {
         .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
         .order('created_at', { ascending: false }),
     ]);
-    if (orgError) return json(500, { error: orgError.message });
-    if (codeError) return json(500, { error: codeError.message });
+    if (orgError) throw orgError;
+    if (codeError) throw codeError;
     const onboardingByOrg = new Map<string, WorkspaceOnboardingSummary>();
     await Promise.all(
       (organizations ?? []).map(async (organization: any) => {
@@ -1629,7 +2322,7 @@ async function route(event: HandlerEvent) {
       .single();
     if (error) {
       if (error.code === '23505') return json(409, { error: 'An organization with that slug already exists.' });
-      return json(500, { error: error.message });
+      throw error;
     }
     await tryRecordOperatorAudit(data.id, 'workspace_created', { slug: data.slug });
     return json(201, { organization: data });
@@ -1644,7 +2337,7 @@ async function route(event: HandlerEvent) {
       .select('id, slug, name, active, created_at, updated_at')
       .eq('id', organizationId)
       .maybeSingle();
-    if (orgError) return json(500, { error: orgError.message });
+    if (orgError) throw orgError;
     if (!organization || !organization.active) return json(404, { error: 'Active organization not found.' });
     await recordOperatorAudit(organizationId, 'superuser_admin_session_started', { slug: organization.slug });
     return json(200, {
@@ -1663,7 +2356,7 @@ async function route(event: HandlerEvent) {
       .select('id, slug, name, active, created_at, updated_at')
       .eq('id', organizationId)
       .maybeSingle();
-    if (organizationError) return json(500, { error: organizationError.message });
+    if (organizationError) throw organizationError;
     if (!organization) return json(404, { error: 'Organization not found.' });
 
     const [settings, areas, locations, units, teamMembers, batches, checkins] = await Promise.all([
@@ -1705,7 +2398,7 @@ async function route(event: HandlerEvent) {
     ]);
     const error =
       settings.error ?? areas.error ?? locations.error ?? units.error ?? teamMembers.error ?? batches.error ?? checkins.error;
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     await tryRecordOperatorAudit(organizationId, 'workspace_safe_export_downloaded', { slug: organization.slug });
     return json(200, {
       generatedAt: new Date().toISOString(),
@@ -1737,7 +2430,7 @@ async function route(event: HandlerEvent) {
       .select('id, slug, name, active')
       .eq('id', organizationId)
       .maybeSingle();
-    if (orgError) return json(500, { error: orgError.message });
+    if (orgError) throw orgError;
     if (!organization) return json(404, { error: 'Organization not found.' });
     if (!organization.active) return json(400, { error: 'Cannot create setup codes for an inactive organization.' });
     if (body.purpose && !['workspace_setup', 'pilot_setup'].includes(body.purpose)) {
@@ -1767,7 +2460,7 @@ async function route(event: HandlerEvent) {
       .is('used_at', null)
       .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
       .maybeSingle();
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     if (!data) return json(404, { error: 'Unused setup code not found.' });
     await tryRecordOperatorAudit(data.organization_id, 'setup_code_revoked', { setupCodeId: data.id });
     return json(200, { setupCode: data });
@@ -1785,7 +2478,7 @@ async function route(event: HandlerEvent) {
       .eq('id', organizationId)
       .select('id, slug, name, active, created_at, updated_at')
       .maybeSingle();
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     if (!data) return json(404, { error: 'Organization not found.' });
     await tryRecordOperatorAudit(organizationId, body.active ? 'workspace_reactivated' : 'workspace_suspended', {
       slug: data.slug,
@@ -1797,26 +2490,27 @@ async function route(event: HandlerEvent) {
   if (method === 'POST' && operatorAdminRecoveryMatch) {
     const organizationId = operatorAdminRecoveryMatch[1];
     if (!isUuid(organizationId)) return json(400, { error: 'Organization ID must be a UUID.' });
-    const body = readBody<{ passphrase?: string }>(event);
-    if (!body.passphrase || body.passphrase.length < 8) {
-      return json(400, { error: 'Passphrase must be at least 8 characters.' });
+    const body = readBody<Record<string, unknown>>(event);
+    assertAllowedFields(body, ['passphrase']);
+    if (typeof body.passphrase !== 'string' || body.passphrase.length < 12 || body.passphrase.length > 256) {
+      return json(400, { error: 'Passphrase must be at least 12 characters.' });
     }
     const { data: organization, error: organizationError } = await supabase
       .from('organizations')
       .select('id, slug, name, active, created_at, updated_at')
       .eq('id', organizationId)
       .maybeSingle();
-    if (organizationError) return json(500, { error: organizationError.message });
+    if (organizationError) throw organizationError;
     if (!organization) return json(404, { error: 'Organization not found.' });
     const { error } = await supabase.from('organization_admin_credentials').upsert(
       {
         organization_id: organizationId,
-        passphrase_hash: organizationAdminHash(organizationId, body.passphrase),
+        passphrase_hash: await createCredentialHash(organizationAdminCredentialContext(organizationId), body.passphrase),
         active: true,
       },
       { onConflict: 'organization_id' },
     );
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     await tryRecordOperatorAudit(organizationId, 'local_admin_recovery_passphrase_set', { slug: organization.slug });
     return json(200, { organization });
   }
@@ -1831,33 +2525,22 @@ async function route(event: HandlerEvent) {
       .select('id, slug, name, active')
       .eq('id', organizationId)
       .maybeSingle();
-    if (organizationError) return json(500, { error: organizationError.message });
+    if (organizationError) throw organizationError;
     if (!organization) return json(404, { error: 'Organization not found.' });
     if (body.confirmSlug?.trim() !== organization.slug) {
       return json(400, { error: 'confirmSlug must match the workspace slug.' });
     }
 
-    const deleteSteps: Array<{ table: string; query: any }> = [
-      { table: 'checkins', query: supabase.from('checkins').delete() },
-      { table: 'checkin_batches', query: supabase.from('checkin_batches').delete() },
-      { table: 'devices', query: supabase.from('devices').delete() },
-      { table: 'units', query: supabase.from('units').delete() },
-      { table: 'locations', query: supabase.from('locations').delete() },
-      { table: 'team_members', query: supabase.from('team_members').delete() },
-      { table: 'areas', query: supabase.from('areas').delete() },
-      { table: 'app_settings', query: supabase.from('app_settings').delete() },
-      { table: 'workspace_requests', query: supabase.from('workspace_requests').delete() },
-      { table: 'organization_setup_codes', query: supabase.from('organization_setup_codes').delete() },
-      { table: 'organization_admin_credentials', query: supabase.from('organization_admin_credentials').delete() },
-    ];
-
-    for (const step of deleteSteps) {
-      const { error } = await scoped(step.query.eq('organization_id', organizationId), organizationId);
-      if (error) return json(500, { error: `Failed to delete ${step.table}. ${error.message}` });
+    const { data: deleted, error: deleteError } = await supabase.rpc('delete_deckplating_organization', {
+      p_organization_id: organizationId,
+    });
+    if (deleteError) {
+      if (isMissingRelationError(deleteError)) {
+        return json(503, { error: 'Workspace deletion transaction is not configured yet.' });
+      }
+      throw deleteError;
     }
-
-    const { error } = await supabase.from('organizations').delete().eq('id', organizationId);
-    if (error) return json(500, { error: error.message });
+    if (deleted !== true) return json(404, { error: 'Organization not found.' });
     await tryRecordOperatorAudit(null, 'workspace_deleted', { organizationId, slug: organization.slug });
     return json(200, { deletedOrganization: organization });
   }
@@ -1870,7 +2553,8 @@ async function route(event: HandlerEvent) {
       const resolvedId = await resolveOrganizationId(organizationId);
       return json(200, { organization: await organizationSummary(resolvedId) });
     } catch (error) {
-      return json(404, { error: errorMessage(error) });
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      throw error;
     }
   }
 
@@ -1879,7 +2563,8 @@ async function route(event: HandlerEvent) {
     try {
       organizationId = await resolveOrganizationId(event.queryStringParameters?.organizationId);
     } catch (error) {
-      return json(400, { error: errorMessage(error) });
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      throw error;
     }
     const query = supabase
       .from('team_members')
@@ -1887,7 +2572,7 @@ async function route(event: HandlerEvent) {
       .eq('active', true)
       .order('name');
     const { data: teamMembers, error } = await scoped(query, organizationId);
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     return json(200, {
       organizationId,
       organization: await organizationSummary(organizationId),
@@ -1907,7 +2592,7 @@ async function route(event: HandlerEvent) {
       getCoverage(user.organizationId),
       getGamificationTone(user.organizationId),
     ]);
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     const mapSettings = await getWorkspaceMapSettings(user.organizationId);
     return json(200, {
       organizationId: user.organizationId,
@@ -1923,25 +2608,166 @@ async function route(event: HandlerEvent) {
 
   if (method === 'POST' && path === '/device/register') {
     const body = readBody<{ teamMemberId: string; pin: string; deviceToken: string; deviceLabel?: string; organizationId?: string | null }>(event);
-    return registerDevice(body);
+    assertAllowedFields(body as Record<string, unknown>, ['teamMemberId', 'pin', 'deviceToken', 'deviceLabel', 'organizationId']);
+    const globalLimit = await rateLimitResponse(event, 'device-register-ip', 40, 15 * 60);
+    if (globalLimit) return globalLimit;
+    const canonicalOrganizationId = typeof body.organizationId === 'string' && isUuid(body.organizationId)
+      ? body.organizationId.toLowerCase()
+      : body.organizationId;
+    const canonicalTeamMemberId = typeof body.teamMemberId === 'string' && isUuid(body.teamMemberId)
+      ? body.teamMemberId.toLowerCase()
+      : body.teamMemberId;
+    const canonicalDeviceToken = typeof body.deviceToken === 'string' && isUuid(body.deviceToken)
+      ? body.deviceToken.toLowerCase()
+      : body.deviceToken;
+    const targetKey = `${canonicalOrganizationId ?? 'default'}:${canonicalTeamMemberId ?? 'invalid'}`;
+    const targetLimit = await rateLimitResponse(
+      event,
+      'device-register-member',
+      8,
+      15 * 60,
+      targetKey,
+    );
+    if (targetLimit) return targetLimit;
+    const distributedLimit = await rateLimitResponse(
+      event,
+      'device-register-member-global',
+      12,
+      60 * 60,
+      targetKey,
+      false,
+    );
+    if (distributedLimit) return distributedLimit;
+    const dailyLimit = await rateLimitResponse(
+      event,
+      'device-register-member-daily',
+      30,
+      24 * 60 * 60,
+      targetKey,
+      false,
+    );
+    if (dailyLimit) return dailyLimit;
+    return registerDevice({
+      ...body,
+      teamMemberId: canonicalTeamMemberId,
+      deviceToken: canonicalDeviceToken,
+      organizationId: canonicalOrganizationId,
+    });
+  }
+
+  if (method === 'POST' && path === '/device/logout') {
+    const user = await requireUser(event);
+    if (!user) return json(403, { error: 'Authentication required.' });
+    const deviceUpdate = supabase.from('devices').update({ active: false }).eq('id', user.deviceId);
+    const { data, error } = await scoped(deviceUpdate, user.organizationId).select('id').maybeSingle();
+    if (error) throw error;
+    if (!data) return json(404, { error: 'Active device session not found.' });
+    return json(200, { signedOut: true });
+  }
+
+  if (method === 'POST' && path === '/device/change-pin') {
+    const body = readBody<Record<string, unknown>>(event);
+    assertAllowedFields(body, ['currentPin', 'newPin', 'deviceToken']);
+    const user = await requireUser(event);
+    if (!user) return json(403, { error: 'Authentication required.' });
+    const currentPin = typeof body.currentPin === 'string' ? body.currentPin : '';
+    const newPin = typeof body.newPin === 'string' ? body.newPin : '';
+    const deviceToken = typeof body.deviceToken === 'string' ? body.deviceToken : '';
+    if (
+      !/^\d{4}$/.test(currentPin) ||
+      !/^\d{4}$/.test(newPin) ||
+      !isUuid(deviceToken)
+    ) {
+      return json(400, { error: 'The current PIN, a new 4-digit PIN, and the authenticated device token are required.' });
+    }
+    if (currentPin === newPin) return json(400, { error: 'Choose a different new PIN.' });
+    const limited = await rateLimitResponse(event, 'device-change-pin', 8, 15 * 60, `${user.organizationId}:${user.deviceId}`, false);
+    if (limited) return limited;
+    const currentDevice = await verifyDevice(user.teamMemberId, deviceToken, user.organizationId);
+    if (!currentDevice || currentDevice.id !== user.deviceId) {
+      return json(403, { error: 'The authenticated device token is required.' });
+    }
+    const memberQuery = supabase.from('team_members').select('id, pin_hash').eq('id', user.teamMemberId).eq('active', true);
+    const { data: member, error: memberError } = await scoped(memberQuery, user.organizationId).maybeSingle();
+    if (memberError) throw memberError;
+    if (!member?.pin_hash) return json(403, { error: 'Current PIN does not match.' });
+    const currentPinMatches = await verifyCredentialHash(
+      member.pin_hash,
+      pinCredentialContext(user.teamMemberId, user.organizationId),
+      currentPin,
+      [
+        pinHash(user.teamMemberId, currentPin, user.organizationId),
+        legacyPinHash(user.teamMemberId, currentPin),
+      ],
+    );
+    if (!currentPinMatches) return json(403, { error: 'Current PIN does not match.' });
+    const nextPinHash = await createCredentialHash(
+      pinCredentialContext(user.teamMemberId, user.organizationId),
+      newPin,
+    );
+    if (user.organizationId) {
+      const { data: changed, error: changeError } = await supabase.rpc('change_member_pin', {
+        p_organization_id: user.organizationId,
+        p_team_member_id: user.teamMemberId,
+        p_current_device_id: user.deviceId,
+        p_expected_pin_hash: member.pin_hash,
+        p_pin_hash: nextPinHash,
+      });
+      if (!changeError) {
+        if (changed !== true) {
+          return json(409, { error: 'The PIN or device session changed. Sign in again with the current PIN.' });
+        }
+        return json(200, { changed: true, otherDevicesRevoked: true });
+      }
+      if (managedHostEnabled || !isMissingRelationError(changeError)) throw changeError;
+    }
+
+    // Compatibility path for local databases that predate the transactional helper.
+    const memberUpdate = supabase.from('team_members').update({ pin_hash: nextPinHash }).eq('id', user.teamMemberId);
+    const otherDevicesUpdate = supabase
+      .from('devices')
+      .update({ active: false })
+      .eq('team_member_id', user.teamMemberId)
+      .neq('id', user.deviceId);
+    const [{ error: pinUpdateError }, { error: deviceUpdateError }] = await Promise.all([
+      scoped(memberUpdate, user.organizationId),
+      scoped(otherDevicesUpdate, user.organizationId),
+    ]);
+    if (pinUpdateError || deviceUpdateError) {
+      throw pinUpdateError ?? deviceUpdateError ?? new Error('Unable to change PIN.');
+    }
+    return json(200, { changed: true, otherDevicesRevoked: true });
   }
 
   if (method === 'POST' && path === '/device/change-identity') {
     const body = readBody<{ currentTeamMemberId: string; pin: string; newTeamMemberId: string; newPin: string; deviceToken: string }>(event);
     const user = await requireUser(event);
     if (!user || user.teamMemberId !== body.currentTeamMemberId) return json(403, { error: 'Authentication required.' });
+    const limited = await rateLimitResponse(event, 'device-change-identity', 8, 15 * 60, `${user.organizationId}:${user.deviceId}`, false);
+    if (limited) return limited;
+    if (!isUuid(body.deviceToken) || !isUuid(body.newTeamMemberId) || !/^\d{4}$/.test(body.pin) || !/^\d{4}$/.test(body.newPin)) {
+      return json(400, { error: 'Valid member IDs, device token, and 4-digit PINs are required.' });
+    }
+    const currentDevice = await verifyDevice(body.currentTeamMemberId, body.deviceToken, user.organizationId);
+    if (!currentDevice || currentDevice.id !== user.deviceId) {
+      return json(403, { error: 'The authenticated device token is required.' });
+    }
     const currentQuery = supabase.from('team_members').select('*').eq('id', body.currentTeamMemberId);
-    const { data: current } = await scoped(currentQuery, user.organizationId).single();
-    if (
-      !current?.pin_hash ||
-      (current.pin_hash !== pinHash(body.currentTeamMemberId, body.pin, user.organizationId) &&
-        current.pin_hash !== legacyPinHash(body.currentTeamMemberId, body.pin))
-    ) {
+    const { data: current, error: currentError } = await scoped(currentQuery, user.organizationId).maybeSingle();
+    if (currentError) throw currentError;
+    if (!current?.pin_hash) {
       return json(403, { error: 'Current PIN does not match.' });
     }
-    let update = supabase.from('devices').update({ active: false }).eq('device_token_hash', sha256(body.deviceToken));
-    update = scoped(update, user.organizationId);
-    await update;
+    const currentPinMatches = await verifyCredentialHash(
+      current.pin_hash,
+      pinCredentialContext(body.currentTeamMemberId, user.organizationId),
+      body.pin,
+      [
+        pinHash(body.currentTeamMemberId, body.pin, user.organizationId),
+        legacyPinHash(body.currentTeamMemberId, body.pin),
+      ],
+    );
+    if (!currentPinMatches) return json(403, { error: 'Current PIN does not match.' });
     return registerDevice({
       teamMemberId: body.newTeamMemberId,
       pin: body.newPin,
@@ -1956,11 +2782,16 @@ async function route(event: HandlerEvent) {
     if (!user) return json(403, { error: 'Authentication required.' });
     const lat = Number(event.queryStringParameters?.lat);
     const lon = Number(event.queryStringParameters?.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json(400, { error: 'lat and lon are required.' });
+    const suppliedAccuracy = Number(event.queryStringParameters?.accuracy ?? 0);
+    if (!isLatitude(lat) || !isLongitude(lon)) return json(400, { error: 'Valid lat and lon are required.' });
+    if (!Number.isFinite(suppliedAccuracy) || suppliedAccuracy < 0 || suppliedAccuracy > 10_000) {
+      return json(400, { error: 'accuracy must be between 0 and 10000 meters.' });
+    }
+    const accuracyTolerance = Math.min(suppliedAccuracy, 300);
     const locations = await getLocationSummaries(user.organizationId);
     const matches = locations
       .map((location) => ({ ...location, distance_meters: distanceMeters(lat, lon, location.latitude, location.longitude) }))
-      .filter((location) => location.distance_meters <= location.radius_meters)
+      .filter((location) => location.distance_meters <= location.radius_meters + accuracyTolerance)
       .sort((a, b) => a.distance_meters - b.distance_meters);
     return json(200, { matches });
   }
@@ -1975,15 +2806,40 @@ async function route(event: HandlerEvent) {
       locationId?: string | null;
       latitude?: number;
       longitude?: number;
+      accuracyMeters?: number;
       manual?: boolean;
       confidentialCareProvided?: IndicatorValue;
       referralProvided?: IndicatorValue;
     }>(event);
+    assertAllowedFields(body as unknown as Record<string, unknown>, [
+      'teamMemberId',
+      'deviceToken',
+      'unitIds',
+      'clientBatchId',
+      'occurredAt',
+      'locationId',
+      'latitude',
+      'longitude',
+      'accuracyMeters',
+      'manual',
+      'confidentialCareProvided',
+      'referralProvided',
+    ]);
     const user = await requireUser(event);
     if (!user || user.teamMemberId !== body.teamMemberId) return json(403, { error: 'Authentication required.' });
     const device = await verifyDevice(body.teamMemberId, body.deviceToken, user.organizationId);
-    if (!device) return json(403, { error: 'Device is not registered for this team member.' });
+    if (!device || device.id !== user.deviceId) return json(403, { error: 'The authenticated device token is required.' });
     if (!Array.isArray(body.unitIds) || body.unitIds.length === 0) return json(400, { error: 'unitIds are required.' });
+    if (body.unitIds.length > 100) return json(400, { error: 'A visit batch cannot include more than 100 units.' });
+    if (body.manual !== undefined && typeof body.manual !== 'boolean') return json(400, { error: 'manual must be true or false.' });
+    if (!body.manual && (!isLatitude(body.latitude) || !isLongitude(body.longitude))) {
+      return json(400, { error: 'Valid latitude and longitude are required for a geofenced check-in.' });
+    }
+    const suppliedAccuracy = body.accuracyMeters ?? 0;
+    if (typeof suppliedAccuracy !== 'number' || !Number.isFinite(suppliedAccuracy) || suppliedAccuracy < 0 || suppliedAccuracy > 10_000) {
+      return json(400, { error: 'accuracyMeters must be between 0 and 10000.' });
+    }
+    const accuracyTolerance = Math.min(suppliedAccuracy, 300);
     const clientBatchId = body.clientBatchId ?? crypto.randomUUID();
     if (!isUuid(clientBatchId)) return json(400, { error: 'clientBatchId must be a UUID.' });
 
@@ -1998,17 +2854,25 @@ async function route(event: HandlerEvent) {
       return json(400, { error: errorMessage(error) });
     }
 
-    const requestedUnitIds = Array.from(new Set(body.unitIds));
+    let requestedUnitIds: string[];
+    try {
+      requestedUnitIds = uniqueUuidValues(body.unitIds);
+    } catch (error) {
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      throw error;
+    }
     const unitsQuery = supabase
       .from('units')
       .select('*, locations(*)')
       .in('id', requestedUnitIds)
       .eq('active', true);
     const { data: units, error: unitError } = await scoped(unitsQuery, user.organizationId);
-    if (unitError) return json(500, { error: unitError.message });
+    if (unitError) throw unitError;
     if ((units ?? []).length !== requestedUnitIds.length) return json(404, { error: 'One or more units were not found.' });
 
-    const unitLocationIds = Array.from(new Set((units ?? []).map((unit: any) => unit.location_id ?? null)));
+    const unitLocationIds = Array.from(
+      new Set((units ?? []).map((unit: any) => (unit.locations?.active ? unit.location_id : null))),
+    );
     if (unitLocationIds.length > 1) return json(400, { error: 'A visit batch can only include units from one location.' });
     const batchLocationId = unitLocationIds[0] ?? null;
     if (body.locationId !== undefined && (body.locationId ?? null) !== batchLocationId) {
@@ -2017,160 +2881,155 @@ async function route(event: HandlerEvent) {
     if (batchLocationId === null && requestedUnitIds.length > 1) {
       return json(400, { error: 'Unmapped manual check-ins must be submitted one unit at a time.' });
     }
+    const requestFingerprint = sha256(
+      JSON.stringify({
+        teamMemberId: body.teamMemberId,
+        deviceId: device.id,
+        unitIds: [...requestedUnitIds].sort(),
+        locationId: batchLocationId,
+        occurredAt,
+        manual: body.manual === true,
+        latitude: body.manual ? null : body.latitude,
+        longitude: body.manual ? null : body.longitude,
+        accuracyMeters: body.manual ? null : accuracyTolerance,
+      }),
+    );
 
-    const batchLookupQuery = supabase
-      .from('checkin_batches')
-      .select('*')
-      .eq('client_batch_id', clientBatchId);
-    let { data: batch, error: batchLookupError } = await scoped(batchLookupQuery, user.organizationId).maybeSingle();
-    if (batchLookupError) return json(500, { error: batchLookupError.message });
-    if (!batch) {
-      const { data: insertedBatch, error: batchError } = await supabase
-        .from('checkin_batches')
-        .insert(withOrganization({
-          client_batch_id: clientBatchId,
-          location_id: batchLocationId,
-          team_member_id: body.teamMemberId,
-          device_id: device.id,
-          occurred_at: occurredAt,
-          confidential_care_provided: confidentialCareProvided,
-          referral_provided: referralProvided,
-          outcomes_recorded_at: confidentialCareProvided || referralProvided ? new Date().toISOString() : null,
-          updated_by_team_member_id: body.teamMemberId,
-        }, user.organizationId))
-        .select('*')
-        .single();
-      if (batchError) {
-        const retryQuery = supabase.from('checkin_batches').select('*').eq('client_batch_id', clientBatchId);
-        const retry = await scoped(retryQuery, user.organizationId).single();
-        if (retry.error || !retry.data) return json(500, { error: batchError.message });
-        batch = retry.data;
-      } else {
-        batch = insertedBatch;
-      }
-    } else {
-      if (batch.team_member_id !== body.teamMemberId || batch.device_id !== device.id) {
-        return json(403, { error: 'This client batch belongs to another user or device.' });
-      }
-      const batchUpdateQuery = supabase
-        .from('checkin_batches')
-        .update({
-          confidential_care_provided: confidentialCareProvided,
-          referral_provided: referralProvided,
-          outcomes_recorded_at: confidentialCareProvided || referralProvided ? new Date().toISOString() : null,
-          updated_by_team_member_id: body.teamMemberId,
-        })
-        .eq('id', batch.id);
-      const { data: updatedBatch, error: indicatorUpdateError } = await scoped(batchUpdateQuery, user.organizationId)
-        .select('*')
-        .single();
-      if (indicatorUpdateError) return json(500, { error: indicatorUpdateError.message });
-      batch = updatedBatch;
+    if (!user.organizationId) {
+      return json(503, { error: 'Transactional check-ins require the current database migration.' });
     }
-    if (batch.team_member_id !== body.teamMemberId || batch.device_id !== device.id) {
-      return json(403, { error: 'This client batch belongs to another user or device.' });
-    }
-
-    const existingQuery = supabase
-      .from('checkins')
-      .select('id, unit_id, score_awarded')
-      .eq('batch_id', batch.id);
-    const { data: existingRows, error: existingError } = await scoped(existingQuery, user.organizationId);
-    if (existingError) return json(500, { error: existingError.message });
-
-    const existingUnitIds = new Set((existingRows ?? []).map((row: any) => row.unit_id));
-    const rowsToInsert = [];
-    for (const unit of units ?? []) {
-      if (existingUnitIds.has(unit.id)) continue;
-      const location = unit.locations;
+    const unitsById = new Map<string, any>((units ?? []).map((unit: any): [string, any] => [unit.id, unit]));
+    const geofenceValues: boolean[] = [];
+    const distanceValues: Array<number | null> = [];
+    for (const unitId of requestedUnitIds) {
+      const unit = unitsById.get(unitId);
+      const location = unit?.locations?.active ? unit.locations : null;
       let distance: number | null = null;
       let geofenceVerified = false;
       if (!body.manual && location && Number.isFinite(body.latitude) && Number.isFinite(body.longitude)) {
         distance = Math.round(distanceMeters(Number(body.latitude), Number(body.longitude), location.latitude, location.longitude));
-        geofenceVerified = distance <= location.radius_meters;
+        geofenceVerified = distance <= location.radius_meters + accuracyTolerance;
       }
-
-      const cooldownStart = new Date(new Date(occurredAt).getTime() - 14 * 86400000).toISOString();
-      const recentQuery = supabase
-        .from('checkins')
-        .select('id')
-        .eq('unit_id', unit.id)
-        .is('voided_at', null)
-        .lt('checked_in_at', occurredAt)
-        .gte('checked_in_at', cooldownStart);
-      const { data: recent } = await scoped(recentQuery, user.organizationId).limit(1);
-
-      const priorQuery = supabase
-        .from('checkins')
-        .select('checked_in_at')
-        .eq('unit_id', unit.id)
-        .is('voided_at', null)
-        .lt('checked_in_at', occurredAt)
-        .order('checked_in_at', { ascending: false });
-      const { data: prior } = await scoped(priorQuery, user.organizationId).limit(1).maybeSingle();
-
-      let score = 0;
-      if (!recent?.length) {
-        const status = statusBefore(prior?.checked_in_at ?? null, occurredAt, unit.visit_interval_days);
-        score = 1;
-        if (status === 'yellow') score += 1;
-        if (status === 'red' || status === 'gray') score += 2;
-      }
-
-      rowsToInsert.push(withOrganization({
-        batch_id: batch.id,
-        unit_id: unit.id,
-        location_id: unit.location_id,
-        team_member_id: body.teamMemberId,
-        device_id: device.id,
-        checked_in_at: occurredAt,
-        geofence_verified: geofenceVerified,
-        distance_meters: distance,
-        score_awarded: score,
-      }, user.organizationId));
+      geofenceValues.push(geofenceVerified);
+      distanceValues.push(distance);
     }
 
-    let insertedRows: Array<{ id: string; unit_id: string; score_awarded: number }> = [];
-    if (rowsToInsert.length) {
-      const { data: inserted, error: insertError } = await supabase
-        .from('checkins')
-        .insert(rowsToInsert)
-        .select('id, unit_id, score_awarded');
-      if (insertError) return json(500, { error: insertError.message });
-      insertedRows = inserted ?? [];
+    const { data: transactionRows, error: transactionError } = await supabase.rpc('create_checkin_batch', {
+      p_organization_id: user.organizationId,
+      p_team_member_id: body.teamMemberId,
+      p_device_id: device.id,
+      p_client_batch_id: clientBatchId,
+      p_request_fingerprint: requestFingerprint,
+      p_occurred_at: occurredAt,
+      p_location_id: batchLocationId,
+      p_unit_ids: requestedUnitIds,
+      p_geofence_verified: geofenceValues,
+      p_distance_meters: distanceValues,
+      p_confidential_care_provided: confidentialCareProvided,
+      p_referral_provided: referralProvided,
+    });
+    if (transactionError) {
+      if (transactionError.message?.includes('checkin_device_inactive')) {
+        return json(403, { error: 'The authenticated device session is no longer active.' });
+      }
+      if (transactionError.message?.includes('checkin_units_invalid')) {
+        return json(404, { error: 'One or more units or their location changed. Refresh and try again.' });
+      }
+      if (transactionError.message?.includes('checkin_batch_owner_mismatch')) {
+        return json(403, { error: 'This client batch belongs to another user or device.' });
+      }
+      if (transactionError.message?.includes('checkin_batch_conflict')) {
+        return json(409, { error: 'clientBatchId was already used for a different visit.' });
+      }
+      if (transactionError.message?.includes('checkin_request_invalid')) {
+        return json(400, { error: 'The visit batch is invalid.' });
+      }
+      if (isMissingRelationError(transactionError)) {
+        return json(503, { error: 'Transactional check-ins are not configured yet.' });
+      }
+      throw transactionError;
     }
-
-    const allRows = [...(existingRows ?? []), ...insertedRows].filter((row) => requestedUnitIds.includes(row.unit_id));
+    const transaction = (Array.isArray(transactionRows) ? transactionRows[0] : transactionRows) as
+      | {
+          batch?: {
+            id?: string;
+            location_id?: string | null;
+            confidential_care_provided?: IndicatorValue;
+            referral_provided?: IndicatorValue;
+          };
+          checkin_rows?: Array<{ id: string; unit_id: string; score_awarded: number }>;
+        }
+      | null;
+    const batch = transaction?.batch;
+    const allRows = Array.isArray(transaction?.checkin_rows) ? transaction.checkin_rows : [];
+    if (!batch?.id || allRows.length !== requestedUnitIds.length) {
+      throw new Error('Check-in transaction returned an incomplete result.');
+    }
     return json(200, {
       batchId: batch.id,
       clientBatchId,
-      locationId: batchLocationId,
+      locationId: batch.location_id ?? null,
       checkins: allRows.map((row) => ({ id: row.id, score_awarded: row.score_awarded })),
       totalScore: allRows.reduce((sum, row) => sum + row.score_awarded, 0),
       indicators: {
-        confidentialCareProvided: batch.confidential_care_provided,
-        referralProvided: batch.referral_provided,
+        confidentialCareProvided: batch.confidential_care_provided ?? null,
+        referralProvided: batch.referral_provided ?? null,
       },
     });
   }
 
   if (method === 'POST' && path === '/checkins/undo') {
-    const body = readBody<{ teamMemberId: string; checkinIds: string[] }>(event);
+    const body = readBody<{ teamMemberId?: string; checkinIds?: string[]; clientBatchId?: string }>(event);
+    assertAllowedFields(body as Record<string, unknown>, ['teamMemberId', 'checkinIds', 'clientBatchId']);
     const user = await requireUser(event);
     if (!user || user.teamMemberId !== body.teamMemberId) return json(403, { error: 'Authentication required.' });
-    if (!Array.isArray(body.checkinIds) || body.checkinIds.length === 0) {
-      return json(400, { error: 'checkinIds are required.' });
+    const hasCheckinIds = Array.isArray(body.checkinIds) && body.checkinIds.length > 0;
+    const hasClientBatchId = typeof body.clientBatchId === 'string' && body.clientBatchId.length > 0;
+    if (hasCheckinIds === hasClientBatchId) {
+      return json(400, { error: 'Provide either checkinIds or clientBatchId.' });
+    }
+    if (hasCheckinIds && body.checkinIds!.length > 100) {
+      return json(400, { error: 'No more than 100 check-ins can be undone at once.' });
+    }
+    let checkinIds: string[];
+    try {
+      if (hasCheckinIds) {
+        checkinIds = uniqueUuidValues(body.checkinIds!);
+      } else {
+        if (!isUuid(body.clientBatchId)) throw new RequestValidationError(400, 'clientBatchId must be a UUID.');
+        const batchQuery = supabase
+          .from('checkin_batches')
+          .select('id')
+          .eq('client_batch_id', body.clientBatchId!)
+          .eq('team_member_id', user.teamMemberId);
+        const { data: batch, error: batchError } = await scoped(batchQuery, user.organizationId).maybeSingle();
+        if (batchError) throw batchError;
+        if (!batch) return json(404, { error: 'Uploaded visit not found.' });
+        const batchCheckinsQuery = supabase
+          .from('checkins')
+          .select('id')
+          .eq('batch_id', batch.id)
+          .eq('team_member_id', user.teamMemberId)
+          .is('voided_at', null);
+        const { data: batchCheckins, error: batchCheckinsError } = await scoped(batchCheckinsQuery, user.organizationId);
+        if (batchCheckinsError) throw batchCheckinsError;
+        checkinIds = (batchCheckins ?? []).map((checkin: { id: string }) => checkin.id);
+        if (!checkinIds.length) return json(409, { error: 'This visit has already been undone.' });
+      }
+    } catch (error) {
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      throw error;
     }
 
     const ownedQuery = supabase
       .from('checkins')
       .select('id, created_at')
-      .in('id', body.checkinIds)
+      .in('id', checkinIds)
       .eq('team_member_id', user.teamMemberId)
       .is('voided_at', null);
     const { data: owned, error: ownedError } = await scoped(ownedQuery, user.organizationId);
-    if (ownedError) return json(500, { error: ownedError.message });
-    if ((owned ?? []).length !== body.checkinIds.length) {
+    if (ownedError) throw ownedError;
+    if ((owned ?? []).length !== checkinIds.length) {
       return json(403, { error: 'Only your own active check-ins can be undone.' });
     }
     const undoCutoff = Date.now() - 15 * 60000;
@@ -2188,12 +3047,12 @@ async function route(event: HandlerEvent) {
         score_awarded: 0,
         updated_by_team_member_id: user.teamMemberId,
       })
-      .in('id', body.checkinIds)
+      .in('id', checkinIds)
       .eq('team_member_id', user.teamMemberId)
       .is('voided_at', null);
     const { error } = await scoped(undoQuery, user.organizationId);
-    if (error) return json(500, { error: error.message });
-    return json(200, { undone: body.checkinIds.length, coverage: await getCoverage(user.organizationId) });
+    if (error) throw error;
+    return json(200, { undone: checkinIds.length, coverage: await getCoverage(user.organizationId) });
   }
 
   const indicatorMatch = path.match(/^\/checkin-batches\/([^/]+)\/indicators$/);
@@ -2205,6 +3064,7 @@ async function route(event: HandlerEvent) {
     if (extra.length) return json(400, { error: 'Only the two indicator fields are accepted.' });
     const user = await requireUser(event);
     if (!user) return json(403, { error: 'Authentication required.' });
+    if (!isUuid(indicatorMatch[1])) return json(400, { error: 'Client batch ID must be a UUID.' });
 
     let confidentialCareProvided: IndicatorValue;
     let referralProvided: IndicatorValue;
@@ -2237,7 +3097,7 @@ async function route(event: HandlerEvent) {
     const { data, error } = await scoped(indicatorQuery, user.organizationId)
       .select('client_batch_id, confidential_care_provided, referral_provided, outcomes_recorded_at')
       .single();
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     return json(200, {
       clientBatchId: data.client_batch_id,
       indicators: {
@@ -2269,7 +3129,7 @@ async function route(event: HandlerEvent) {
       )
       .eq('unit_id', unitId);
     const { data, error } = await scoped(detailQuery, user.organizationId).order('checked_in_at', { ascending: false }).limit(100);
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     return json(200, {
       unit,
       checkins: (data ?? []).map((checkin: any) => ({
@@ -2291,6 +3151,7 @@ async function route(event: HandlerEvent) {
     const user = await requireUser(event);
     if (!user) return json(403, { error: 'Authentication required.' });
     const params = event.queryStringParameters ?? {};
+    const range = dateRangeFilters(params);
     let query = scoped(
       supabase
       .from('checkins')
@@ -2303,11 +3164,11 @@ async function route(event: HandlerEvent) {
       .limit(2000),
       user.organizationId,
     );
-    if (params.from) query = query.gte('checked_in_at', `${params.from}T00:00:00.000Z`);
-    if (params.to) query = query.lte('checked_in_at', `${params.to}T23:59:59.999Z`);
+    if (range.from) query = query.gte('checked_in_at', range.from);
+    if (range.to) query = query.lte('checked_in_at', range.to);
 
     const { data, error } = await query;
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
 
     const batches = new Map<string, any[]>();
     for (const row of data ?? []) {
@@ -2318,7 +3179,7 @@ async function route(event: HandlerEvent) {
     }
 
     const reports = new Map<string, any>();
-    for (const [batchId, rows] of batches) {
+    for (const rows of batches.values()) {
       const first: any = rows[0];
       const batch = first.checkin_batches;
       const directLocation = first.locations;
@@ -2358,13 +3219,19 @@ async function route(event: HandlerEvent) {
   if (method === 'GET' && path === '/leaderboard') {
     const user = await requireUser(event);
     if (!user) return json(403, { error: 'Authentication required.' });
-    const month = event.queryStringParameters?.month ?? new Date().toISOString().slice(0, 7);
-    const start = `${month}-01T00:00:00.000Z`;
-    const endDate = new Date(start);
-    endDate.setUTCMonth(endDate.getUTCMonth() + 1);
-    const end = endDate.toISOString();
+    const params = event.queryStringParameters ?? {};
+    const month = params.month ?? new Date().toISOString().slice(0, 7);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json(400, { error: 'month must use YYYY-MM format.' });
+    const timeZone = parseTimeZone(params.timeZone);
+    const [year, monthNumber] = month.split('-').map(Number);
+    const calendarMonthStart = new Date(Date.UTC(year, monthNumber - 1, 1));
+    const calendarMonthEnd = new Date(Date.UTC(year, monthNumber, 1));
+    const monthStart = zonedMidnight(calendarMonthStart, timeZone);
+    const monthEnd = zonedMidnight(calendarMonthEnd, timeZone);
+    const start = monthStart.toISOString();
+    const end = monthEnd.toISOString();
     const now = new Date();
-    const [monthlyResult, allBeforeEndResult, coverage] = await Promise.all([
+    const [monthlyResult, firstVisitsBeforeEnd, coverage] = await Promise.all([
       scoped(
         supabase
         .from('checkins')
@@ -2374,23 +3241,14 @@ async function route(event: HandlerEvent) {
         .lt('checked_in_at', end),
         user.organizationId,
       ),
-      scoped(
-        supabase
-        .from('checkins')
-        .select('unit_id, checked_in_at')
-        .is('voided_at', null)
-        .lt('checked_in_at', end)
-        .order('checked_in_at', { ascending: true }),
-        user.organizationId,
-      ),
+      getFirstActiveCheckinsBefore(user.organizationId, end),
       getCoverage(user.organizationId),
     ]);
-    const error = monthlyResult.error ?? allBeforeEndResult.error;
-    if (error) return json(500, { error: error.message });
+    if (monthlyResult.error) throw monthlyResult.error;
     const monthlyCheckins = monthlyResult.data ?? [];
 
     const firstVisitByUnit = new Map<string, string>();
-    for (const checkin of allBeforeEndResult.data ?? []) {
+    for (const checkin of firstVisitsBeforeEnd) {
       if (!firstVisitByUnit.has(checkin.unit_id)) firstVisitByUnit.set(checkin.unit_id, checkin.checked_in_at);
     }
 
@@ -2404,6 +3262,7 @@ async function route(event: HandlerEvent) {
         .map((area: any) => area.id),
     );
 
+    const dayKeyFormatter = zonedDayKeyFormatter(timeZone);
     const buildLeaderboardRows = (checkins: any[]) => {
       const rows = new Map<string, any>();
       for (const checkin of checkins) {
@@ -2430,7 +3289,7 @@ async function route(event: HandlerEvent) {
           row.coverage_sweep_areas.add(areaId);
         }
         row.distinct_units.add(checkin.unit_id);
-        row.active_days.add(String(checkin.checked_in_at).slice(0, 10));
+        row.active_days.add(zonedDayKey(checkin.checked_in_at, dayKeyFormatter));
         row.score += checkin.score_awarded;
         rows.set(member.id, row);
       }
@@ -2466,7 +3325,7 @@ async function route(event: HandlerEvent) {
       distinctUnitsCovered.add(checkin.unit_id);
     }
 
-    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone });
     const labelPeriod = (periodStart: Date, periodEndExclusive: Date) => {
       const endInclusive = new Date(periodEndExclusive.getTime() - 1);
       return `${dateFormatter.format(periodStart)}-${dateFormatter.format(endInclusive)}`;
@@ -2480,7 +3339,7 @@ async function route(event: HandlerEvent) {
       );
       return {
         type,
-        label: type === 'month' ? new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(periodStart) : labelPeriod(periodStart, periodEndExclusive),
+        label: type === 'month' ? new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone }).format(periodStart) : labelPeriod(periodStart, periodEndExclusive),
         start: periodStart.toISOString(),
         end: periodEndExclusive.toISOString(),
         final: periodEndExclusive <= now,
@@ -2488,23 +3347,24 @@ async function route(event: HandlerEvent) {
       };
     };
 
-    const monthStart = new Date(start);
-    const monthEnd = new Date(end);
     const weeklyWinners = [];
-    let periodStart = new Date(monthStart);
-    while (periodStart < monthEnd) {
-      const day = periodStart.getUTCDay();
+    let calendarPeriodStart = new Date(calendarMonthStart);
+    while (calendarPeriodStart < calendarMonthEnd) {
+      const day = calendarPeriodStart.getUTCDay();
       const daysThroughSunday = day === 0 ? 1 : 8 - day;
-      const periodEnd = new Date(periodStart);
-      periodEnd.setUTCDate(periodEnd.getUTCDate() + daysThroughSunday);
-      if (periodEnd > monthEnd) periodEnd.setTime(monthEnd.getTime());
+      const calendarPeriodEnd = new Date(calendarPeriodStart);
+      calendarPeriodEnd.setUTCDate(calendarPeriodEnd.getUTCDate() + daysThroughSunday);
+      if (calendarPeriodEnd > calendarMonthEnd) calendarPeriodEnd.setTime(calendarMonthEnd.getTime());
+      const periodStart = zonedMidnight(calendarPeriodStart, timeZone);
+      const periodEnd = zonedMidnight(calendarPeriodEnd, timeZone);
       if (periodStart <= now) weeklyWinners.push(periodWinner('week', periodStart, periodEnd));
-      periodStart = new Date(periodEnd);
+      calendarPeriodStart = calendarPeriodEnd;
     }
 
     const rows = buildLeaderboardRows(monthlyCheckins);
     return json(200, {
       month,
+      timeZone,
       rows,
       winners: {
         weeks: weeklyWinners,
@@ -2520,32 +3380,57 @@ async function route(event: HandlerEvent) {
   }
 
   if (method === 'POST' && path === '/workspaces/activate') {
-    const body = readBody<{
-      setupCode?: string;
-      adminPassphrase?: string;
-      organizationName?: string;
-      leadLabel?: string;
-      installationName?: string;
-      installationLatitude?: number;
-      installationLongitude?: number;
-    }>(event);
-    if (!body.setupCode || !body.adminPassphrase || body.adminPassphrase.length < 8) {
-      return json(400, { error: 'setupCode and an adminPassphrase of at least 8 characters are required.' });
+    const body = readBody<Record<string, unknown>>(event);
+    assertAllowedFields(body, [
+      'setupCode',
+      'adminPassphrase',
+      'organizationName',
+      'leadLabel',
+      'installationName',
+      'installationLatitude',
+      'installationLongitude',
+    ]);
+    if (
+      typeof body.setupCode !== 'string' ||
+      body.setupCode.length > 80 ||
+      typeof body.adminPassphrase !== 'string' ||
+      body.adminPassphrase.length < 12 ||
+      body.adminPassphrase.length > 256
+    ) {
+      return json(400, { error: 'setupCode and an adminPassphrase of at least 12 characters are required.' });
     }
+    const organizationName = optionalText(body.organizationName, 'Organization name', 160);
+    if (organizationName && organizationName.length < 2) {
+      return json(400, { error: 'Organization name must contain at least 2 characters.' });
+    }
+    const leadLabel = optionalText(body.leadLabel, 'Lead label', 120);
+    const requestedInstallationName = optionalText(body.installationName, 'Installation name', 200) ?? organizationName;
+    const hasInstallationLatitude = hasOwn(body, 'installationLatitude');
+    const hasInstallationLongitude = hasOwn(body, 'installationLongitude');
+    if (hasInstallationLatitude !== hasInstallationLongitude) {
+      return json(400, { error: 'Installation latitude and longitude must be provided together.' });
+    }
+    if (hasInstallationLatitude && (!isLatitude(body.installationLatitude) || !isLongitude(body.installationLongitude))) {
+      return json(400, { error: 'Installation coordinates are invalid.' });
+    }
+    const limited = await rateLimitResponse(event, 'workspace-activation', 8, 30 * 60);
+    if (limited) return limited;
     const setupCode = await verifySetupCode(body.setupCode);
     if (!setupCode) return json(403, { error: 'Setup code is invalid, expired, or already used.' });
     const organizationId = setupCode.organization_id;
-    if (body.organizationName?.trim()) {
-      await supabase.from('organizations').update({ name: body.organizationName.trim() }).eq('id', organizationId);
-    }
-    const installationName = body.installationName?.trim() || body.organizationName?.trim();
-    const installationLatitude = Number(body.installationLatitude);
-    const installationLongitude = Number(body.installationLongitude);
-    let resolvedInstallationName = installationName ?? null;
-    let resolvedLatitude = Number.isFinite(installationLatitude) ? installationLatitude : null;
-    let resolvedLongitude = Number.isFinite(installationLongitude) ? installationLongitude : null;
+    const { data: organization, error: organizationError } = await supabase
+      .from('organizations')
+      .select('id, slug, active')
+      .eq('id', organizationId)
+      .maybeSingle();
+    if (organizationError) throw organizationError;
+    if (!organization?.active) return json(403, { error: 'Setup code is invalid, expired, or already used.' });
+
+    let resolvedInstallationName = requestedInstallationName;
+    let resolvedLatitude = hasInstallationLatitude ? (body.installationLatitude as number) : null;
+    let resolvedLongitude = hasInstallationLongitude ? (body.installationLongitude as number) : null;
     if (resolvedInstallationName && (resolvedLatitude == null || resolvedLongitude == null)) {
-      const matches = await searchInstallations(resolvedInstallationName);
+      const matches = await searchInstallations(resolvedInstallationName, event);
       const match = matches[0];
       if (!match) {
         return json(404, {
@@ -2556,50 +3441,90 @@ async function route(event: HandlerEvent) {
       resolvedLatitude = Number(match.lat);
       resolvedLongitude = Number(match.lon);
     }
-    if (resolvedInstallationName && resolvedLatitude != null && resolvedLongitude != null) {
-      await Promise.all([
-        supabase.from('app_settings').upsert(
-          withOrganization({ key: 'installation_name', value: resolvedInstallationName }, organizationId),
-          { onConflict: 'organization_id,key' },
-        ),
-        supabase.from('app_settings').upsert(
-          withOrganization({ key: 'map_default_latitude', value: String(resolvedLatitude) }, organizationId),
-          { onConflict: 'organization_id,key' },
-        ),
-        supabase.from('app_settings').upsert(
-          withOrganization({ key: 'map_default_longitude', value: String(resolvedLongitude) }, organizationId),
-          { onConflict: 'organization_id,key' },
-        ),
-      ]);
-    }
-    const { error } = await supabase.from('organization_admin_credentials').upsert(
-      {
-        organization_id: organizationId,
-        passphrase_hash: organizationAdminHash(organizationId, body.adminPassphrase),
-        active: true,
-      },
-      { onConflict: 'organization_id' },
+    const credentialHash = await createCredentialHash(
+      organizationAdminCredentialContext(organizationId),
+      body.adminPassphrase,
     );
-    if (error) return json(500, { error: error.message });
-    await markSetupCodeUsed(setupCode.id, organizationId, body.leadLabel?.trim() || null);
+    const activatedAt = new Date().toISOString();
+    const { data: activationRows, error: activationError } = await supabase.rpc('activate_deckplating_workspace', {
+      p_setup_code_id: setupCode.id,
+      p_organization_id: organizationId,
+      p_used_by_label: leadLabel,
+      p_organization_name: organizationName,
+      p_installation_name: resolvedInstallationName,
+      p_installation_latitude: resolvedLatitude,
+      p_installation_longitude: resolvedLongitude,
+      p_admin_passphrase_hash: credentialHash,
+      p_activated_at: activatedAt,
+    });
+    if (activationError) {
+      if (isMissingRelationError(activationError)) {
+        return json(503, { error: 'Workspace activation transaction is not configured yet.' });
+      }
+      throw activationError;
+    }
+    const activation = (Array.isArray(activationRows) ? activationRows[0] : activationRows) as
+      | { organization_updated_at?: string; admin_credential_updated_at?: string }
+      | null;
+    if (!activation?.organization_updated_at || !activation.admin_credential_updated_at) {
+      return json(403, { error: 'Setup code is invalid, expired, or already used.' });
+    }
+    await tryRecordOperatorAudit(organizationId, 'workspace_activated', { setupCodeId: setupCode.id, slug: organization.slug });
     return json(200, {
       organizationId,
       organization: await organizationSummary(organizationId),
-      token: await createAdminToken({ organizationId, authMethod: 'organization' }),
+      token: await createAdminToken({
+        organizationId,
+        authMethod: 'organization',
+        organizationUpdatedAt: activation.organization_updated_at,
+        adminCredentialUpdatedAt: activation.admin_credential_updated_at,
+      }),
     });
   }
 
   if (method === 'POST' && path === '/admin/login') {
-    const body = readBody<{ passphrase: string; organizationId?: string | null }>(event);
+    const body = readBody<Record<string, unknown>>(event);
+    assertAllowedFields(body, ['passphrase', 'organizationId']);
+    if (typeof body.passphrase !== 'string' || body.passphrase.length > 256) {
+      return json(400, { error: 'Admin passphrase is required.' });
+    }
+    if (body.organizationId != null && !isUuid(body.organizationId)) {
+      return json(400, { error: 'organizationId must be a UUID.' });
+    }
     let organizationId: string | null;
     try {
-      organizationId = await resolveOrganizationId(body.organizationId);
+      organizationId = await resolveOrganizationId(body.organizationId as string | null | undefined);
     } catch (error) {
-      return json(400, { error: errorMessage(error) });
+      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+      throw error;
     }
+    const organizationStateAtLogin = await organizationSessionState(organizationId);
+    if (organizationId && !organizationStateAtLogin) {
+      return json(403, { error: 'Workspace not found or inactive.' });
+    }
+    const ipLimit = await rateLimitResponse(event, 'admin-login-ip', 30, 15 * 60);
+    if (ipLimit) return ipLimit;
+    const targetKey = organizationId ?? 'single-org';
+    const targetLimit = await rateLimitResponse(
+      event,
+      'admin-login-workspace',
+      8,
+      15 * 60,
+      targetKey,
+    );
+    if (targetLimit) return targetLimit;
+    const distributedLimit = await rateLimitResponse(
+      event,
+      'admin-login-workspace-global',
+      50,
+      15 * 60,
+      targetKey,
+      false,
+    );
+    if (distributedLimit) return distributedLimit;
     const adminContext =
-      (await tryOrganizationAdminLogin(organizationId, body.passphrase ?? '')) ??
-      tryEnvironmentAdminLogin(body.passphrase ?? '', organizationId);
+      (await tryOrganizationAdminLogin(organizationId, body.passphrase, organizationStateAtLogin?.updated_at ?? null)) ??
+      tryEnvironmentAdminLogin(body.passphrase, organizationId, organizationStateAtLogin?.updated_at ?? null);
     if (!adminContext) {
       return json(403, { error: 'Invalid admin passphrase.' });
     }
@@ -2616,23 +3541,50 @@ async function route(event: HandlerEvent) {
 
   if (method === 'POST' && path === '/admin/organization-admin/passphrase') {
     const organizationId = adminContext!.organizationId;
-    const body = readBody<{ passphrase?: string }>(event);
+    const body = readBody<Record<string, unknown>>(event);
+    assertAllowedFields(body, ['passphrase']);
     if (!organizationId || !(await organizationAdminSchemaEnabled())) {
       return json(400, { error: 'Organization admin credentials are not available for this database yet.' });
     }
-    if (!body.passphrase || body.passphrase.length < 8) {
-      return json(400, { error: 'Passphrase must be at least 8 characters.' });
+    if (typeof body.passphrase !== 'string' || body.passphrase.length < 12 || body.passphrase.length > 256) {
+      return json(400, { error: 'Passphrase must be at least 12 characters.' });
     }
-    const { error } = await supabase.from('organization_admin_credentials').upsert(
-      {
-        organization_id: organizationId,
-        passphrase_hash: organizationAdminHash(organizationId, body.passphrase),
-        active: true,
-      },
-      { onConflict: 'organization_id' },
-    );
-    if (error) return json(500, { error: error.message });
-    return json(200, { organizationId, authMethod: 'organization' });
+    const nextPassphraseHash = await createCredentialHash(organizationAdminCredentialContext(organizationId), body.passphrase);
+    let credential: { updated_at: string } | null = null;
+    if (adminContext!.authMethod === 'organization') {
+      const { data, error } = await supabase
+        .from('organization_admin_credentials')
+        .update({ passphrase_hash: nextPassphraseHash, active: true })
+        .eq('organization_id', organizationId)
+        .eq('active', true)
+        .eq('updated_at', adminContext!.adminCredentialUpdatedAt)
+        .select('updated_at')
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return json(409, { error: 'The administrator credential changed. Unlock Admin again before rotating it.' });
+      credential = data;
+    } else {
+      const { data, error } = await supabase
+        .from('organization_admin_credentials')
+        .upsert(
+          { organization_id: organizationId, passphrase_hash: nextPassphraseHash, active: true },
+          { onConflict: 'organization_id' },
+        )
+        .select('updated_at')
+        .single();
+      if (error) throw error;
+      credential = data;
+    }
+    return json(200, {
+      organizationId,
+      authMethod: 'organization',
+      token: await createAdminToken({
+        organizationId,
+        authMethod: 'organization',
+        organizationUpdatedAt: adminContext!.organizationUpdatedAt,
+        adminCredentialUpdatedAt: credential.updated_at,
+      }),
+    });
   }
 
   if (method === 'GET' && path === '/admin/settings') {
@@ -2656,7 +3608,7 @@ async function route(event: HandlerEvent) {
       withOrganization({ key: 'gamification_tone', value: body.gamificationTone }, organizationId),
       { onConflict: organizationId ? 'organization_id,key' : 'key' },
     );
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     return json(200, { gamificationTone: body.gamificationTone });
   }
 
@@ -2669,24 +3621,21 @@ async function route(event: HandlerEvent) {
       scoped(supabase.from('team_members').select('id, name, role, active, created_at'), organizationId).order('name'),
     ]);
     const error = areas.error ?? locations.error ?? units.error ?? members.error;
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     return json(200, { areas: areas.data, locations: locations.data, units: units.data, teamMembers: members.data });
   }
 
   if (method === 'POST' && path === '/admin/areas') {
     const organizationId = adminContext!.organizationId;
-    const body = readBody<{ name?: string; sort_order?: number }>(event);
-    const name = body.name?.trim();
-    if (!name || name.length < 2) return json(400, { error: 'Area name is required.' });
-    const sortOrder = Number.isFinite(body.sort_order) ? Number(body.sort_order) : 0;
+    const values = normalizeAreaMutation(readBody<Record<string, unknown>>(event), true);
     const { data, error } = await supabase
       .from('areas')
-      .insert(withOrganization({ name, sort_order: sortOrder }, organizationId))
+      .insert(withOrganization(values, organizationId))
       .select('*')
       .single();
     if (error) {
       if (error.code === '23505') return json(409, { error: 'An area with that name already exists in this workspace.' });
-      return json(500, { error: error.message });
+      throw error;
     }
     return json(200, { area: data });
   }
@@ -2694,19 +3643,13 @@ async function route(event: HandlerEvent) {
   const areaMatch = path.match(/^\/admin\/areas\/([^/]+)$/);
   if (method === 'PATCH' && areaMatch) {
     const organizationId = adminContext!.organizationId;
-    const body = readBody<{ name?: string; sort_order?: number }>(event);
-    const values: Record<string, unknown> = {};
-    if (body.name !== undefined) {
-      const name = body.name.trim();
-      if (!name || name.length < 2) return json(400, { error: 'Area name is required.' });
-      values.name = name;
-    }
-    if (body.sort_order !== undefined) values.sort_order = Number(body.sort_order);
+    if (!isUuid(areaMatch[1])) return json(400, { error: 'Area ID must be a UUID.' });
+    const values = normalizeAreaMutation(readBody<Record<string, unknown>>(event), false);
     const areaUpdate = supabase.from('areas').update(values).eq('id', areaMatch[1]);
     const { data, error } = await scoped(areaUpdate, organizationId).select('*').maybeSingle();
     if (error) {
       if (error.code === '23505') return json(409, { error: 'An area with that name already exists in this workspace.' });
-      return json(500, { error: error.message });
+      throw error;
     }
     if (!data) return json(404, { error: 'Area not found.' });
     return json(200, { area: data });
@@ -2718,6 +3661,7 @@ async function route(event: HandlerEvent) {
     const limit = boundedInteger(params.limit, 75, 1, 250);
     const offset = boundedInteger(params.offset, 0, 0, 100000);
     const search = (params.search ?? '').trim();
+    const range = dateRangeFilters(params);
     const needsMappedFiltering = Boolean(params.areaId || search);
     const scanLimit = needsMappedFiltering ? Math.min(Math.max(offset + limit + 200, 500), 2000) : limit;
     let query = scoped(
@@ -2731,15 +3675,15 @@ async function route(event: HandlerEvent) {
       organizationId,
     );
 
-    if (params.from) query = query.gte('checked_in_at', `${params.from}T00:00:00.000Z`);
-    if (params.to) query = query.lte('checked_in_at', `${params.to}T23:59:59.999Z`);
+    if (range.from) query = query.gte('checked_in_at', range.from);
+    if (range.to) query = query.lte('checked_in_at', range.to);
     if (params.teamMemberId) query = query.eq('team_member_id', params.teamMemberId);
     if (params.unitId) query = query.eq('unit_id', params.unitId);
     if (params.includeVoided !== 'true') query = query.is('voided_at', null);
     query = needsMappedFiltering ? query.limit(scanLimit) : query.range(offset, offset + limit - 1);
 
     const { data, error, count } = await query;
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
 
     const mapped = (data ?? []).map((checkin: any) => {
       const directLocation = checkin.locations;
@@ -2813,12 +3757,45 @@ async function route(event: HandlerEvent) {
       referralProvided?: unknown;
       adminTeamMemberId?: string;
     }>(event);
-    if (!body.adminTeamMemberId) return json(400, { error: 'adminTeamMemberId is required.' });
+    assertAllowedFields(body as Record<string, unknown>, [
+      'unit_id',
+      'checked_in_at',
+      'team_member_id',
+      'voided',
+      'void_reason',
+      'confidentialCareProvided',
+      'referralProvided',
+      'adminTeamMemberId',
+    ]);
+    if (!isUuid(adminCheckinMatch[1])) return json(400, { error: 'Check-in ID must be a UUID.' });
+    if (!isUuid(body.adminTeamMemberId)) return json(400, { error: 'adminTeamMemberId must be a UUID.' });
+    if (body.unit_id !== undefined && !isUuid(body.unit_id)) return json(400, { error: 'unit_id must be a UUID.' });
+    if (body.team_member_id !== undefined && !isUuid(body.team_member_id)) {
+      return json(400, { error: 'team_member_id must be a UUID.' });
+    }
+    if (body.voided !== undefined && typeof body.voided !== 'boolean') {
+      return json(400, { error: 'voided must be true or false.' });
+    }
+    if (body.checked_in_at !== undefined) {
+      try {
+        body.checked_in_at = parseIsoInstant(body.checked_in_at, 'checked_in_at');
+      } catch (error) {
+        if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
+        throw error;
+      }
+    }
+    if (
+      !['unit_id', 'checked_in_at', 'team_member_id', 'voided', 'confidentialCareProvided', 'referralProvided'].some((key) =>
+        hasOwn(body as Record<string, unknown>, key),
+      )
+    ) {
+      return json(400, { error: 'At least one editable check-in field is required.' });
+    }
     try {
       await validateTeamMemberReferences([body.adminTeamMemberId, body.team_member_id].filter(Boolean), organizationId);
     } catch (error) {
       if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
-      return json(500, { error: errorMessage(error) });
+      throw error;
     }
 
     const existingQuery = supabase
@@ -2903,7 +3880,7 @@ async function route(event: HandlerEvent) {
       .update(update)
       .eq('id', adminCheckinMatch[1]);
     const { data, error } = await scoped(checkinUpdateQuery, organizationId).select('id').maybeSingle();
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     if (!data) return json(404, { error: 'Check-in not found.' });
     if (indicatorUpdate) {
       const batchUpdate = supabase
@@ -2911,34 +3888,36 @@ async function route(event: HandlerEvent) {
         .update(indicatorUpdate)
         .eq('id', existing.batch_id);
       const { error: batchUpdateError } = await scoped(batchUpdate, organizationId);
-      if (batchUpdateError) return json(500, { error: batchUpdateError.message });
+      if (batchUpdateError) throw batchUpdateError;
     }
     return json(200, { checkin: data, coverage: await getCoverage(organizationId) });
   }
 
   if (method === 'POST' && path === '/admin/locations') {
     const organizationId = adminContext!.organizationId;
-    const body = readBody<any>(event);
-    const { unitIds = [], ...locationValues } = body;
-    delete locationValues.organization_id;
+    const body = readBody<Record<string, unknown>>(event);
+    const unitIds = body.unitIds ?? [];
     if (!Array.isArray(unitIds)) return json(400, { error: 'unitIds must be an array.' });
+    const locationValues = normalizeLocationMutation(body, true);
+    let assignedUnitIds: string[] = [];
     try {
       await validateLocationReferences(locationValues, organizationId);
       await validateLocationCoordinates(locationValues, organizationId, true);
-      if (unitIds.length) await validateUnitAssignment(unitIds, organizationId);
+      if (unitIds.length) assignedUnitIds = await validateUnitAssignment(unitIds, organizationId);
     } catch (error) {
       if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
-      return json(500, { error: errorMessage(error) });
+      throw error;
     }
     const { data, error } = await supabase
       .from('locations')
       .insert(withOrganization(locationValues, organizationId))
       .select('*')
       .single();
-    if (error) return json(500, { error: error.message });
-    if (unitIds.length) {
-      const update = supabase.from('units').update({ location_id: data.id }).in('id', unitIds);
-      await scoped(update, organizationId);
+    if (error) throw error;
+    if (assignedUnitIds.length) {
+      const update = supabase.from('units').update({ location_id: data.id }).in('id', assignedUnitIds);
+      const { error: assignmentError } = await scoped(update, organizationId);
+      if (assignmentError) throw assignmentError;
     }
     return json(200, { location: data });
   }
@@ -2946,10 +3925,12 @@ async function route(event: HandlerEvent) {
   const locationMatch = path.match(/^\/admin\/locations\/([^/]+)$/);
   if (method === 'PATCH' && locationMatch) {
     const organizationId = adminContext!.organizationId;
-    const body = readBody<any>(event);
-    const { unitIds, ...locationValues } = body;
-    delete locationValues.organization_id;
+    if (!isUuid(locationMatch[1])) return json(400, { error: 'Location ID must be a UUID.' });
+    const body = readBody<Record<string, unknown>>(event);
+    const unitIds = body.unitIds;
     if (unitIds !== undefined && !Array.isArray(unitIds)) return json(400, { error: 'unitIds must be an array.' });
+    const locationValues = normalizeLocationMutation(body, false);
+    let assignedUnitIds: string[] | undefined;
     try {
       let existingLocationForValidation: { latitude: number; longitude: number; radius_meters: number } | null = null;
       const needsExistingCoordinates =
@@ -2961,84 +3942,119 @@ async function route(event: HandlerEvent) {
           .select('latitude, longitude, radius_meters')
           .eq('id', locationMatch[1]);
         const { data: existing, error: existingError } = await scoped(existingQuery, organizationId).maybeSingle();
-        if (existingError) return json(500, { error: existingError.message });
+        if (existingError) throw existingError;
         if (!existing) return json(404, { error: 'Location not found.' });
         existingLocationForValidation = existing;
       }
       await validateLocationReferences(locationValues, organizationId);
       await validateLocationCoordinates(locationValues, organizationId, false, existingLocationForValidation);
-      if (Array.isArray(unitIds)) await validateUnitAssignment(unitIds, organizationId);
+      if (Array.isArray(unitIds)) assignedUnitIds = await validateUnitAssignment(unitIds, organizationId);
     } catch (error) {
       if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
-      return json(500, { error: errorMessage(error) });
+      throw error;
     }
     const locationUpdate = supabase.from('locations').update(locationValues).eq('id', locationMatch[1]);
     const { data, error } = await scoped(locationUpdate, organizationId).select('*').maybeSingle();
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     if (!data) return json(404, { error: 'Location not found.' });
-    if (Array.isArray(unitIds)) {
-      const unitUpdate = supabase.from('units').update({ location_id: data.id }).in('id', unitIds);
-      await scoped(unitUpdate, organizationId);
+    if (assignedUnitIds?.length) {
+      const unitUpdate = supabase.from('units').update({ location_id: data.id }).in('id', assignedUnitIds);
+      const { error: assignmentError } = await scoped(unitUpdate, organizationId);
+      if (assignmentError) throw assignmentError;
     }
     return json(200, { location: data });
   }
 
   if (method === 'POST' && path === '/admin/units') {
     const organizationId = adminContext!.organizationId;
-    const body = readBody<any>(event);
-    delete body.organization_id;
+    const values = normalizeUnitMutation(readBody<Record<string, unknown>>(event), true);
     try {
-      await validateUnitReferences(body, organizationId);
+      await validateUnitReferences(values, organizationId);
     } catch (error) {
       if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
-      return json(500, { error: errorMessage(error) });
+      throw error;
     }
-    const { data, error } = await supabase.from('units').insert(withOrganization(body, organizationId)).select('*').single();
-    if (error) return json(500, { error: error.message });
+    const { data, error } = await supabase.from('units').insert(withOrganization(values, organizationId)).select('*').single();
+    if (error) throw error;
     return json(200, { unit: data });
   }
 
   const unitMatch = path.match(/^\/admin\/units\/([^/]+)$/);
   if (method === 'PATCH' && unitMatch) {
     const organizationId = adminContext!.organizationId;
-    const body = readBody<any>(event);
-    delete body.organization_id;
+    if (!isUuid(unitMatch[1])) return json(400, { error: 'Unit ID must be a UUID.' });
+    const values = normalizeUnitMutation(readBody<Record<string, unknown>>(event), false);
     try {
-      await validateUnitReferences(body, organizationId);
+      await validateUnitReferences(values, organizationId);
     } catch (error) {
       if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
-      return json(500, { error: errorMessage(error) });
+      throw error;
     }
-    const unitUpdate = supabase.from('units').update(body).eq('id', unitMatch[1]);
+    const unitUpdate = supabase.from('units').update(values).eq('id', unitMatch[1]);
     const { data, error } = await scoped(unitUpdate, organizationId).select('*').maybeSingle();
-    if (error) return json(500, { error: error.message });
+    if (error) throw error;
     if (!data) return json(404, { error: 'Unit not found.' });
     return json(200, { unit: data });
   }
 
   if (method === 'POST' && path === '/admin/team-members') {
     const organizationId = adminContext!.organizationId;
-    const body = readBody<any>(event);
-    delete body.organization_id;
+    const values = normalizeTeamMemberMutation(readBody<Record<string, unknown>>(event), true);
+    const memberId = crypto.randomUUID();
+    const temporaryPin = managedHostEnabled ? createTemporaryPin() : null;
+    const pinHashValue = temporaryPin
+      ? await createCredentialHash(pinCredentialContext(memberId, organizationId), temporaryPin)
+      : null;
     const { data, error } = await supabase
       .from('team_members')
-      .insert(withOrganization(body, organizationId))
+      .insert(withOrganization({ ...values, id: memberId, ...(pinHashValue ? { pin_hash: pinHashValue } : {}) }, organizationId))
       .select('id, name, role, active')
       .single();
-    if (error) return json(500, { error: error.message });
-    return json(200, { teamMember: data });
+    if (error) throw error;
+    return json(200, { teamMember: data, temporaryPin });
   }
 
   const memberMatch = path.match(/^\/admin\/team-members\/([^/]+)$/);
   if (method === 'PATCH' && memberMatch) {
     const organizationId = adminContext!.organizationId;
-    const body = readBody<any>(event);
-    delete body.organization_id;
-    const memberUpdate = supabase.from('team_members').update(body).eq('id', memberMatch[1]);
-    const { data, error } = await scoped(memberUpdate, organizationId).select('id, name, role, active').maybeSingle();
-    if (error) return json(500, { error: error.message });
-    if (!data) return json(404, { error: 'Team member not found.' });
-    return json(200, { teamMember: data });
+    if (!isUuid(memberMatch[1])) return json(400, { error: 'Team member ID must be a UUID.' });
+    const values = normalizeTeamMemberMutation(readBody<Record<string, unknown>>(event), false);
+    const requestedActive = typeof values.active === 'boolean' ? values.active : undefined;
+    const profileValues = { ...values };
+    delete profileValues.active;
+    if (Object.keys(profileValues).length) {
+      const memberUpdate = supabase.from('team_members').update(profileValues).eq('id', memberMatch[1]);
+      const { data, error } = await scoped(memberUpdate, organizationId).select('id').maybeSingle();
+      if (error) throw error;
+      if (!data) return json(404, { error: 'Team member not found.' });
+    }
+    if (requestedActive !== undefined && organizationId) {
+      const { data: statusChanged, error: statusError } = await supabase.rpc('set_team_member_active', {
+        p_organization_id: organizationId,
+        p_team_member_id: memberMatch[1],
+        p_active: requestedActive,
+      });
+      if (statusError) {
+        if (isMissingRelationError(statusError)) {
+          return json(503, { error: 'Team member status transaction is not configured yet.' });
+        }
+        throw statusError;
+      }
+      if (statusChanged !== true) return json(404, { error: 'Team member not found.' });
+    } else if (requestedActive !== undefined) {
+      const memberUpdate = supabase.from('team_members').update({ active: requestedActive }).eq('id', memberMatch[1]);
+      const deviceUpdate = supabase.from('devices').update({ active: false }).eq('team_member_id', memberMatch[1]);
+      const [{ error: memberError }, { error: deviceError }] = await Promise.all([
+        scoped(memberUpdate, organizationId),
+        scoped(deviceUpdate, organizationId),
+      ]);
+      if (memberError || deviceError) throw memberError ?? deviceError;
+    }
+    const memberQuery = supabase.from('team_members').select('id, name, role, active').eq('id', memberMatch[1]);
+    const { data: member, error: memberError } = await scoped(memberQuery, organizationId).maybeSingle();
+    if (memberError) throw memberError;
+    if (!member) return json(404, { error: 'Team member not found.' });
+    return json(200, { teamMember: member });
   }
 
   const memberResetPinMatch = path.match(/^\/admin\/team-members\/([^/]+)\/reset-pin$/);
@@ -3048,27 +4064,88 @@ async function route(event: HandlerEvent) {
     if (!isUuid(memberId)) return json(400, { error: 'Team member ID must be a UUID.' });
     const memberQuery = supabase.from('team_members').select('id, name').eq('id', memberId);
     const { data: member, error: memberError } = await scoped(memberQuery, organizationId).maybeSingle();
-    if (memberError) return json(500, { error: memberError.message });
+    if (memberError) throw memberError;
     if (!member) return json(404, { error: 'Team member not found.' });
-    const memberUpdate = supabase.from('team_members').update({ pin_hash: null }).eq('id', memberId);
+    const temporaryPin = createTemporaryPin();
+    const replacementPinHash = await createCredentialHash(pinCredentialContext(memberId, organizationId), temporaryPin);
+    if (organizationId) {
+      const { data: reset, error: resetTransactionError } = await supabase.rpc('reset_member_pin', {
+        p_organization_id: organizationId,
+        p_team_member_id: memberId,
+        p_pin_hash: replacementPinHash,
+      });
+      if (!resetTransactionError) {
+        if (reset !== true) return json(404, { error: 'Active team member not found.' });
+        return json(200, { teamMember: { id: member.id, name: member.name }, temporaryPin });
+      }
+      if (managedHostEnabled || !isMissingRelationError(resetTransactionError)) throw resetTransactionError;
+    }
+
+    // Compatibility path for local databases that predate the transactional helper.
+    const memberUpdate = supabase.from('team_members').update({ pin_hash: replacementPinHash }).eq('id', memberId);
     const deviceUpdate = supabase.from('devices').update({ active: false }).eq('team_member_id', memberId);
     const [{ error: resetError }, { error: deviceError }] = await Promise.all([
       scoped(memberUpdate, organizationId),
       scoped(deviceUpdate, organizationId),
     ]);
     if (resetError || deviceError) {
-      return json(500, { error: resetError?.message ?? deviceError?.message ?? 'Unable to reset member PIN.' });
+      throw resetError ?? deviceError ?? new Error('Unable to reset member PIN.');
     }
-    return json(200, { teamMember: { id: member.id, name: member.name } });
+    return json(200, { teamMember: { id: member.id, name: member.name }, temporaryPin });
   }
 
   return json(404, { error: 'Route not found.' });
 }
 
+const allowedCorsOrigins = new Set<string>();
+const addAllowedCorsOrigin = (candidate: string) => {
+  try {
+    const url = new URL(candidate);
+    const localDevelopmentOrigin = !managedHostEnabled && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+    if (url.protocol === 'https:' || (url.protocol === 'http:' && localDevelopmentOrigin)) {
+      allowedCorsOrigins.add(url.origin);
+    }
+  } catch {
+    // Invalid optional origins are ignored instead of widening CORS.
+  }
+};
+for (const candidate of (process.env.DECKPLATING_ALLOWED_ORIGINS ?? '').split(',')) {
+  if (candidate.trim()) addAllowedCorsOrigin(candidate.trim());
+}
+for (const candidate of [appBaseUrl, setupSiteBaseUrl]) {
+  addAllowedCorsOrigin(candidate);
+}
+if (!managedHostEnabled) {
+  allowedCorsOrigins.add('http://localhost:5173');
+  allowedCorsOrigins.add('http://127.0.0.1:5173');
+  allowedCorsOrigins.add('http://localhost:4173');
+  allowedCorsOrigins.add('http://127.0.0.1:4173');
+}
+
+const applyCors = <T extends { headers?: Record<string, string> }>(event: HandlerEvent, response: T): T => {
+  const origin = event.headers.origin ?? event.headers.Origin;
+  const headers = { ...(response.headers ?? {}) };
+  delete headers['access-control-allow-origin'];
+  const localWizardSearch = origin === 'null' && normalizePath(event) === '/installations/search';
+  if (origin && (allowedCorsOrigins.has(origin) || localWizardSearch)) headers['access-control-allow-origin'] = origin;
+  headers.vary = headers.vary ? `${headers.vary}, Origin` : 'Origin';
+  return { ...response, headers };
+};
+
 export const handler: Handler = async (event) => {
   try {
-    return await route(event);
+    return applyCors(event, await route(event));
   } catch (error) {
-    return json(500, { error: errorMessage(error) });
+    if (error instanceof RequestValidationError) {
+      return applyCors(event, json(error.statusCode, { error: error.message }));
+    }
+    const requestId = crypto.randomUUID();
+    console.error('Unhandled API error.', {
+      requestId,
+      method: event.httpMethod,
+      path: normalizePath(event),
+      error: errorMessage(error),
+    });
+    return applyCors(event, json(500, { error: 'An internal server error occurred.', requestId }));
   }
 };

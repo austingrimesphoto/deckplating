@@ -33,8 +33,9 @@ Keep `package-lock.json` committed so installs are reproducible.
 Before proposing a release, run:
 
 ```bash
-npm run test:tenant-isolation
-npm run typecheck
-npm run build
-npm run build --prefix setup-site
+npm run validate
+npm run test:ui
+npm audit --audit-level=high
 ```
+
+The live smoke and two-workspace integration scripts mutate their configured target and are not part of the default validation command. Run them only against an approved test deployment, or with the explicit production override described in the operator documentation.

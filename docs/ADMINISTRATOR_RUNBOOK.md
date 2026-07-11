@@ -8,6 +8,7 @@ Prerequisites:
 
 - run from the linked Deckplating repo
 - Netlify CLI authenticated to the linked production site
+- production has `DECKPLATING_MANAGED_HOST=true`, a dedicated random `ADMIN_SESSION_SECRET`, and a separate random `CREDENTIAL_PEPPER`, each at least 32 bytes
 
 Command:
 
@@ -18,10 +19,10 @@ Command:
 Procedure:
 
 1. Run the command above.
-2. Enter a new central operator passphrase twice when prompted.
+2. Enter a new central operator passphrase of at least 12 characters twice when prompted.
 3. The helper computes the SHA-256 hash locally and sets `CENTRAL_OPERATOR_PASSPHRASE_HASH` on the linked Netlify production site.
 4. The helper does not print the plaintext passphrase or the hash.
-5. Deploy the reviewed production build so operator login uses the new passphrase.
+5. Existing versioned operator sessions become invalid when the function environment refreshes. Deploy the reviewed production build and verify the new passphrase.
 
 Use the same helper later for emergency central-operator passphrase rotation.
 
@@ -104,8 +105,9 @@ Local admin path:
 1. Open `Admin`.
 2. Stay in the `Locations` setup section.
 3. Use `Create team member` to add a roster entry.
-4. Send the same workspace link to that member.
-5. The member selects their name and creates their own PIN on first sign-in.
+4. Record the initial PIN shown once after creation, then send the workspace link and PIN directly to that member through an authorized channel.
+5. The member selects their name and signs in with the issued PIN. Do not retain the plaintext PIN in notes, screenshots, tickets, or chat history.
+6. The member opens `Account` and changes the issued PIN to a private PIN; the app revokes that member's other device sessions.
 
 Deactivate a roster entry:
 
@@ -168,9 +170,9 @@ Result:
 
 Result:
 
-- the member PIN hash is cleared
+- a replacement PIN is shown once to the local administrator
 - the member's devices in that workspace are deactivated
-- the member must select their name and create a new PIN on next sign-in
+- the local administrator delivers the replacement PIN directly to the member
 
 ## Suspend Or Reactivate Workspace
 
@@ -216,6 +218,6 @@ Result:
 - email invitations
 - Supabase Auth or role-based user accounts
 - self-service workspace deletion or archive flows
-- exports or backups from the UI
+- local-admin self-service exports or full backups
 - analytics
 - broader production hardening beyond the controlled demonstration

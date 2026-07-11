@@ -186,6 +186,7 @@ export type PendingVisitBatch = VisitIndicatorState & {
   locationName: string | null;
   latitude?: number;
   longitude?: number;
+  accuracyMeters?: number;
   manual: boolean;
   occurredAt: string;
   syncStatus: 'pending' | 'syncing' | 'synced' | 'failed' | 'auth';

@@ -172,6 +172,14 @@ Then run the workspace request queue migration:
 4. Paste it into Supabase SQL Editor.
 5. Click **Run**.
 
+Then run the security and reliability hardening migration:
+
+1. Click **New query** again.
+2. In your GitHub copy, open `supabase/migrations/011_security_reliability_hardening.sql`.
+3. Copy the whole file.
+4. Paste it into Supabase SQL Editor.
+5. Click **Run** before deploying the matching application build.
+
 Then load starter data:
 
 1. Click **New query** again.
@@ -195,11 +203,9 @@ The `service_role` key is a server secret. Put it only in Netlify environment va
 
 ## Step 5: Use The Setup Wizard
 
-Preferred option: open the hosted setup site:
+The hosted setup site is only for requesting a workspace on the central controlled demonstration. Never paste a Supabase service key into that site.
 
-<https://deckplatingsetup.netlify.app>
-
-Backup option: open the setup wizard file from this repository:
+For an authorized self-hosted development deployment, open the setup wizard file from this repository locally:
 
 [setup-wizard.html](setup-wizard.html)
 
@@ -212,9 +218,9 @@ In the wizard:
 
 1. Paste the Supabase Project URL.
 2. Paste the Supabase `service_role` key.
-3. Type the admin passphrase you want for your Admin tab.
+3. Type an admin passphrase of at least 12 characters and confirm it.
 4. Type your installation or unit name.
-5. Click **Look Up Map Center**.
+5. Click **Look Up Map Center**. This sends only that installation name to OpenStreetMap; credentials stay in the local page.
 6. Confirm the latitude and longitude look reasonable. Overseas locations should work too, but enter latitude and longitude manually if lookup still fails.
 7. Leave map tile fields blank unless you already have a map provider key.
 8. Click **Generate Netlify Values**.
@@ -251,25 +257,28 @@ Before the first deploy, add environment variables:
 7. Click **Trigger deploy**.
 8. Click **Deploy site**.
 
-controlled demonstration hosts that use the workspace request approval queue should also set:
+Controlled demonstration hosts that use the workspace request approval queue should also set:
 
+- `DECKPLATING_MANAGED_HOST=true`
+- `CREDENTIAL_PEPPER` (a separate random secret of at least 32 bytes, function-scoped)
+- `CENTRAL_OPERATOR_PASSPHRASE_HASH`
 - `DECKPLATING_OPERATOR_EMAIL`
 - `DECKPLATING_FROM_EMAIL`
 - `RESEND_API_KEY`
 - `DECKPLATING_APP_BASE_URL`
 - `DECKPLATING_SETUP_SITE_BASE_URL`
+- `NOTIFICATION_MODE` (`disabled`, `mailto`, or `provider`)
 
-If the email variables are blank, workspace requests and approvals still work, but notification status is recorded as skipped.
+`NOTIFICATION_MODE` defaults to `disabled`. Use `provider` only with the reviewed Resend provider key and from address, or `mailto` to prepare a draft for the operator without sending automatically. SMTP and Microsoft Graph delivery are not implemented. If the email variables are blank, workspace requests and approvals still work, but notification status is recorded as skipped or failed configuration rather than pretending a message was sent.
 
 ## Step 7: First Launch
 
 1. Open the Netlify site URL.
-2. Select your name.
-3. Choose a 4-digit PIN.
-4. The first PIN you enter becomes your PIN.
-5. Go to **Admin**.
-6. Enter the admin passphrase from the setup wizard.
-7. Add or edit team members, locations, units, and mapped areas.
+2. Go to **Admin** and enter the admin passphrase from the setup wizard.
+3. Add or edit team members, locations, units, and mapped areas.
+4. Managed hosts issue each roster member an initial 4-digit PIN from Admin. Deliver it directly; it is shown once.
+5. The member selects the workspace and name, enters the issued PIN, and can replace it from **Account**.
+6. An unmanaged local-development install may still allow an empty legacy roster entry to claim its first PIN.
 
 ## Phone Setup
 
@@ -379,7 +388,7 @@ If offline mode does not work:
 
 If Mission Board tone will not save:
 
-- Confirm migrations `004` through `010` were run.
+- Confirm migrations `004` through `011` were run.
 - Confirm the Admin tab unlocks with the current admin passphrase.
 
 If the Admin tab will not unlock:

@@ -1,58 +1,66 @@
 import crypto from 'node:crypto';
+import { createJsonClient, liveCheckSuffix, normalizeLiveCheckBaseUrl } from './lib/live-check.mjs';
 
-const baseUrl = (process.env.DECKPLATING_SMOKE_BASE_URL ?? '').replace(/\/$/, '');
 const operatorPassphrase = process.env.DECKPLATING_SMOKE_OPERATOR_PASSPHRASE ?? '';
 const allowProd = process.env.DECKPLATING_SMOKE_ALLOW_PROD === 'YES';
 
-if (!baseUrl || !operatorPassphrase) {
+if (!process.env.DECKPLATING_SMOKE_BASE_URL || !operatorPassphrase) {
   console.error('Set DECKPLATING_SMOKE_BASE_URL and DECKPLATING_SMOKE_OPERATOR_PASSPHRASE to run this smoke check.');
   process.exit(1);
 }
 
-if (baseUrl.includes('deckplating.netlify.app') && !allowProd) {
-  console.error('Refusing to run against production unless DECKPLATING_SMOKE_ALLOW_PROD=YES is set.');
+let baseUrl;
+try {
+  baseUrl = normalizeLiveCheckBaseUrl(process.env.DECKPLATING_SMOKE_BASE_URL, {
+    allowProduction: allowProd,
+    productionHostname: 'deckplating.netlify.app',
+  });
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
 
-const suffix = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+const suffix = liveCheckSuffix();
 const slug = `smoke-${suffix}`.toLowerCase();
 let organization = null;
 let operatorToken = '';
 let workspaceRequestId = '';
+const request = createJsonClient(baseUrl);
 
-async function request(path, { method = 'GET', token, body, expected = [200] } = {}) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    body: body == null ? undefined : JSON.stringify(body),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!expected.includes(response.status)) {
-    throw new Error(`${method} ${path} returned ${response.status}: ${data.error ?? 'Unexpected response.'}`);
-  }
-  return data;
+async function findSmokeOrganization() {
+  const result = await request('/api/operator/organizations', { token: operatorToken });
+  return result.organizations.find((candidate) => candidate.slug === slug) ?? null;
 }
 
 async function cleanup() {
-  if (!operatorToken) return;
+  if (!operatorToken) return true;
+  try {
+    organization = organization ?? (await findSmokeOrganization());
+  } catch (error) {
+    console.error(`CLEANUP could not inspect workspaces for ${slug}: ${error.message}`);
+    return false;
+  }
   if (!organization && workspaceRequestId) {
     try {
       await request(`/api/operator/workspace-requests/${workspaceRequestId}/reject`, {
         method: 'POST',
         token: operatorToken,
         body: { operatorNote: 'Smoke cleanup for unapproved request.' },
-        expected: [200, 400, 404],
+        expected: [200, 404, 409],
       });
       console.log(`CLEANUP rejected workspace request ${workspaceRequestId}`);
     } catch (error) {
       console.error(`CLEANUP failed for workspace request ${workspaceRequestId}: ${error.message}`);
+      return false;
     }
-    return;
+    try {
+      organization = await findSmokeOrganization();
+    } catch (error) {
+      console.error(`CLEANUP could not confirm rejection for ${slug}: ${error.message}`);
+      return false;
+    }
   }
-  if (!organization) return;
+  if (!organization) return true;
   try {
     await request(`/api/operator/organizations/${organization.id}/delete`, {
       method: 'DELETE',
@@ -63,7 +71,9 @@ async function cleanup() {
     console.log(`CLEANUP deleted ${organization.slug}`);
   } catch (error) {
     console.error(`CLEANUP failed for ${organization.slug}: ${error.message}`);
+    return false;
   }
+  return true;
 }
 
 try {
@@ -72,6 +82,7 @@ try {
     body: { passphrase: operatorPassphrase },
   });
   operatorToken = login.token;
+  if (typeof operatorToken !== 'string' || !operatorToken) throw new Error('Operator login did not return a token.');
   console.log('PASS operator login.');
 
   const submittedRequest = await request('/api/workspace-requests', {
@@ -165,17 +176,56 @@ try {
   console.log('PASS local setup creation.');
 
   const deviceToken = crypto.randomUUID();
+  const memberPin = member.temporaryPin ?? '2468';
   const registered = await request('/api/device/register', {
     method: 'POST',
     body: {
       teamMemberId: member.teamMember.id,
-      pin: '2468',
+      pin: memberPin,
       deviceToken,
       deviceLabel: 'first-pilot-smoke',
       organizationId: organization.id,
     },
   });
   console.log('PASS member registration.');
+
+  const rejectedAdminAccess = await request('/api/admin/settings', {
+    token: registered.sessionToken,
+    expected: [403],
+  });
+  if (!/admin authorization required/i.test(String(rejectedAdminAccess.error ?? ''))) {
+    throw new Error('A normal member token was not explicitly rejected by the Admin API.');
+  }
+  console.log('PASS member session cannot access Admin API.');
+
+  const replacementPin = '1357';
+  await request('/api/device/change-pin', {
+    method: 'POST',
+    token: registered.sessionToken,
+    body: { currentPin: memberPin, newPin: replacementPin, deviceToken },
+  });
+  await request('/api/device/register', {
+    method: 'POST',
+    expected: [403],
+    body: {
+      teamMemberId: member.teamMember.id,
+      pin: memberPin,
+      deviceToken: crypto.randomUUID(),
+      deviceLabel: 'first-pilot-old-pin-check',
+      organizationId: organization.id,
+    },
+  });
+  await request('/api/device/register', {
+    method: 'POST',
+    body: {
+      teamMemberId: member.teamMember.id,
+      pin: replacementPin,
+      deviceToken: crypto.randomUUID(),
+      deviceLabel: 'first-pilot-new-pin-check',
+      organizationId: organization.id,
+    },
+  });
+  console.log('PASS member can rotate the issued PIN and the previous PIN is rejected.');
 
   await request('/api/checkins', {
     method: 'POST',
@@ -254,5 +304,5 @@ try {
 
   console.log('\nFirst-pilot smoke check passed.');
 } finally {
-  await cleanup();
+  if (!(await cleanup())) process.exitCode = 1;
 }

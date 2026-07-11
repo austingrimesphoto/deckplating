@@ -1,8 +1,36 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const screenshotsDir = path.join('test-results', 'ui-screenshots');
+const browserErrors = new WeakMap<Page, string[]>();
+const appOrigin = 'http://127.0.0.1:4173';
+
+test.beforeEach(async ({ page }) => {
+  const errors: string[] = [];
+  browserErrors.set(page, errors);
+  page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(`console.error: ${message.text()}`);
+  });
+  page.on('requestfailed', (request) => {
+    const url = new URL(request.url());
+    if (url.origin === appOrigin && url.pathname.startsWith('/api/')) {
+      errors.push(`request failed: ${request.method()} ${url.pathname} (${request.failure()?.errorText ?? 'unknown error'})`);
+    }
+  });
+  page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (url.origin === appOrigin && url.pathname.startsWith('/api/') && response.status() >= 400) {
+      errors.push(`API response: ${response.request().method()} ${url.pathname} returned ${response.status()}`);
+    }
+  });
+});
+
+test.afterEach(async ({ page }) => {
+  const errors = browserErrors.get(page) ?? [];
+  expect.soft(errors, errors.join('\n')).toEqual([]);
+});
 
 const workspace = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -169,6 +197,9 @@ async function mockAppApi(page: import('@playwright/test').Page) {
       },
     }),
   );
+  await page.route('**/api/device/change-pin', (route) =>
+    route.fulfill({ json: { changed: true, otherDevicesRevoked: true } }),
+  );
   await page.route('**/api/bootstrap', (route) =>
     route.fulfill({
       json: {
@@ -318,7 +349,57 @@ async function mockAppApi(page: import('@playwright/test').Page) {
 
 async function screenshot(page: import('@playwright/test').Page, projectName: string, name: string) {
   fs.mkdirSync(screenshotsDir, { recursive: true });
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: path.join(screenshotsDir, `${projectName}-${name}.png`), fullPage: true });
+}
+
+async function seedPendingBatches(page: Page, batches: Array<Record<string, unknown>>) {
+  await page.evaluate(async (records) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('deckplate-coverage-offline', 3);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    try {
+      const transaction = database.transaction('pendingBatches', 'readwrite');
+      const store = transaction.objectStore('pendingBatches');
+      for (const record of records) store.put(record);
+      await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    } finally {
+      database.close();
+    }
+  }, batches);
+}
+
+async function readOfflineRecords(page: Page, storeName: 'bootstrap' | 'pendingBatches') {
+  return page.evaluate(async (name) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('deckplate-coverage-offline', 3);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    try {
+      const transaction = database.transaction(name, 'readonly');
+      const request = transaction.objectStore(name).getAll();
+      return await new Promise<unknown[]>((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    } finally {
+      database.close();
+    }
+  }, storeName);
+}
+
+function clearExpectedApiError(page: Page, expected: string) {
+  const remaining = (browserErrors.get(page) ?? []).filter(
+    (entry) => entry !== expected && entry !== 'console.error: Failed to load resource: the server responded with a status of 400 (Bad Request)',
+  );
+  browserErrors.set(page, remaining);
 }
 
 test('captures core user and admin screens', async ({ page }, testInfo) => {
@@ -340,12 +421,249 @@ test('captures core user and admin screens', async ({ page }, testInfo) => {
   await expect(page.getByRole('heading', { name: 'Weekly and monthly leaders' })).toBeVisible();
   await screenshot(page, testInfo.project.name, '04-mission-winners');
 
+  await page.getByRole('button', { name: 'Account' }).click();
+  await expect(page.getByRole('heading', { name: 'Change PIN' })).toBeVisible();
+  await page.getByLabel('Current PIN').first().fill('2468');
+  await page.getByLabel('New PIN').first().fill('1357');
+  await page.getByLabel('Confirm new PIN').fill('1357');
+  await page.getByRole('button', { name: 'Change PIN' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'PIN changed' })).toBeVisible();
+  await screenshot(page, testInfo.project.name, '05-account-pin');
+
   await page.getByRole('button', { name: 'Admin' }).click();
   await page.getByLabel('Local admin passphrase').fill('demo-admin-passphrase');
   await page.getByRole('button', { name: 'Unlock' }).click();
   await expect(page.getByRole('heading', { name: /Quality controls/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Complete onboarding' })).toHaveCount(0);
-  await screenshot(page, testInfo.project.name, '05-admin-release-note');
+  await page.getByLabel('New location name').fill('Unsaved map form location');
+  await page.getByLabel('Area for new location').selectOption(areas[0].id);
+  await page.getByRole('slider').fill('333');
+  await expect(page.locator('.admin-map canvas')).toBeVisible();
+  await page.locator('.admin-map').click({ position: { x: 80, y: 80 } });
+  await expect(page.getByLabel('New location name')).toHaveValue('Unsaved map form location');
+  await expect(page.getByLabel('Area for new location')).toHaveValue(areas[0].id);
+  await expect(page.getByRole('slider')).toHaveValue('333');
+  await page.getByRole('button', { name: 'Lock Admin' }).click();
+  await expect(page.getByRole('button', { name: 'Unlock' })).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem('deckplate.admin'))).toBeNull();
+  await screenshot(page, testInfo.project.name, '06-admin-release-note');
+});
+
+test('submits a manual check-in with the selected workspace data', async ({ page }) => {
+  let submittedBody: Record<string, unknown> | null = null;
+  await mockAppApi(page);
+  await page.route('**/api/checkins', async (route) => {
+    submittedBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      json: {
+        batchId: '12121212-1212-4212-8212-121212121212',
+        clientBatchId: submittedBody.clientBatchId,
+        locationId: submittedBody.locationId,
+        checkins: [{ id: '13131313-1313-4313-8313-131313131313', score_awarded: 3 }],
+        totalScore: 3,
+        indicators: { confidentialCareProvided: null, referralProvided: null },
+      },
+    });
+  });
+
+  await page.goto('/');
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  const manualLocation = page.getByLabel('Manual check-in location');
+  const openManualLookup = page.getByRole('button', { name: /Manual unit lookup|Choose another location or unit/ });
+  await expect(manualLocation.or(openManualLookup)).toBeVisible();
+  if (!(await manualLocation.isVisible())) await openManualLookup.click();
+
+  await manualLocation.selectOption(locations[0].id);
+  await page.getByRole('checkbox', { name: /Engineering Department/ }).check();
+  await page.getByRole('button', { name: 'Submit Manual Check-In' }).click();
+
+  await expect(page.getByRole('heading', { name: '1 unit checked in' })).toBeVisible();
+  expect(submittedBody).toMatchObject({
+    teamMemberId: teamMembers[0].id,
+    locationId: locations[0].id,
+    unitIds: [units[0].id],
+    manual: true,
+  });
+});
+
+test('continues after a rejected offline visit and lets the user discard the failed item', async ({ page }) => {
+  await mockAppApi(page);
+  await page.goto('/');
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'CH Doe' })).toBeVisible();
+
+  const now = new Date().toISOString();
+  const failedBatchId = '41414141-4141-4414-8414-414141414141';
+  const successfulBatchId = '42424242-4242-4424-8424-424242424242';
+  const baseBatch = {
+    organizationId: workspace.id,
+    teamMemberId: teamMembers[0].id,
+    teamMemberName: teamMembers[0].name,
+    deviceToken: '44444444-4444-4444-8444-444444444444',
+    locationId: locations[0].id,
+    locationName: locations[0].name,
+    latitude: undefined,
+    longitude: undefined,
+    accuracyMeters: undefined,
+    manual: true,
+    occurredAt: now,
+    confidentialCareProvided: null,
+    referralProvided: null,
+    syncStatus: 'pending',
+    lastSyncError: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await seedPendingBatches(page, [
+    { ...baseBatch, clientBatchId: failedBatchId, unitIds: [units[0].id], unitNames: [units[0].name] },
+    { ...baseBatch, clientBatchId: successfulBatchId, unitIds: [units[1].id], unitNames: [units[1].name] },
+  ]);
+
+  const submittedBatchIds: string[] = [];
+  await page.route('**/api/checkins', async (route) => {
+    const body = route.request().postDataJSON() as { clientBatchId: string; locationId: string | null };
+    submittedBatchIds.push(body.clientBatchId);
+    if (body.clientBatchId === failedBatchId) {
+      await route.fulfill({ status: 400, json: { error: 'The selected unit is no longer active.' } });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        batchId: '43434343-4343-4434-8434-434343434343',
+        clientBatchId: body.clientBatchId,
+        locationId: body.locationId,
+        checkins: [{ id: '45454545-4545-4454-8454-454545454545', score_awarded: 1 }],
+        totalScore: 1,
+        indicators: { confidentialCareProvided: null, referralProvided: null },
+      },
+    });
+  });
+
+  await page.getByRole('button', { name: 'Sync Now' }).click();
+  await expect(page.getByText('Saved visits need attention')).toBeVisible();
+  await expect(page.getByText(units[0].name)).toBeVisible();
+  await expect.poll(() => [...submittedBatchIds]).toEqual([failedBatchId, successfulBatchId]);
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Remove' }).click();
+  await expect(page.getByText('Saved visits need attention')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Account' }).click();
+  await expect(page.getByRole('button', { name: 'Sign out of this account' })).toBeEnabled();
+  clearExpectedApiError(page, 'API response: POST /api/checkins returned 400');
+});
+
+test('promotes an offline confirmation before undoing the uploaded server visit', async ({ page }) => {
+  let failUpload = true;
+  let undoBody: Record<string, unknown> | null = null;
+  await mockAppApi(page);
+  await page.route('**/api/checkins', async (route) => {
+    if (failUpload) {
+      await route.abort('internetdisconnected');
+      return;
+    }
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      json: {
+        batchId: '51515151-5151-4515-8515-515151515151',
+        clientBatchId: body.clientBatchId,
+        locationId: body.locationId,
+        checkins: [{ id: '52525252-5252-4525-8525-525252525252', score_awarded: 3 }],
+        totalScore: 3,
+        indicators: { confidentialCareProvided: null, referralProvided: null },
+      },
+    });
+  });
+  await page.route('**/api/checkins/undo', async (route) => {
+    undoBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ json: { undone: 1, coverage: { areas, units } } });
+  });
+
+  await page.goto('/');
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  const manualLocation = page.getByLabel('Manual check-in location');
+  const openManualLookup = page.getByRole('button', { name: /Manual unit lookup|Choose another location or unit/ });
+  await expect(manualLocation.or(openManualLookup)).toBeVisible();
+  if (!(await manualLocation.isVisible())) await openManualLookup.click();
+  await manualLocation.selectOption(locations[0].id);
+  await page.getByRole('checkbox', { name: /Engineering Department/ }).check();
+  await page.getByRole('button', { name: 'Submit Manual Check-In' }).click();
+  await expect(page.getByText('Saved on this device', { exact: true })).toBeVisible();
+
+  failUpload = false;
+  await page.getByRole('button', { name: 'Sync Now' }).click();
+  await expect(page.getByText('Check-in saved', { exact: true })).toBeVisible();
+  await expect(page.locator('.confirmation-details dd').nth(1)).toHaveText('3');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Undo this check-in' }).click();
+  await expect(page.getByText('Check-in undone. Coverage and scores have been refreshed.')).toBeVisible();
+  expect(undoBody).toMatchObject({
+    teamMemberId: teamMembers[0].id,
+    checkinIds: ['52525252-5252-4525-8525-525252525252'],
+  });
+  const errors = browserErrors.get(page) ?? [];
+  browserErrors.set(
+    page,
+    errors.filter(
+      (entry) =>
+        !entry.startsWith('request failed: POST /api/checkins') &&
+        entry !== 'console.error: Failed to load resource: net::ERR_INTERNET_DISCONNECTED',
+    ),
+  );
+});
+
+test('preserves cached identity and queued visits when a workspace kiosk link cannot resolve', async ({ page }) => {
+  await mockAppApi(page);
+  await page.goto('/');
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'CH Doe' })).toBeVisible();
+  await expect.poll(async () => (await readOfflineRecords(page, 'bootstrap')).length).toBeGreaterThan(0);
+
+  const now = new Date().toISOString();
+  const pendingId = '61616161-6161-4616-8616-616161616161';
+  await seedPendingBatches(page, [{
+    clientBatchId: pendingId,
+    organizationId: workspace.id,
+    teamMemberId: teamMembers[0].id,
+    teamMemberName: teamMembers[0].name,
+    deviceToken: '44444444-4444-4444-8444-444444444444',
+    unitIds: [units[0].id],
+    unitNames: [units[0].name],
+    locationId: locations[0].id,
+    locationName: locations[0].name,
+    manual: true,
+    occurredAt: now,
+    confidentialCareProvided: null,
+    referralProvided: null,
+    syncStatus: 'pending',
+    lastSyncError: null,
+    createdAt: now,
+    updatedAt: now,
+  }]);
+  await page.route('**/api/workspaces/resolve**', (route) => route.fulfill({ status: 503, json: { error: 'Temporary outage.' } }));
+  await page.route('**/api/bootstrap', (route) => route.fulfill({ status: 503, json: { error: 'Temporary outage.' } }));
+  await page.route('**/api/checkins', (route) => route.fulfill({ status: 503, json: { error: 'Temporary outage.' } }));
+
+  await page.goto('/?workspace=demo&kiosk=1');
+  await expect(page.getByRole('heading', { name: 'Demo Installation' })).toBeVisible();
+  await expect(page.getByText('Map unavailable offline. Use the priority list.')).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('deckplate.identity') ?? 'null')?.teamMemberId)).toBe(teamMembers[0].id);
+  await expect.poll(async () => (await readOfflineRecords(page, 'pendingBatches')).some((record: any) => record.clientBatchId === pendingId)).toBe(true);
+
+  const expectedApiErrors = new Set([
+    'API response: GET /api/workspaces/resolve returned 503',
+    'API response: GET /api/bootstrap returned 503',
+    'API response: POST /api/checkins returned 503',
+  ]);
+  browserErrors.set(
+    page,
+    (browserErrors.get(page) ?? []).filter(
+      (entry) => !expectedApiErrors.has(entry) && entry !== 'console.error: Failed to load resource: the server responded with a status of 503 (Service Unavailable)',
+    ),
+  );
 });
 
 test('captures kiosk dashboard', async ({ page }, testInfo) => {

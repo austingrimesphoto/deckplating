@@ -24,7 +24,9 @@ import type {
 import {
   countBlockingPendingBatches,
   findCachedNearbyLocations,
+  getCachedLocationSummaries,
   getBootstrapSnapshot,
+  getPendingBatch,
   getPendingBatches,
   removePendingBatch,
   saveBootstrapSnapshot,
@@ -32,6 +34,7 @@ import {
   updatePendingBatchIndicators,
 } from './offline';
 import { briefForDate } from './content/deckplateBriefs';
+import { acquireFreshPosition } from './fresh-location-bridge';
 
 type Screen = 'checkin' | 'coverage' | 'map' | 'admin' | 'scoreboard' | 'settings';
 
@@ -135,7 +138,7 @@ type PageMetadata = {
 let maplibrePromise: Promise<typeof import('maplibre-gl')> | null = null;
 
 const loadMapLibre = () => {
-  maplibrePromise ??= import('maplibre-gl');
+  maplibrePromise ??= Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]).then(([maplibre]) => maplibre);
   return maplibrePromise;
 };
 
@@ -164,6 +167,16 @@ type CheckinConfirmation = {
 
 type SyncState = 'synced' | 'offline' | 'pending' | 'auth' | 'failed';
 
+type BatchSyncedDetail = {
+  clientBatchId: string;
+  organizationId: string | null;
+  teamMemberId: string;
+  checkinIds: string[];
+  totalScore: number;
+};
+
+const batchSyncedEvent = 'deckplate:batch-synced';
+
 const safeUseSummary =
   'Deckplating is an unofficial open-source prototype, not approved by DON or DoD. Use only for unclassified, non-sensitive coverage awareness unless authorized by local IT/N6.';
 
@@ -186,6 +199,84 @@ const workspaceKey = 'deckplate.workspace';
 const operatorKey = 'deckplate.operator';
 const feedbackUrl = 'https://deckplatingsetup.netlify.app/#feedback';
 const ministryIndicatorsEnabled = /^true$/i.test(import.meta.env.VITE_ENABLE_MINISTRY_INDICATORS ?? '');
+
+function readLocalValue(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalValue(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function removeLocalValue(key: string) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Storage can be unavailable in hardened/private browser contexts.
+  }
+}
+
+function readSessionValue(key: string) {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionValue(key: string, value: string) {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    // The in-memory session can continue when browser storage is unavailable.
+  }
+}
+
+function removeSessionValue(key: string) {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // The in-memory session can continue when browser storage is unavailable.
+  }
+}
+
+function readStoredJson<T>(key: string): T | null {
+  try {
+    const value = readLocalValue(key);
+    if (!value) return null;
+    return JSON.parse(value) as T;
+  } catch {
+    removeLocalValue(key);
+    return null;
+  }
+}
+
+function writeStoredJson(key: string, value: unknown) {
+  return writeLocalValue(key, JSON.stringify(value));
+}
+
+function readStoredIdentity() {
+  const value = readStoredJson<Identity>(identityKey);
+  if (!value || typeof value.sessionToken !== 'string' || typeof value.teamMemberId !== 'string') return null;
+  if (value.organizationId) return value;
+  const migrated = { ...value, organizationId: readStoredWorkspace()?.id ?? defaultWorkspace.id };
+  writeStoredJson(identityKey, migrated);
+  return migrated;
+}
+
+function readStoredWorkspace() {
+  const value = readStoredJson<WorkspaceContext>(workspaceKey);
+  return value && typeof value.id === 'string' && typeof value.slug === 'string' && typeof value.name === 'string' ? value : null;
+}
 
 const defaultWorkspace: WorkspaceContext = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -224,21 +315,36 @@ const kioskLinkForWorkspace = (workspace: WorkspaceContext | null) => {
   return workspaceKey ? `/?workspace=${encodeURIComponent(workspaceKey)}&kiosk=1` : '/?kiosk=1';
 };
 
+const workspaceHomeLink = (workspace: WorkspaceContext | null) => {
+  const key = workspace?.slug || workspace?.id;
+  return key ? `/?workspace=${encodeURIComponent(key)}` : '/';
+};
+
 const looksLikeUuid = (value: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 const workspaceQuery = (workspace: WorkspaceContext | null) =>
   workspace?.id ? `?organizationId=${encodeURIComponent(workspace.id)}` : '';
 
+const leaderboardPath = (month: string) => {
+  const params = new URLSearchParams({ month });
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (timeZone) params.set('timeZone', timeZone);
+  return `/api/leaderboard?${params.toString()}`;
+};
+
 async function api<T>(path: string, options: RequestInit & { timeoutMs?: number } = {}) {
-  const { timeoutMs = 10000, ...requestOptions } = options;
+  const { timeoutMs = 10000, signal: externalSignal, ...requestOptions } = options;
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  const forwardExternalAbort = () => controller.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) forwardExternalAbort();
+  else externalSignal?.addEventListener('abort', forwardExternalAbort, { once: true });
   try {
     const response = await fetch(path, {
       ...requestOptions,
       headers: { 'content-type': 'application/json', ...(requestOptions.headers ?? {}) },
-      signal: requestOptions.signal ?? controller.signal,
+      signal: controller.signal,
     });
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('application/json')) {
@@ -253,6 +359,7 @@ async function api<T>(path: string, options: RequestInit & { timeoutMs?: number 
     return data;
   } finally {
     window.clearTimeout(timeout);
+    externalSignal?.removeEventListener('abort', forwardExternalAbort);
   }
 }
 
@@ -279,9 +386,19 @@ const statusText: Record<UnitSummary['status'], string> = {
 
 const statusLabel = (unit: UnitSummary) => statusText[unit.status];
 
-const niceDate = (date: string | null) => (date ? new Date(date).toLocaleDateString() : 'Never');
+const parsedDate = (value: string) => new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value);
 
-const niceDateTime = (date: string | null) => (date ? new Date(date).toLocaleString() : 'Never');
+const niceDate = (date: string | null) => {
+  if (!date) return 'Never';
+  const value = parsedDate(date);
+  return Number.isNaN(value.getTime()) ? 'Unknown' : value.toLocaleDateString();
+};
+
+const niceDateTime = (date: string | null) => {
+  if (!date) return 'Never';
+  const value = parsedDate(date);
+  return Number.isNaN(value.getTime()) ? 'Unknown' : value.toLocaleString();
+};
 
 const matchesSearch = (query: string, values: unknown[]) => {
   const needle = query.trim().toLowerCase();
@@ -291,6 +408,7 @@ const matchesSearch = (query: string, values: unknown[]) => {
 
 const datetimeLocalValue = (date: string) => {
   const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return '';
   const offsetMs = parsed.getTimezoneOffset() * 60000;
   return new Date(parsed.getTime() - offsetMs).toISOString().slice(0, 16);
 };
@@ -335,48 +453,10 @@ const locationInputError = (latitude: number, longitude: number, radiusMeters: n
   return '';
 };
 
-const mappedLocationSummaries = (units: UnitSummary[]) => {
-  const grouped = new Map<string, LocationSummary>();
-  for (const unit of units) {
-    if (
-      !unit.location_id ||
-      !validLatitude(unit.latitude) ||
-      !validLongitude(unit.longitude) ||
-      !validLocationRadius(unit.radius_meters)
-    ) {
-      continue;
-    }
-    const existing = grouped.get(unit.location_id);
-    if (existing) {
-      existing.units.push(unit);
-      existing.status = statusPriority[unit.status] > statusPriority[existing.status] ? unit.status : existing.status;
-    } else {
-      grouped.set(unit.location_id, {
-        id: unit.location_id,
-        area_id: unit.area_id ?? '',
-        area_name: unit.area_name ?? '',
-        name: unit.location_name ?? '',
-        latitude: unit.latitude,
-        longitude: unit.longitude,
-        radius_meters: unit.radius_meters,
-        status: unit.status,
-        units: [unit],
-      });
-    }
-  }
-  return Array.from(grouped.values());
-};
-
 const unitTypeLabel: Record<UnitType, string> = {
   department: 'Department',
   division: 'Division',
   tenant: 'Tenant command',
-};
-
-const toneLabel: Record<GamificationTone, string> = {
-  professional: 'Professional',
-  friendly: 'Friendly',
-  banter: 'Deckplate Banter',
 };
 
 const badgeLabel: Record<MissionBadge, string> = {
@@ -478,7 +558,6 @@ const missionBriefMessages: Record<GamificationTone, Record<MissionBriefContext,
 };
 
 const missionBriefDateKey = 'deckplate.missionBrief.lastExpandedDate';
-const missionBriefLastMessageKey = 'deckplate.missionBrief.lastMessage';
 const badgeCelebrationsKey = 'deckplate.badgeCelebrations';
 const currentReleaseNote = {
   id: '2026-07-08-quality-controls-winners',
@@ -495,15 +574,17 @@ function localDateKey(date = new Date()) {
   return date.toLocaleDateString('en-CA');
 }
 
+function localDayBoundaryIso(value: string, endOfDay = false) {
+  if (!value) return '';
+  const time = endOfDay ? '23:59:59.999' : '00:00:00.000';
+  return new Date(`${value}T${time}`).toISOString();
+}
+
 function missionNudge(tone: GamificationTone, context: MissionBriefContext, key: string) {
   const messages = missionBriefMessages[tone]?.[context] ?? missionBriefMessages.professional[context];
   let total = 0;
   for (const character of key) total += character.charCodeAt(0);
-  let message = messages[total % messages.length];
-  const lastMessage = localStorage.getItem(missionBriefLastMessageKey);
-  if (messages.length > 1 && message === lastMessage) message = messages[(total + 1) % messages.length];
-  localStorage.setItem(missionBriefLastMessageKey, message);
-  return message;
+  return messages[total % messages.length];
 }
 
 function missionContextFromUnits(units: UnitSummary[], recentRecovery = false): MissionBriefContext {
@@ -515,11 +596,7 @@ function missionContextFromUnits(units: UnitSummary[], recentRecovery = false): 
 }
 
 function readCelebratedBadges() {
-  try {
-    return JSON.parse(localStorage.getItem(badgeCelebrationsKey) ?? '{}') as Record<string, true>;
-  } catch {
-    return {};
-  }
+  return readStoredJson<Record<string, true>>(badgeCelebrationsKey) ?? {};
 }
 
 function celebrationKey(teamMemberId: string, month: string, badge: MissionBadge) {
@@ -547,6 +624,26 @@ function circlePolygon(longitude: number, latitude: number, radiusMeters: number
   }
 
   return coordinates;
+}
+
+function mapPopupContent(location: LocationSummary) {
+  const content = document.createElement('div');
+  const title = document.createElement('strong');
+  title.textContent = location.name;
+  content.append(title);
+
+  const details = [location.area_name, `Radius: ${location.radius_meters}m`];
+  for (const detail of details) {
+    if (!detail) continue;
+    content.append(document.createElement('br'), document.createTextNode(detail));
+  }
+  for (const unit of location.units) {
+    content.append(
+      document.createElement('br'),
+      document.createTextNode(`${unit.name}: ${statusLabel(unit)} (${niceDate(unit.last_visit_at)})`),
+    );
+  }
+  return content;
 }
 
 function IdentitySetup({
@@ -590,7 +687,7 @@ function IdentitySetup({
         deviceId: result.deviceId,
         sessionToken: result.sessionToken,
       };
-      localStorage.setItem(identityKey, JSON.stringify(identity));
+      writeStoredJson(identityKey, identity);
       onRegistered(identity);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed.');
@@ -618,6 +715,8 @@ function IdentitySetup({
           <label>
             4-digit PIN
             <input
+              type="password"
+              autoComplete="current-password"
               value={pin}
               inputMode="numeric"
               pattern="\d{4}"
@@ -652,7 +751,7 @@ function WorkspaceEntry({
   teamMembers: TeamMember[];
   notice?: string;
   onBack: () => void;
-  onWorkspace: (workspace: WorkspaceContext | null) => void;
+  onWorkspace: (workspace: WorkspaceContext | null) => boolean | Promise<boolean>;
   onAdminToken: (token: string) => void;
   onOpenAdmin: () => void;
 }) {
@@ -670,8 +769,7 @@ function WorkspaceEntry({
   const [message, setMessage] = useState('');
 
   async function useDefaultWorkspace() {
-    localStorage.removeItem(workspaceKey);
-    onWorkspace(defaultWorkspace);
+    await onWorkspace(defaultWorkspace);
   }
 
   async function resolveWorkspace(event: FormEvent) {
@@ -680,9 +778,9 @@ function WorkspaceEntry({
     setMessage('');
     try {
       const result = await api<{ organization: WorkspaceContext | null }>(`/api/workspaces/resolve?slug=${encodeURIComponent(workspaceSlug)}`);
-      const next = result.organization ?? defaultWorkspace;
-      localStorage.setItem(workspaceKey, JSON.stringify(next));
-      onWorkspace(next);
+      if (!result.organization) throw new Error('Workspace was not found. Check the slug and try again.');
+      const next = result.organization;
+      if (!(await onWorkspace(next))) return;
       setMessage(`Workspace set to ${next.name}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Workspace was not found.');
@@ -735,8 +833,8 @@ function WorkspaceEntry({
         mapDefaultLatitude: selectedInstallation ? Number(selectedInstallation.lat) : undefined,
         mapDefaultLongitude: selectedInstallation ? Number(selectedInstallation.lon) : undefined,
       };
-      onWorkspace(next);
-      sessionStorage.setItem('deckplate.admin', result.token);
+      if (!(await onWorkspace(next))) return;
+      writeSessionValue('deckplate.admin', result.token);
       onAdminToken(result.token);
       setSetupCode('');
       setAdminPassphrase('');
@@ -796,7 +894,9 @@ function WorkspaceEntry({
                 value={workspaceSlug}
                 placeholder="example-rmt"
                 autoCapitalize="none"
-                onChange={(event) => setWorkspaceSlug(event.target.value)}
+                autoComplete="off"
+                onChange={(event) => setWorkspaceSlug(event.target.value.trim().toLowerCase())}
+                required
               />
             </label>
             <button className="primary">Use workspace</button>
@@ -815,6 +915,9 @@ function WorkspaceEntry({
             <label>
               One-time setup code
               <input
+                type="password"
+                autoComplete="one-time-code"
+                spellCheck={false}
                 value={setupCode}
                 autoCapitalize="characters"
                 onChange={(event) => setSetupCode(event.target.value.toUpperCase())}
@@ -867,7 +970,8 @@ function WorkspaceEntry({
               <span className="admin-hint">Keep this with the approved local lead. It unlocks Admin settings for this workspace only.</span>
               <input
                 type="password"
-                minLength={8}
+                autoComplete="new-password"
+                minLength={12}
                 value={adminPassphrase}
                 onChange={(event) => setAdminPassphrase(event.target.value)}
                 required
@@ -927,7 +1031,7 @@ function OnboardingChecklist({
 
 function WhatChangedPanel({ audience }: { audience: 'admin' | 'operator' }) {
   const storageKey = `deckplate.releaseNote.${audience}.${currentReleaseNote.id}`;
-  const [dismissed, setDismissed] = useState(() => localStorage.getItem(storageKey) === 'dismissed');
+  const [dismissed, setDismissed] = useState(() => readLocalValue(storageKey) === 'dismissed');
   if (dismissed) return null;
   return (
     <section className="panel release-note-panel">
@@ -939,7 +1043,7 @@ function WhatChangedPanel({ audience }: { audience: 'admin' | 'operator' }) {
         <button
           className="secondary"
           onClick={() => {
-            localStorage.setItem(storageKey, 'dismissed');
+            writeLocalValue(storageKey, 'dismissed');
             setDismissed(true);
           }}
         >
@@ -962,7 +1066,7 @@ function OperatorConsole({
   onClose: () => void;
   onSuperuserAdmin: (token: string, organization: WorkspaceContext) => void;
 }) {
-  const [token, setToken] = useState(sessionStorage.getItem(operatorKey) ?? '');
+  const [token, setToken] = useState(readSessionValue(operatorKey) ?? '');
   const [passphrase, setPassphrase] = useState('');
   const [organizations, setOrganizations] = useState<OperatorOrganization[]>([]);
   const [workspaceRequests, setWorkspaceRequests] = useState<OperatorWorkspaceRequest[]>([]);
@@ -984,35 +1088,54 @@ function OperatorConsole({
   const [lastIssuedCode, setLastIssuedCode] = useState<Record<string, { code: string; link: string }>>({});
   const [recoveryForms, setRecoveryForms] = useState<Record<string, { passphrase: string; confirmPassphrase: string }>>({});
 
+  function handleOperatorLoadError(err: unknown, fallback: string) {
+    const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
+    if (status === 403) {
+      removeSessionValue(operatorKey);
+      setToken('');
+      setError('Operator session expired. Unlock the console again.');
+      return;
+    }
+    setError(err instanceof Error ? err.message : fallback);
+  }
+
   async function loadOrganizations(currentToken = token) {
-    const result = await api<{ organizations: OperatorOrganization[] }>('/api/operator/organizations', {
-      headers: { authorization: `Bearer ${currentToken}` },
-    });
-    setOrganizations(result.organizations);
+    try {
+      const result = await api<{ organizations: OperatorOrganization[] }>('/api/operator/organizations', {
+        headers: { authorization: `Bearer ${currentToken}` },
+      });
+      setOrganizations(result.organizations);
+    } catch (err) {
+      handleOperatorLoadError(err, 'Unable to load workspaces.');
+    }
   }
 
   async function loadWorkspaceRequests(currentToken = token, nextOffset = 0, append = false) {
-    const params = new URLSearchParams({ limit: '100', offset: String(nextOffset) });
-    if (workspaceRequestStatus !== 'all') params.set('status', workspaceRequestStatus);
-    const result = await api<{ requests: OperatorWorkspaceRequest[]; page?: PageMetadata }>(`/api/operator/workspace-requests?${params.toString()}`, {
-      headers: { authorization: `Bearer ${currentToken}` },
-    });
-    setWorkspaceRequests((current) => (append ? [...current, ...result.requests] : result.requests));
-    setWorkspaceRequestPage(result.page ?? null);
-    setWorkspaceRequestForms((current) => {
-      const next = { ...current };
-      for (const request of result.requests) {
-        if (!next[request.id]) {
-          next[request.id] = {
-            workspaceName: request.installation_or_command,
-            workspaceSlug: request.preferred_workspace_slug ?? slugPreview(request.installation_or_command),
-            expiresInDays: '14',
-            operatorNote: '',
-          };
+    try {
+      const params = new URLSearchParams({ limit: '100', offset: String(nextOffset) });
+      if (workspaceRequestStatus !== 'all') params.set('status', workspaceRequestStatus);
+      const result = await api<{ requests: OperatorWorkspaceRequest[]; page?: PageMetadata }>(`/api/operator/workspace-requests?${params.toString()}`, {
+        headers: { authorization: `Bearer ${currentToken}` },
+      });
+      setWorkspaceRequests((current) => (append ? [...current, ...result.requests] : result.requests));
+      setWorkspaceRequestPage(result.page ?? null);
+      setWorkspaceRequestForms((current) => {
+        const next = { ...current };
+        for (const request of result.requests) {
+          if (!next[request.id]) {
+            next[request.id] = {
+              workspaceName: request.installation_or_command,
+              workspaceSlug: request.preferred_workspace_slug ?? slugPreview(request.installation_or_command),
+              expiresInDays: '14',
+              operatorNote: '',
+            };
+          }
         }
-      }
-      return next;
-    });
+        return next;
+      });
+    } catch (err) {
+      handleOperatorLoadError(err, 'Unable to load workspace requests.');
+    }
   }
 
   async function loadAuditEvents(currentToken = token, nextOffset = 0, append = false) {
@@ -1029,6 +1152,9 @@ function OperatorConsole({
       setAuditPage(result.page ?? null);
       setAuditQueryKey(queryKey);
       if (!result.events.length && !append) setAuditMessage('No operator audit events found.');
+    } catch (err) {
+      setAuditMessage(err instanceof Error ? err.message : 'Unable to load the operator audit.');
+      handleOperatorLoadError(err, 'Unable to load the operator audit.');
     } finally {
       setAuditLoading(false);
     }
@@ -1042,10 +1168,9 @@ function OperatorConsole({
         method: 'POST',
         body: JSON.stringify({ passphrase }),
       });
-      sessionStorage.setItem(operatorKey, result.token);
+      writeSessionValue(operatorKey, result.token);
       setToken(result.token);
       setPassphrase('');
-      await Promise.all([loadOrganizations(result.token), loadWorkspaceRequests(result.token), loadAuditEvents(result.token)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Operator login failed.');
     }
@@ -1224,8 +1349,8 @@ function OperatorConsole({
     setError('');
     setMessage('');
     const form = recoveryForms[organization.id] ?? { passphrase: '', confirmPassphrase: '' };
-    if (form.passphrase.length < 8) {
-      setError('Recovery passphrase must be at least 8 characters.');
+    if (form.passphrase.length < 12) {
+      setError('Recovery passphrase must be at least 12 characters.');
       return;
     }
     if (form.passphrase !== form.confirmPassphrase) {
@@ -1333,9 +1458,12 @@ function OperatorConsole({
 
   useEffect(() => {
     if (!token) return;
-    void Promise.all([loadOrganizations(token), loadWorkspaceRequests(token), loadAuditEvents(token)]).catch((err) => {
-      setError(err instanceof Error ? err.message : 'Unable to load operator console.');
-    });
+    void loadOrganizations(token);
+    void loadAuditEvents(token);
+  }, [token]);
+
+  useEffect(() => {
+    if (token) void loadWorkspaceRequests(token);
   }, [token, workspaceRequestStatus]);
 
   const filteredOrganizations = useMemo(
@@ -1399,7 +1527,7 @@ function OperatorConsole({
           <form onSubmit={login} className="stack">
             <label>
               Central operator passphrase
-              <input type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} />
+              <input type="password" autoComplete="current-password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} required />
             </label>
             <button className="primary">Unlock operator console</button>
             <button className="secondary" type="button" onClick={onClose}>
@@ -1443,11 +1571,12 @@ function OperatorConsole({
         </div>
         <div className="filters">
           <input
+            aria-label="Search workspace requests"
             placeholder="Search requests by command, lead, email, status, or request ID"
             value={workspaceRequestSearch}
             onChange={(event) => setWorkspaceRequestSearch(event.target.value)}
           />
-          <select value={workspaceRequestStatus} onChange={(event) => setWorkspaceRequestStatus(event.target.value as typeof workspaceRequestStatus)}>
+          <select aria-label="Workspace request status" value={workspaceRequestStatus} onChange={(event) => setWorkspaceRequestStatus(event.target.value as typeof workspaceRequestStatus)}>
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
@@ -1492,6 +1621,7 @@ function OperatorConsole({
                   <div className="stack">
                     <div className="filters">
                       <input
+                        aria-label={`Workspace name for ${request.installation_or_command}`}
                         placeholder="Workspace name"
                         value={form.workspaceName}
                         onChange={(event) =>
@@ -1506,6 +1636,7 @@ function OperatorConsole({
                         }
                       />
                       <input
+                        aria-label={`Workspace slug for ${request.installation_or_command}`}
                         placeholder="workspace-slug"
                         autoCapitalize="none"
                         value={form.workspaceSlug}
@@ -1520,6 +1651,7 @@ function OperatorConsole({
                         }
                       />
                       <input
+                        aria-label={`Setup code duration for ${request.installation_or_command}`}
                         inputMode="numeric"
                         placeholder="Setup code days"
                         value={form.expiresInDays}
@@ -1535,6 +1667,7 @@ function OperatorConsole({
                       />
                     </div>
                     <textarea
+                      aria-label={`Operator note for ${request.installation_or_command}`}
                       placeholder="Operator note, required for rejection and optional for approval"
                       value={form.operatorNote}
                       onChange={(event) =>
@@ -1576,11 +1709,13 @@ function OperatorConsole({
         <h2>Create approved workspace</h2>
         <form onSubmit={createOrganization} className="stack">
           <input
+            aria-label="New workspace name"
             placeholder="Workspace name"
             value={organizationForm.name}
             onChange={(event) => setOrganizationForm({ ...organizationForm, name: event.target.value })}
           />
           <input
+            aria-label="New workspace slug"
             placeholder="workspace-slug"
             autoCapitalize="none"
             value={organizationForm.slug}
@@ -1591,6 +1726,7 @@ function OperatorConsole({
       </section>
       <section className="filters">
         <input
+          aria-label="Search workspaces"
           placeholder="Search workspaces by name, slug, status, or latest activity"
           value={workspaceSearch}
           onChange={(event) => setWorkspaceSearch(event.target.value)}
@@ -1611,6 +1747,7 @@ function OperatorConsole({
         </div>
         <div className="filters">
           <input
+            aria-label="Search operator audit"
             placeholder="Search audit by action, workspace, or detail"
             value={auditSearch}
             onChange={(event) => setAuditSearch(event.target.value)}
@@ -1695,6 +1832,7 @@ function OperatorConsole({
               </p>
               <div className="filters">
                 <input
+                  aria-label={`Setup code label for ${organization.name}`}
                   placeholder="Lead or request label"
                   value={form.label}
                   onChange={(event) =>
@@ -1705,6 +1843,7 @@ function OperatorConsole({
                   }
                 />
                 <input
+                  aria-label={`Setup code duration in days for ${organization.name}`}
                   inputMode="numeric"
                   placeholder="14"
                   value={form.expiresInDays}
@@ -1744,9 +1883,11 @@ function OperatorConsole({
                 </p>
                 <input
                   type="password"
+                  autoComplete="new-password"
+                  aria-label={`Temporary recovery passphrase for ${organization.name}`}
                   placeholder="Temporary recovery passphrase"
                   value={recoveryForms[organization.id]?.passphrase ?? ''}
-                  minLength={8}
+                  minLength={12}
                   onChange={(event) =>
                     setRecoveryForms((current) => ({
                       ...current,
@@ -1759,9 +1900,11 @@ function OperatorConsole({
                 />
                 <input
                   type="password"
+                  autoComplete="new-password"
+                  aria-label={`Confirm recovery passphrase for ${organization.name}`}
                   placeholder="Confirm recovery passphrase"
                   value={recoveryForms[organization.id]?.confirmPassphrase ?? ''}
-                  minLength={8}
+                  minLength={12}
                   onChange={(event) =>
                     setRecoveryForms((current) => ({
                       ...current,
@@ -1833,7 +1976,7 @@ function CheckInScreen({
   refresh: () => void;
   onPendingChanged: () => void;
 }) {
-  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [coords, setCoords] = useState<{ lat: number; lon: number; accuracyMeters: number } | null>(null);
   const [matches, setMatches] = useState<LocationSummary[]>([]);
   const [manualMode, setManualMode] = useState(false);
   const [manualLocationId, setManualLocationId] = useState('');
@@ -1844,35 +1987,17 @@ function CheckInScreen({
   const [unlockedBadges, setUnlockedBadges] = useState<MissionBadge[]>([]);
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
+  const cancelLocationRequest = useRef<(() => void) | null>(null);
+  const locationRequestId = useRef(0);
   const brief = useMemo(() => briefForDate(identity.teamMemberId), [identity.teamMemberId]);
-  const locationSummaries = useMemo(() => {
-    const grouped = new Map<string, LocationSummary>();
-    const rank = { gray: 4, red: 3, yellow: 2, green: 1 };
-    for (const unit of bootstrap.units) {
-      if (!unit.location_id || unit.latitude == null || unit.longitude == null || unit.radius_meters == null) continue;
-      const existing = grouped.get(unit.location_id);
-      if (existing) {
-        existing.units.push(unit);
-        existing.status = rank[unit.status] > rank[existing.status] ? unit.status : existing.status;
-      } else {
-        grouped.set(unit.location_id, {
-          id: unit.location_id,
-          area_id: unit.area_id ?? '',
-          area_name: unit.area_name ?? '',
-          name: unit.location_name ?? '',
-          latitude: unit.latitude,
-          longitude: unit.longitude,
-          radius_meters: unit.radius_meters,
-          status: unit.status,
-          units: [unit],
-        });
-      }
-    }
-    return Array.from(grouped.values());
-  }, [bootstrap.units]);
+  const locationSummaries = useMemo(() => getCachedLocationSummaries(bootstrap.units), [bootstrap.units]);
   const unmappedUnits = bootstrap.units.filter((unit) => !unit.location_id);
 
   async function locate() {
+    const requestId = locationRequestId.current + 1;
+    locationRequestId.current = requestId;
+    cancelLocationRequest.current?.();
+    cancelLocationRequest.current = null;
     setMessage('');
     setConfirmation(null);
     setLocating(true);
@@ -1883,19 +2008,22 @@ function CheckInScreen({
       setManualMode(true);
       return;
     }
-    navigator.geolocation.getCurrentPosition(
+    cancelLocationRequest.current = acquireFreshPosition(
       async (position) => {
-        const next = { lat: position.coords.latitude, lon: position.coords.longitude };
+        if (locationRequestId.current !== requestId) return;
+        cancelLocationRequest.current = null;
         const accuracy = Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : 0;
+        const next = { lat: position.coords.latitude, lon: position.coords.longitude, accuracyMeters: accuracy };
         setCoords(next);
         try {
           const cachedMatches = findCachedNearbyLocations(bootstrap.units, next.lat, next.lon, accuracy);
           const result = cachedMode
             ? { matches: cachedMatches }
-            : await api<{ matches: LocationSummary[] }>(`/api/nearby-locations?lat=${next.lat}&lon=${next.lon}`, {
+            : await api<{ matches: LocationSummary[] }>(`/api/nearby-locations?lat=${next.lat}&lon=${next.lon}&accuracy=${accuracy}`, {
                 headers: authHeaders(identity),
                 timeoutMs: 3500,
               });
+          if (locationRequestId.current !== requestId) return;
           const matches = result.matches.length ? result.matches : cachedMatches;
           setMatches(matches);
           setSelected(matches[0]?.units.map((unit) => unit.id) ?? []);
@@ -1904,6 +2032,7 @@ function CheckInScreen({
             setMessage(`No saved locations nearby. GPS accuracy: ${Math.round(accuracy)}m. Manual lookup is available.`);
           }
         } catch (err) {
+          if (locationRequestId.current !== requestId) return;
           const cachedMatches = findCachedNearbyLocations(bootstrap.units, next.lat, next.lon, accuracy);
           setMatches(cachedMatches);
           setSelected(cachedMatches[0]?.units.map((unit) => unit.id) ?? []);
@@ -1914,16 +2043,23 @@ function CheckInScreen({
               : `No saved locations nearby. GPS accuracy: ${Math.round(accuracy)}m. Manual lookup is available.`,
           );
         } finally {
-          setLocating(false);
+          if (locationRequestId.current === requestId) setLocating(false);
         }
       },
       (error) => {
+        if (locationRequestId.current !== requestId) return;
+        cancelLocationRequest.current = null;
         setLocating(false);
         setManualMode(true);
-        const reason = error.code === error.TIMEOUT ? 'Location timed out.' : 'Location permission was not granted.';
+        const reason =
+          error.code === error.PERMISSION_DENIED
+            ? 'Location permission was not granted.'
+            : error.code === error.POSITION_UNAVAILABLE
+              ? 'A current location could not be determined.'
+              : 'Location timed out.';
         setMessage(`${reason} Use manual unit lookup.`);
       },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 },
     );
   }
 
@@ -1991,6 +2127,7 @@ function CheckInScreen({
       locationName,
       latitude: coords?.lat,
       longitude: coords?.lon,
+      accuracyMeters: coords?.accuracyMeters,
       manual,
       occurredAt,
       confidentialCareProvided: null,
@@ -2001,8 +2138,13 @@ function CheckInScreen({
       updatedAt: occurredAt,
     };
     if (cachedMode || !navigator.onLine) {
-      await queueBatch(pendingBatch);
-      setLoading(false);
+      try {
+        await queueBatch(pendingBatch);
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : 'Unable to save this visit on the device.');
+      } finally {
+        setLoading(false);
+      }
       return;
     }
     try {
@@ -2025,6 +2167,7 @@ function CheckInScreen({
           unitIds: selected,
           latitude: coords?.lat,
           longitude: coords?.lon,
+          accuracyMeters: coords?.accuracyMeters,
           manual,
           confidentialCareProvided: null,
           referralProvided: null,
@@ -2046,7 +2189,11 @@ function CheckInScreen({
       refresh();
     } catch (err) {
       if (isNetworkFailure(err)) {
-        await queueBatch(pendingBatch);
+        try {
+          await queueBatch(pendingBatch);
+        } catch (storageError) {
+          setMessage(storageError instanceof Error ? storageError.message : 'Unable to save this visit on the device.');
+        }
       } else {
         setMessage(err instanceof Error ? err.message : 'Check-in failed.');
       }
@@ -2058,8 +2205,8 @@ function CheckInScreen({
   async function loadNewBadgeCelebrations() {
     if (!navigator.onLine) return;
     try {
-      const month = new Date().toISOString().slice(0, 7);
-      const result = await api<{ rows: LeaderboardRow[] }>(`/api/leaderboard?month=${month}`, {
+      const month = localDateKey().slice(0, 7);
+      const result = await api<{ rows: LeaderboardRow[] }>(leaderboardPath(month), {
         headers: authHeaders(identity),
         timeoutMs: 5000,
       });
@@ -2069,7 +2216,7 @@ function CheckInScreen({
       const fresh = row.badges.filter((badge) => !celebrated[celebrationKey(identity.teamMemberId, month, badge)]);
       if (!fresh.length) return;
       for (const badge of fresh) celebrated[celebrationKey(identity.teamMemberId, month, badge)] = true;
-      localStorage.setItem(badgeCelebrationsKey, JSON.stringify(celebrated));
+      writeStoredJson(badgeCelebrationsKey, celebrated);
       setUnlockedBadges(fresh);
     } catch {
       setUnlockedBadges([]);
@@ -2079,13 +2226,26 @@ function CheckInScreen({
   async function undoCheckin() {
     if (!confirmation) return;
     if (confirmation.syncStatus === 'queued') {
-      await removePendingBatch(confirmation.clientBatchId);
-      setConfirmation(null);
-      setUnlockedBadges([]);
-      setSelected([]);
-      setMessage('Queued visit removed from this device.');
-      onPendingChanged();
-      return;
+      try {
+        const pending = await getPendingBatch(confirmation.clientBatchId);
+        const ownedPending = pending &&
+          pending.teamMemberId === identity.teamMemberId &&
+          (pending.organizationId ?? null) === (identity.organizationId ?? null)
+          ? pending
+          : null;
+        if (ownedPending) {
+          await removePendingBatch(confirmation.clientBatchId);
+          setConfirmation(null);
+          setUnlockedBadges([]);
+          setSelected([]);
+          setMessage('Queued visit removed from this device.');
+          onPendingChanged();
+          return;
+        }
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : 'Unable to inspect the queued visit on this device.');
+        return;
+      }
     }
     if (!navigator.onLine) {
       setMessage('Reconnect to undo an uploaded check-in.');
@@ -2098,7 +2258,12 @@ function CheckInScreen({
       await api('/api/checkins/undo', {
         method: 'POST',
         headers: authHeaders(identity),
-        body: JSON.stringify({ teamMemberId: identity.teamMemberId, checkinIds: confirmation.checkinIds }),
+        body: JSON.stringify({
+          teamMemberId: identity.teamMemberId,
+          ...(confirmation.checkinIds.length
+            ? { checkinIds: confirmation.checkinIds }
+            : { clientBatchId: confirmation.clientBatchId }),
+        }),
       });
       setConfirmation(null);
       setUnlockedBadges([]);
@@ -2116,8 +2281,25 @@ function CheckInScreen({
     if (!confirmation) return;
     setConfirmation({ ...confirmation, indicators: next });
     if (confirmation.syncStatus === 'queued') {
-      await updatePendingBatchIndicators(confirmation.clientBatchId, next, identity.organizationId ?? null);
-      return;
+      try {
+        const pending = await getPendingBatch(confirmation.clientBatchId);
+        if (
+          pending &&
+          pending.teamMemberId === identity.teamMemberId &&
+          (pending.organizationId ?? null) === (identity.organizationId ?? null)
+        ) {
+          const updated = await updatePendingBatchIndicators(confirmation.clientBatchId, next, identity.organizationId ?? null);
+          if (!updated) throw new Error('The queued visit is no longer available on this device.');
+          return;
+        }
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : 'Unable to update the saved visit on this device.');
+        return;
+      }
+      if (!navigator.onLine) {
+        setMessage('Reconnect to update a visit that has already uploaded.');
+        return;
+      }
     }
     try {
       await api(`/api/checkin-batches/${confirmation.clientBatchId}/indicators`, {
@@ -2131,10 +2313,40 @@ function CheckInScreen({
   }
 
   useEffect(() => {
-    locate();
+    void locate();
+    return () => {
+      locationRequestId.current += 1;
+      cancelLocationRequest.current?.();
+      cancelLocationRequest.current = null;
+    };
   }, []);
 
-  const activeLocation = matches[0];
+  useEffect(() => {
+    const handleBatchSynced = (event: Event) => {
+      const detail = (event as CustomEvent<BatchSyncedDetail>).detail;
+      if (
+        !detail ||
+        detail.teamMemberId !== identity.teamMemberId ||
+        detail.organizationId !== (identity.organizationId ?? null)
+      ) {
+        return;
+      }
+      setConfirmation((current) =>
+        current?.clientBatchId === detail.clientBatchId
+          ? {
+              ...current,
+              checkinIds: detail.checkinIds,
+              totalScore: detail.totalScore,
+              syncStatus: 'synced',
+            }
+          : current,
+      );
+    };
+    window.addEventListener(batchSyncedEvent, handleBatchSynced);
+    return () => window.removeEventListener(batchSyncedEvent, handleBatchSynced);
+  }, [identity.organizationId, identity.teamMemberId]);
+
+  const activeLocation = manualMode ? undefined : matches[0];
   const manualLocationMatches = locationSummaries.filter((location) =>
     matchesSearch(manualQuery, [
       location.name,
@@ -2187,22 +2399,30 @@ function CheckInScreen({
           <button className="primary big" onClick={() => submit(false)} disabled={loading || !selected.length}>
             Check In
           </button>
+          <button className="secondary" type="button" onClick={startManualLookup} disabled={loading}>
+            Choose another location or unit
+          </button>
         </section>
       ) : (
         <section className="panel">
-          <h2>No saved location nearby</h2>
-          <p className="muted">Use manual lookup when the unit is not mapped or GPS is unavailable.</p>
-          <button className="secondary" onClick={startManualLookup}>
+          <h2>{matches.length ? 'Choose another location or unit' : 'No saved location nearby'}</h2>
+          <p className="muted">
+            {matches.length
+              ? 'Search all saved locations or choose an unmapped unit.'
+              : 'Use manual lookup when the unit is not mapped or GPS is unavailable.'}
+          </p>
+          {!manualMode && <button className="secondary" onClick={startManualLookup}>
             Manual unit lookup
-          </button>
+          </button>}
           {manualMode && (
             <div className="unit-picker">
               <input
-                placeholder="Search command, department, building, or area"
+                aria-label="Search locations and units"
+                placeholder="Search units"
                 value={manualQuery}
                 onChange={(event) => setManualQuery(event.target.value)}
               />
-              <select value={manualLocationId} onChange={(event) => {
+              <select aria-label="Manual check-in location" value={manualLocationId} onChange={(event) => {
                 setManualLocationId(event.target.value);
                 setSelected([]);
               }}>
@@ -2343,6 +2563,7 @@ function CheckInScreen({
               onClick={() => {
                 setConfirmation(null);
                 setUnlockedBadges([]);
+                setSelected([]);
               }}
               disabled={loading}
             >
@@ -2387,7 +2608,7 @@ function SyncStatusBar({
             : 'Online and synced';
   return (
     <div className={`sync-bar ${state}`}>
-      <span>
+      <span role="status" aria-live="polite">
         {label}
         {cachedAt ? ` - Last synced ${niceDateTime(cachedAt)}` : ''}
         {message && pendingCount === 0 ? ` - ${message}` : ''}
@@ -2414,7 +2635,7 @@ function MissionBrief({
   recentRecovery: boolean;
 }) {
   const today = localDateKey();
-  const [expanded, setExpanded] = useState(() => localStorage.getItem(missionBriefDateKey) !== today);
+  const [expanded, setExpanded] = useState(() => readLocalValue(missionBriefDateKey) !== today);
   const context = missionContextFromUnits(units, recentRecovery);
   const counts = useMemo(
     () => ({
@@ -2431,7 +2652,7 @@ function MissionBrief({
 
   useEffect(() => {
     if (!expanded) return;
-    localStorage.setItem(missionBriefDateKey, today);
+    writeLocalValue(missionBriefDateKey, today);
     const timeout = window.setTimeout(() => setExpanded(false), 9000);
     return () => window.clearTimeout(timeout);
   }, [expanded, today]);
@@ -2484,18 +2705,22 @@ function CoverageBoard({
   const [detailMessage, setDetailMessage] = useState('');
   const [reportRows, setReportRows] = useState<IndicatorReportRow[]>([]);
   const [reportMessage, setReportMessage] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
   const [reportSearch, setReportSearch] = useState('');
-  const [reportFrom, setReportFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
-  const [reportTo, setReportTo] = useState(new Date().toISOString().slice(0, 10));
+  const [reportFrom, setReportFrom] = useState(localDateKey(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
+  const [reportTo, setReportTo] = useState(localDateKey());
+  const detailRequest = useRef<AbortController | null>(null);
 
   const filtered = useMemo(() => {
+    const fromBoundary = from ? localDayBoundaryIso(from) : '';
+    const toBoundary = to ? localDayBoundaryIso(to, true) : '';
     return units
       .filter((unit) => !area || unit.area_id === area)
       .filter((unit) => !unitType || unit.unit_type === unitType)
       .filter((unit) => !overdueOnly || unit.status === 'red')
       .filter((unit) => !neverOnly || unit.status === 'gray')
-      .filter((unit) => !from || (unit.last_visit_at && unit.last_visit_at >= from))
-      .filter((unit) => !to || (unit.last_visit_at && unit.last_visit_at <= `${to}T23:59:59`))
+      .filter((unit) => !fromBoundary || (unit.last_visit_at && unit.last_visit_at >= fromBoundary))
+      .filter((unit) => !toBoundary || (unit.last_visit_at && unit.last_visit_at <= toBoundary))
       .filter((unit) =>
         matchesSearch(unitSearch, [
           unit.name,
@@ -2536,35 +2761,56 @@ function CoverageBoard({
   }, [units]);
 
   async function openUnit(unit: UnitSummary) {
+    detailRequest.current?.abort();
+    detailRequest.current = null;
     setSelectedUnit(unit);
     setDetail(null);
-    setDetailMessage('');
+    setDetailMessage('Loading recent check-ins...');
     if (cachedMode || !navigator.onLine) {
       setDetailMessage('Recent check-ins need a live connection.');
       return;
     }
+    const controller = new AbortController();
+    detailRequest.current = controller;
     try {
       const result = await api<CoverageDetail>(`/api/coverage-detail?unitId=${unit.id}`, {
         headers: authHeaders(identity),
         timeoutMs: 5000,
+        signal: controller.signal,
       });
+      if (detailRequest.current !== controller) return;
       setDetail(result);
+      setDetailMessage('');
     } catch (err) {
+      if (controller.signal.aborted) return;
       setDetailMessage(err instanceof Error ? err.message : 'Unable to load recent check-ins.');
+    } finally {
+      if (detailRequest.current === controller) detailRequest.current = null;
     }
   }
 
   async function loadReport() {
     if (!ministryIndicatorsEnabled) return;
+    if (reportFrom && reportTo && reportFrom > reportTo) {
+      setReportMessage('The report start date must be on or before the end date.');
+      return;
+    }
     if (cachedMode || !navigator.onLine) {
       setReportMessage('Visit flag reporting needs a live connection.');
       return;
     }
     setReportMessage('');
+    setReportLoading(true);
     try {
       const params = new URLSearchParams();
-      if (reportFrom) params.set('from', reportFrom);
-      if (reportTo) params.set('to', reportTo);
+      if (reportFrom) {
+        params.set('from', reportFrom);
+        params.set('fromIso', localDayBoundaryIso(reportFrom));
+      }
+      if (reportTo) {
+        params.set('to', reportTo);
+        params.set('toIso', localDayBoundaryIso(reportTo, true));
+      }
       const result = await api<{ rows: IndicatorReportRow[] }>(`/api/reports/indicators?${params.toString()}`, {
         headers: authHeaders(identity),
         timeoutMs: 6000,
@@ -2573,14 +2819,20 @@ function CoverageBoard({
       if (!result.rows.length) setReportMessage('No indicator activity found for this date range.');
     } catch (err) {
       setReportMessage(err instanceof Error ? err.message : 'Unable to load indicator report.');
+    } finally {
+      setReportLoading(false);
     }
   }
 
   function closeUnitDetail() {
+    detailRequest.current?.abort();
+    detailRequest.current = null;
     setSelectedUnit(null);
     setDetail(null);
     setDetailMessage('');
   }
+
+  useEffect(() => () => detailRequest.current?.abort(), []);
 
   function renderUnitDetail(unit: UnitSummary) {
     if (selectedUnit?.id !== unit.id) return null;
@@ -2655,11 +2907,13 @@ function CoverageBoard({
       </div>
       <section className="filters">
         <input
-          placeholder="Search command, department, building, area, or visitor"
+          aria-label="Search coverage"
+          className="filter-search"
+          placeholder="Search units, locations, or visitors"
           value={unitSearch}
           onChange={(event) => setUnitSearch(event.target.value)}
         />
-        <select value={area} onChange={(event) => setArea(event.target.value)}>
+        <select aria-label="Filter coverage by area" value={area} onChange={(event) => setArea(event.target.value)}>
           <option value="">All areas</option>
           {areas.map((candidate) => (
             <option key={candidate.id} value={candidate.id}>
@@ -2667,22 +2921,36 @@ function CoverageBoard({
             </option>
           ))}
         </select>
-        <select value={unitType} onChange={(event) => setUnitType(event.target.value)}>
+        <select aria-label="Filter coverage by unit type" value={unitType} onChange={(event) => setUnitType(event.target.value)}>
           <option value="">All types</option>
           <option value="department">Departments</option>
           <option value="division">Divisions</option>
           <option value="tenant">Tenant commands</option>
         </select>
         <label className="toggle">
-          <input type="checkbox" checked={overdueOnly} onChange={(event) => setOverdueOnly(event.target.checked)} />
+          <input
+            type="checkbox"
+            checked={overdueOnly}
+            onChange={(event) => {
+              setOverdueOnly(event.target.checked);
+              if (event.target.checked) setNeverOnly(false);
+            }}
+          />
           Overdue
         </label>
         <label className="toggle">
-          <input type="checkbox" checked={neverOnly} onChange={(event) => setNeverOnly(event.target.checked)} />
+          <input
+            type="checkbox"
+            checked={neverOnly}
+            onChange={(event) => {
+              setNeverOnly(event.target.checked);
+              if (event.target.checked) setOverdueOnly(false);
+            }}
+          />
           Never
         </label>
-        <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-        <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+        <input aria-label="Coverage last visit from date" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+        <input aria-label="Coverage last visit through date" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
       </section>
       <section className="panel mission-panel">
         <div>
@@ -2745,13 +3013,16 @@ function CoverageBoard({
             <p className="muted">Generic location-level yes/no counts only. Multi-unit visits are not attributed to each selected command.</p>
             <div className="filters">
               <input
+                aria-label="Search visit flag report"
                 placeholder="Search report rows"
                 value={reportSearch}
                 onChange={(event) => setReportSearch(event.target.value)}
               />
-              <input type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
-              <input type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
-              <button className="secondary" onClick={loadReport}>Load visit flag report</button>
+              <input aria-label="Visit flag report from date" type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
+              <input aria-label="Visit flag report through date" type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
+              <button className="secondary" onClick={loadReport} disabled={reportLoading}>
+                {reportLoading ? 'Loading report...' : 'Load visit flag report'}
+              </button>
             </div>
             {reportMessage && <p className="notice">{reportMessage}</p>}
             {reportRows.length > 0 && (
@@ -2845,6 +3116,7 @@ function CoverageBoard({
               ))}
           </div>
         )}
+        {!filtered.length && <p className="notice">No commands match the current coverage filters.</p>}
       </section>
     </main>
   );
@@ -2868,7 +3140,10 @@ function MapScreen({
   const [expandedLocationId, setExpandedLocationId] = useState<string | null>(null);
   const [mapSearch, setMapSearch] = useState('');
   const [mapReady, setMapReady] = useState(false);
-  const locations = useMemo(() => mappedLocationSummaries(units), [units]);
+  const [mapError, setMapError] = useState('');
+  const safeMapDefaultLatitude = validLatitude(mapDefaultLatitude) ? mapDefaultLatitude : 24.57;
+  const safeMapDefaultLongitude = validLongitude(mapDefaultLongitude) ? mapDefaultLongitude : -81.78;
+  const locations = useMemo(() => getCachedLocationSummaries(units), [units]);
   const filteredLocations = useMemo(
     () =>
       locations.filter((location) =>
@@ -2886,34 +3161,45 @@ function MapScreen({
   useEffect(() => {
     if (offlineMode || !container.current || map.current) return;
     let cancelled = false;
-    void loadMapLibre().then((maplibregl) => {
-      if (cancelled || !container.current || map.current) return;
-      map.current = new maplibregl.Map({
-        container: container.current,
-        style: mapTileUrl || {
-          version: 8,
-          sources: {
-            osm: {
-              type: 'raster',
-              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-              tileSize: 256,
-              attribution: 'OpenStreetMap',
+    setMapError('');
+    void loadMapLibre()
+      .then((maplibregl) => {
+        if (cancelled || !container.current || map.current) return;
+        const nextMap = new maplibregl.Map({
+          container: container.current,
+          style: mapTileUrl || {
+            version: 8,
+            sources: {
+              osm: {
+                type: 'raster',
+                tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                tileSize: 256,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+              },
             },
+            layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
           },
-          layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-        },
-        center: [mapDefaultLongitude, mapDefaultLatitude],
-        zoom: 11,
+          center: [safeMapDefaultLongitude, safeMapDefaultLatitude],
+          zoom: 11,
+        });
+        nextMap.once('load', () => {
+          if (!cancelled) setMapReady(true);
+        });
+        nextMap.once('error', () => {
+          if (!cancelled && !nextMap.isStyleLoaded()) setMapError('The map could not be loaded. Saved locations are still available below.');
+        });
+        map.current = nextMap;
+      })
+      .catch(() => {
+        if (!cancelled) setMapError('The map could not be loaded. Saved locations are still available below.');
       });
-      setMapReady(true);
-    });
     return () => {
       cancelled = true;
       setMapReady(false);
       map.current?.remove();
       map.current = null;
     };
-  }, [mapDefaultLatitude, mapDefaultLongitude, mapTileUrl, offlineMode]);
+  }, [safeMapDefaultLatitude, safeMapDefaultLongitude, mapTileUrl, offlineMode]);
 
   useEffect(() => {
     if (!mapReady || !map.current) return;
@@ -2922,6 +3208,7 @@ function MapScreen({
     void loadMapLibre().then((maplibregl) => {
       if (cancelled || !map.current) return;
       const drawRadii = () => {
+        if (cancelled || !map.current) return;
         const sourceData = {
           type: 'FeatureCollection' as const,
           features: filteredLocations.map((location) => ({
@@ -2933,13 +3220,13 @@ function MapScreen({
             },
           })),
         };
-        const existing = map.current!.getSource('location-radii') as GeoJSONSource | undefined;
+        const existing = map.current.getSource('location-radii') as GeoJSONSource | undefined;
         if (existing) {
           existing.setData(sourceData);
           return;
         }
-        map.current!.addSource('location-radii', { type: 'geojson', data: sourceData });
-        map.current!.addLayer({
+        map.current.addSource('location-radii', { type: 'geojson', data: sourceData });
+        map.current.addLayer({
           id: 'location-radii-fill',
           type: 'fill',
           source: 'location-radii',
@@ -2958,7 +3245,7 @@ function MapScreen({
             'fill-opacity': 0.15,
           },
         });
-        map.current!.addLayer({
+        map.current.addLayer({
           id: 'location-radii-line',
           type: 'line',
           source: 'location-radii',
@@ -2984,13 +3271,7 @@ function MapScreen({
       filteredLocations.forEach((location) => {
         const marker = new maplibregl.Marker({ color: statusColor[location.status] })
           .setLngLat([location.longitude, location.latitude])
-          .setPopup(
-            new maplibregl.Popup().setHTML(
-              `<strong>${location.name}</strong><br>${location.area_name}<br>Radius: ${location.radius_meters}m<br>${location.units
-                .map((unit) => `${unit.name}: ${statusLabel(unit)} (${niceDate(unit.last_visit_at)})`)
-                .join('<br>')}`,
-            ),
-          )
+          .setPopup(new maplibregl.Popup().setDOMContent(mapPopupContent(location)))
           .addTo(map.current!);
         markers.push(marker);
       });
@@ -3015,10 +3296,15 @@ function MapScreen({
           <p className="muted">Map tiles are unavailable offline. Cached mapped locations are listed below.</p>
         </section>
       ) : (
-        <div ref={container} className="map-canvas" />
+        <>
+          <div ref={container} className="map-canvas" aria-label="Map of saved workspace locations" />
+          {!mapReady && !mapError && <p className="notice" role="status">Loading map...</p>}
+          {mapError && <p className="warning-notice" role="alert">{mapError}</p>}
+        </>
       )}
       <section className="filters">
         <input
+          aria-label="Search mapped locations"
           placeholder="Search mapped locations, areas, or commands"
           value={mapSearch}
           onChange={(event) => setMapSearch(event.target.value)}
@@ -3109,12 +3395,14 @@ function KioskMap({
   mapDefaultLatitude,
   mapDefaultLongitude,
   priorityLocationIds,
+  offlineMode,
 }: {
   locations: LocationSummary[];
   mapTileUrl: string;
   mapDefaultLatitude: number;
   mapDefaultLongitude: number;
   priorityLocationIds: Set<string>;
+  offlineMode: boolean;
 }) {
   const container = useRef<HTMLDivElement | null>(null);
   const map = useRef<MapLibreMap | null>(null);
@@ -3188,6 +3476,10 @@ function KioskMap({
   }
 
   useEffect(() => {
+    if (offlineMode) {
+      setMapFailed(true);
+      return;
+    }
     if (!container.current || map.current) return;
     let cancelled = false;
     setMapFailed(false);
@@ -3203,7 +3495,7 @@ function KioskMap({
                 type: 'raster',
                 tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
                 tileSize: 256,
-                attribution: 'OpenStreetMap',
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
               },
             },
             layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
@@ -3214,6 +3506,9 @@ function KioskMap({
           attributionControl: false,
         });
         nextMap.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+        nextMap.on('error', () => {
+          if (!cancelled) setMapFailed(true);
+        });
         nextMap.once('load', () => {
           if (cancelled) return;
           scheduleMapResize();
@@ -3239,7 +3534,7 @@ function KioskMap({
         projectionFrame.current = null;
       }
     };
-  }, [safeMapDefaultLatitude, safeMapDefaultLongitude, mapTileUrl]);
+  }, [safeMapDefaultLatitude, safeMapDefaultLongitude, mapTileUrl, offlineMode]);
 
   useEffect(() => {
     const element = container.current;
@@ -3322,7 +3617,7 @@ function KioskMap({
           );
         })}
       </div>
-      {mapFailed && <p className="kiosk-map-empty">Map tiles are unavailable.</p>}
+      {mapFailed && <p className="kiosk-map-empty">{offlineMode ? 'Map unavailable offline. Use the priority list.' : 'Map tiles are unavailable.'}</p>}
       {!mapFailed && !displayLocations.length && <p className="kiosk-map-empty">No mapped locations yet.</p>}
     </div>
   );
@@ -3349,10 +3644,12 @@ function KioskDashboard({
   const [summary, setSummary] = useState<MissionBoardSummary | null>(null);
   const [winners, setWinners] = useState<{ weeks: LeaderboardWinner[]; month: LeaderboardWinner | null }>({ weeks: [], month: null });
   const [leaderboardMessage, setLeaderboardMessage] = useState('');
+  const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement));
+  const [fullscreenMessage, setFullscreenMessage] = useState('');
   const activeUnits = useMemo(() => bootstrap.units.filter((unit) => unit.active), [bootstrap.units]);
-  const locations = useMemo(() => mappedLocationSummaries(activeUnits), [activeUnits]);
+  const locations = useMemo(() => getCachedLocationSummaries(activeUnits), [activeUnits]);
   const workspaceTitle = bootstrap.installationName || workspace?.installationName || workspace?.name || 'Deckplating';
-  const month = now.toISOString().slice(0, 7);
+  const month = localDateKey(now).slice(0, 7);
 
   const statusCounts = useMemo(
     () => ({
@@ -3395,6 +3692,12 @@ function KioskDashboard({
   }, [onRefresh]);
 
   useEffect(() => {
+    const handleFullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     async function loadLeaderboard() {
       if (cachedMode || !navigator.onLine) {
@@ -3406,7 +3709,7 @@ function KioskDashboard({
           rows: LeaderboardRow[];
           summary: MissionBoardSummary;
           winners?: { weeks: LeaderboardWinner[]; month: LeaderboardWinner | null };
-        }>(`/api/leaderboard?month=${month}`, { headers: authHeaders(identity), timeoutMs: 6000 });
+        }>(leaderboardPath(month), { headers: authHeaders(identity), timeoutMs: 6000 });
         if (cancelled) return;
         setRows(result.rows);
         setSummary(result.summary);
@@ -3431,6 +3734,17 @@ function KioskDashboard({
     return 'Sustain presence';
   }
 
+  async function toggleFullscreen() {
+    setFullscreenMessage('');
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+      else setFullscreenMessage('Fullscreen is not available in this browser.');
+    } catch {
+      setFullscreenMessage('Fullscreen could not be opened.');
+    }
+  }
+
   const featuredWeek = winners.weeks.length ? winners.weeks[winners.weeks.length - 1] : null;
 
   return (
@@ -3444,14 +3758,15 @@ function KioskDashboard({
               {cachedMode ? 'Cached workspace data' : 'Live workspace data'}
               {cachedAt ? ` - synced ${niceDateTime(cachedAt)}` : ''}
             </small>
+            {fullscreenMessage && <small role="status">{fullscreenMessage}</small>}
           </div>
           <div className="kiosk-header-actions">
             <div className="kiosk-clock">
               <strong>{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>
               <span>{now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</span>
             </div>
-            <button className="kiosk-ghost" onClick={() => void document.documentElement.requestFullscreen?.()}>
-              Fullscreen
+            <button className="kiosk-ghost" onClick={() => void toggleFullscreen()}>
+              {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             </button>
           </div>
         </header>
@@ -3501,6 +3816,7 @@ function KioskDashboard({
               mapDefaultLatitude={bootstrap.mapDefaultLatitude}
               mapDefaultLongitude={bootstrap.mapDefaultLongitude}
               priorityLocationIds={priorityLocationIds}
+              offlineMode={cachedMode || !navigator.onLine}
             />
           </section>
 
@@ -3588,17 +3904,31 @@ function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamifi
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [summary, setSummary] = useState<MissionBoardSummary | null>(null);
   const [winners, setWinners] = useState<{ weeks: LeaderboardWinner[]; month: LeaderboardWinner | null }>({ weeks: [], month: null });
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(localDateKey().slice(0, 7));
   const [selectedBadge, setSelectedBadge] = useState<{ memberId: string; badge: MissionBadge } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
-    api<{ rows: LeaderboardRow[]; summary: MissionBoardSummary; winners?: { weeks: LeaderboardWinner[]; month: LeaderboardWinner | null } }>(`/api/leaderboard?month=${month}`, { headers: authHeaders(identity) }).then(
-      (result) => {
+    const controller = new AbortController();
+    setLoading(true);
+    setMessage('');
+    void api<{ rows: LeaderboardRow[]; summary: MissionBoardSummary; winners?: { weeks: LeaderboardWinner[]; month: LeaderboardWinner | null } }>(leaderboardPath(month), {
+      headers: authHeaders(identity),
+      signal: controller.signal,
+    })
+      .then((result) => {
         setRows(result.rows);
         setSummary(result.summary);
         setWinners(result.winners ?? { weeks: [], month: null });
-      },
-    );
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) setMessage(err instanceof Error ? err.message : 'Unable to load the Mission Board.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [identity, month]);
 
   function renderWinner(winner: LeaderboardWinner) {
@@ -3633,7 +3963,12 @@ function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamifi
           <h1>Meaningful coverage</h1>
         </div>
       </div>
-      <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
+      <label>
+        Mission Board month
+        <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
+      </label>
+      {loading && <p className="notice" role="status">Loading Mission Board...</p>}
+      {message && <p className="error" role="alert">{message}</p>}
       <section className="panel mission-panel">
         <p className="eyebrow">Monthly focus</p>
         <h2>Recover overdue and never-visited units</h2>
@@ -3674,16 +4009,7 @@ function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamifi
       )}
       <section className="coverage-list">
         {rows.map((row, index) => (
-          <article
-            key={row.team_member_id}
-            className="score-row mission-row"
-            role="button"
-            tabIndex={0}
-            onClick={() => setSelectedBadge({ memberId: row.team_member_id, badge: row.badges[0] ?? 'first_rounds' })}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') setSelectedBadge({ memberId: row.team_member_id, badge: row.badges[0] ?? 'first_rounds' });
-            }}
-          >
+          <article key={row.team_member_id} className="score-row mission-row">
             <div className="mission-row-main">
               <span className="rank">{index + 1}</span>
               <div className="mission-row-body">
@@ -3697,17 +4023,23 @@ function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamifi
                 {row.badges.length > 0 && (
                   <div className="badge-list">
                     {row.badges.slice(0, 3).map((badge) => (
-                      <span
+                      <button
                         key={badge}
+                        type="button"
                         className="status-pill mission-badge"
                         onClick={(event) => {
                           event.stopPropagation();
-                          setSelectedBadge({ memberId: row.team_member_id, badge });
+                          setSelectedBadge((current) =>
+                            current?.memberId === row.team_member_id && current.badge === badge
+                              ? null
+                              : { memberId: row.team_member_id, badge },
+                          );
                         }}
+                        aria-expanded={selectedBadge?.memberId === row.team_member_id && selectedBadge.badge === badge}
                       >
                         <span className="mini-badge-icon">{badgeDetails[badge].icon}</span>
                         {badgeLabel[badge]}
-                      </span>
+                      </button>
                     ))}
                     {row.badges.length > 3 && <span className="status-pill">+{row.badges.length - 3}</span>}
                   </div>
@@ -3726,7 +4058,7 @@ function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamifi
             )}
           </article>
         ))}
-        {!rows.length && <p className="notice">No Mission Board activity for this month yet.</p>}
+        {!rows.length && !loading && !message && <p className="notice">No Mission Board activity for this month yet.</p>}
       </section>
     </main>
   );
@@ -3735,15 +4067,19 @@ function Scoreboard({ identity, gamificationTone }: { identity: Identity; gamifi
 function AdminMapPicker({
   latitude,
   longitude,
+  mapTileUrl,
   onChange,
 }: {
   latitude: number;
   longitude: number;
+  mapTileUrl?: string;
   onChange: (coords: { latitude: number; longitude: number }) => void;
 }) {
   const container = useRef<HTMLDivElement | null>(null);
   const map = useRef<MapLibreMap | null>(null);
   const marker = useRef<MapLibreMarker | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     if (!container.current || map.current) return;
@@ -3752,14 +4088,14 @@ function AdminMapPicker({
       if (cancelled || !container.current || map.current) return;
       const nextMap = new maplibregl.Map({
         container: container.current,
-        style: {
+        style: mapTileUrl || {
           version: 8,
           sources: {
             osm: {
               type: 'raster',
               tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
               tileSize: 256,
-              attribution: 'OpenStreetMap',
+              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
             },
           },
           layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
@@ -3774,11 +4110,11 @@ function AdminMapPicker({
       marker.current = nextMarker;
       nextMarker.on('dragend', () => {
         const point = nextMarker.getLngLat();
-        onChange({ latitude: point.lat, longitude: point.lng });
+        onChangeRef.current({ latitude: point.lat, longitude: point.lng });
       });
       nextMap.on('click', (event) => {
         nextMarker.setLngLat(event.lngLat);
-        onChange({ latitude: event.lngLat.lat, longitude: event.lngLat.lng });
+        onChangeRef.current({ latitude: event.lngLat.lat, longitude: event.lngLat.lng });
       });
     });
     return () => {
@@ -3787,14 +4123,15 @@ function AdminMapPicker({
       map.current = null;
       marker.current = null;
     };
-  }, []);
+  }, [mapTileUrl]);
 
   useEffect(() => {
+    if (!validLatitude(latitude) || !validLongitude(longitude)) return;
     marker.current?.setLngLat([longitude, latitude]);
     map.current?.setCenter([longitude, latitude]);
   }, [latitude, longitude]);
 
-  return <div ref={container} className="admin-map" />;
+  return <div ref={container} className="admin-map" aria-label="Map picker for the new location" />;
 }
 
 function AdminCheckinRow({
@@ -3816,30 +4153,49 @@ function AdminCheckinRow({
   const [confidentialCareProvided, setConfidentialCareProvided] = useState(checkin.confidential_care_provided === true);
   const [referralProvided, setReferralProvided] = useState(checkin.referral_provided === true);
   const [voidReason, setVoidReason] = useState('accidental');
+  const [saving, setSaving] = useState(false);
   const voided = Boolean(checkin.voided_at);
 
+  useEffect(() => {
+    setUnitId(checkin.unit_id);
+    setTeamMemberId(checkin.team_member_id);
+    setCheckedInAt(datetimeLocalValue(checkin.checked_in_at));
+    setConfidentialCareProvided(checkin.confidential_care_provided === true);
+    setReferralProvided(checkin.referral_provided === true);
+  }, [checkin]);
+
   async function saveCorrections() {
-    await onPatch(checkin.id, {
-      adminTeamMemberId: actingTeamMemberId,
-      unit_id: unitId,
-      team_member_id: teamMemberId,
-      checked_in_at: localDateTimeToIso(checkedInAt),
-      ...(ministryIndicatorsEnabled
-        ? {
-            confidentialCareProvided: confidentialCareProvided ? true : null,
-            referralProvided: referralProvided ? true : null,
-          }
-        : {}),
-    });
+    setSaving(true);
+    try {
+      await onPatch(checkin.id, {
+        adminTeamMemberId: actingTeamMemberId,
+        unit_id: unitId,
+        team_member_id: teamMemberId,
+        checked_in_at: localDateTimeToIso(checkedInAt),
+        ...(ministryIndicatorsEnabled
+          ? {
+              confidentialCareProvided: confidentialCareProvided ? true : null,
+              referralProvided: referralProvided ? true : null,
+            }
+          : {}),
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function voidCheckin() {
     if (!window.confirm('Void this check-in? It will stay in the log but no longer count for coverage or scores.')) return;
-    await onPatch(checkin.id, {
-      adminTeamMemberId: actingTeamMemberId,
-      voided: true,
-      void_reason: voidReason,
-    });
+    setSaving(true);
+    try {
+      await onPatch(checkin.id, {
+        adminTeamMemberId: actingTeamMemberId,
+        voided: true,
+        void_reason: voidReason,
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -3866,21 +4222,21 @@ function AdminCheckinRow({
       </div>
       {!voided && (
         <div className="activity-edit">
-          <select value={unitId} onChange={(event) => setUnitId(event.target.value)}>
+          <select aria-label={`Unit for check-in at ${niceDateTime(checkin.checked_in_at)}`} value={unitId} onChange={(event) => setUnitId(event.target.value)}>
             {units.map((unit) => (
               <option key={unit.id} value={unit.id}>
                 {unit.name}
               </option>
             ))}
           </select>
-          <select value={teamMemberId} onChange={(event) => setTeamMemberId(event.target.value)}>
+          <select aria-label={`Team member for ${checkin.unit_name} check-in`} value={teamMemberId} onChange={(event) => setTeamMemberId(event.target.value)}>
             {teamMembers.map((member) => (
               <option key={member.id} value={member.id}>
                 {member.name}
               </option>
             ))}
           </select>
-          <input type="datetime-local" value={checkedInAt} onChange={(event) => setCheckedInAt(event.target.value)} />
+          <input aria-label={`Date and time for ${checkin.unit_name} check-in`} type="datetime-local" value={checkedInAt} onChange={(event) => setCheckedInAt(event.target.value)} required />
           {ministryIndicatorsEnabled && (
             <section className="optional-indicators admin-indicators">
               <h3>Optional visit flags</h3>
@@ -3903,17 +4259,17 @@ function AdminCheckinRow({
               </label>
             </section>
           )}
-          <button className="secondary" onClick={saveCorrections} disabled={!actingTeamMemberId}>
-            Save edit
+          <button className="secondary" onClick={saveCorrections} disabled={!actingTeamMemberId || !checkedInAt || saving}>
+            {saving ? 'Saving...' : 'Save edit'}
           </button>
-          <select value={voidReason} onChange={(event) => setVoidReason(event.target.value)}>
+          <select aria-label={`Void reason for ${checkin.unit_name} check-in`} value={voidReason} onChange={(event) => setVoidReason(event.target.value)}>
             <option value="accidental">Accidental</option>
             <option value="wrong_unit">Wrong unit</option>
             <option value="duplicate">Duplicate</option>
             <option value="incorrect_datetime">Incorrect date/time</option>
             <option value="incorrect_member">Incorrect member</option>
           </select>
-          <button className="secondary danger-text" onClick={voidCheckin} disabled={!actingTeamMemberId}>
+          <button className="secondary danger-text" onClick={voidCheckin} disabled={!actingTeamMemberId || saving}>
             Void
           </button>
         </div>
@@ -3926,14 +4282,16 @@ function AdminScreen({
   refresh,
   mapDefaultLatitude,
   mapDefaultLongitude,
+  mapTileUrl,
   workspace,
 }: {
   refresh: () => void;
   mapDefaultLatitude: number;
   mapDefaultLongitude: number;
+  mapTileUrl?: string;
   workspace: WorkspaceContext | null;
 }) {
-  const [token, setToken] = useState(sessionStorage.getItem('deckplate.admin') ?? '');
+  const [token, setToken] = useState(readSessionValue('deckplate.admin') ?? '');
   const [passphrase, setPassphrase] = useState('');
   const [data, setData] = useState<AdminData | null>(null);
   const [message, setMessage] = useState('');
@@ -3973,8 +4331,17 @@ function AdminScreen({
   const kioskHref = kioskLinkForWorkspace(workspace);
   const onboardingChecklistStorageKey = `deckplate.onboardingChecklist.${workspace?.id ?? 'default'}`;
 
+  function lockAdmin() {
+    removeSessionValue('deckplate.admin');
+    setToken('');
+    setData(null);
+    setPassphrase('');
+    setAdminAuthMethod('');
+    setMessage('Admin is locked.');
+  }
+
   function dismissOnboardingChecklist() {
-    localStorage.setItem(onboardingChecklistStorageKey, 'dismissed');
+    writeLocalValue(onboardingChecklistStorageKey, 'dismissed');
     setShowOnboardingChecklist(false);
   }
 
@@ -3986,9 +4353,9 @@ function AdminScreen({
         method: 'POST',
         body: JSON.stringify({ passphrase, organizationId: workspace?.id ?? null }),
       });
-      sessionStorage.setItem('deckplate.admin', result.token);
+      writeSessionValue('deckplate.admin', result.token);
       if (result.organization) {
-        localStorage.setItem(workspaceKey, JSON.stringify(result.organization));
+        writeStoredJson(workspaceKey, result.organization);
       }
       setToken(result.token);
       setAdminAuthMethod(result.authMethod ?? '');
@@ -4021,14 +4388,14 @@ function AdminScreen({
       setAdminAuthMethod(settings.adminAuthMethod ?? adminAuthMethod);
       setOrganizationAdminAvailable(Boolean(settings.organizationAdminAvailable));
       setOnboardingSummary(settings.onboarding ?? null);
-      const checklistDismissed = localStorage.getItem(onboardingChecklistStorageKey) === 'dismissed';
+      const checklistDismissed = readLocalValue(onboardingChecklistStorageKey) === 'dismissed';
       setShowOnboardingChecklist(Boolean(settings.onboarding && !settings.onboarding.readyForCheckins && !checklistDismissed));
       setLocationForm((current) => ({ ...current, area_id: result.areas[0]?.id ?? current.area_id }));
       setActingTeamMemberId((current) => current || result.teamMembers[0]?.id || '');
     } catch (err) {
       const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
       if (status === 403) {
-        sessionStorage.removeItem('deckplate.admin');
+        removeSessionValue('deckplate.admin');
         setToken('');
         setData(null);
         setAdminAuthMethod('');
@@ -4040,29 +4407,41 @@ function AdminScreen({
   }
 
   async function saveSettings() {
-    const result = await api<{ gamificationTone: GamificationTone }>('/api/admin/settings', {
-      method: 'PATCH',
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({ gamificationTone }),
-    });
-    setGamificationTone(result.gamificationTone);
-    setMessage('Mission Board tone saved. Users will receive it on their next refresh.');
+    try {
+      const result = await api<{ gamificationTone: GamificationTone }>('/api/admin/settings', {
+        method: 'PATCH',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ gamificationTone }),
+      });
+      setGamificationTone(result.gamificationTone);
+      setMessage('Mission Board tone saved. Users will receive it on their next refresh.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to save Mission Board settings.');
+    }
   }
 
   async function saveOrganizationAdminPassphrase() {
-    if (organizationAdminPassphrase.length < 8) {
-      setMessage('Local admin passphrase must be at least 8 characters.');
+    if (organizationAdminPassphrase.length < 12) {
+      setMessage('Local admin passphrase must be at least 12 characters.');
       return;
     }
-    const result = await api<{ authMethod: string }>('/api/admin/organization-admin/passphrase', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({ passphrase: organizationAdminPassphrase }),
-    });
-    setAdminAuthMethod(result.authMethod);
-    setOrganizationAdminPassphrase('');
-    setMessage('Local admin passphrase saved. Future admin logins can use it.');
-    await load();
+    try {
+      const result = await api<{ authMethod: string; token?: string }>('/api/admin/organization-admin/passphrase', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ passphrase: organizationAdminPassphrase }),
+      });
+      if (result.token) {
+        writeSessionValue('deckplate.admin', result.token);
+        setToken(result.token);
+      }
+      setAdminAuthMethod(result.authMethod);
+      setOrganizationAdminPassphrase('');
+      setMessage('Local admin passphrase saved. Future admin logins can use it.');
+      if (!result.token) await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to save the local admin passphrase.');
+    }
   }
 
   async function copyKioskLink() {
@@ -4089,73 +4468,101 @@ function AdminScreen({
       setMessage(validationError);
       return;
     }
-    await api('/api/admin/locations', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        ...locationForm,
-        latitude,
-        longitude,
-        radius_meters: radiusMeters,
-        active: true,
-        unitIds: attachUnitIds,
-      }),
-    });
-    setMessage('Location saved.');
-    setAttachUnitIds([]);
-    refresh();
-    load();
+    try {
+      await api('/api/admin/locations', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          ...locationForm,
+          latitude,
+          longitude,
+          radius_meters: radiusMeters,
+          active: true,
+          unitIds: attachUnitIds,
+        }),
+      });
+      setMessage('Location saved.');
+      setLocationForm((current) => ({ ...current, name: '' }));
+      setAttachUnitIds([]);
+      refresh();
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to save the location.');
+    }
   }
 
   async function createArea(event: FormEvent) {
     event.preventDefault();
-    await api('/api/admin/areas', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        name: areaForm.name,
-        sort_order: Number(areaForm.sort_order || '0'),
-      }),
-    });
-    setAreaForm({ name: '', sort_order: '0' });
-    setMessage('Area saved.');
-    refresh();
-    load();
+    try {
+      await api('/api/admin/areas', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: areaForm.name,
+          sort_order: Number(areaForm.sort_order || '0'),
+        }),
+      });
+      setAreaForm({ name: '', sort_order: '0' });
+      setMessage('Area saved.');
+      refresh();
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to save the area.');
+    }
   }
 
   async function createUnit(event: FormEvent) {
     event.preventDefault();
-    await api('/api/admin/units', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        ...unitForm,
-        location_id: unitForm.location_id || null,
-        visit_interval_days: Number(unitForm.visit_interval_days),
-        active: true,
-      }),
-    });
-    setMessage('Unit saved.');
-    refresh();
-    load();
+    try {
+      await api('/api/admin/units', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          ...unitForm,
+          location_id: unitForm.location_id || null,
+          visit_interval_days: Number(unitForm.visit_interval_days),
+          active: true,
+        }),
+      });
+      setUnitForm((current) => ({ ...current, name: '' }));
+      setMessage('Unit saved.');
+      refresh();
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to save the unit.');
+    }
   }
 
   async function createMember(event: FormEvent) {
     event.preventDefault();
-    await api('/api/admin/team-members', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...memberForm, active: true }),
-    });
-    setMessage('Team member saved.');
-    refresh();
-    load();
+    try {
+      const result = await api<{ temporaryPin?: string | null }>('/api/admin/team-members', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...memberForm, active: true }),
+      });
+      setMemberForm({ name: '', role: '' });
+      setMessage(
+        result.temporaryPin
+          ? `Team member saved. Initial PIN: ${result.temporaryPin}. Deliver it directly and do not include it in screenshots or messages.`
+          : 'Team member saved. The member can choose a PIN the first time they sign in.',
+      );
+      refresh();
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to save the team member.');
+    }
   }
 
   async function patch(path: string, body: unknown) {
-    await api(path, { method: 'PATCH', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
-    refresh();
-    load();
+    try {
+      await api(path, { method: 'PATCH', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+      setMessage('Changes saved.');
+      refresh();
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to save changes.');
+    }
   }
 
   async function patchLocation(location: AdminData['locations'][number], values: Record<string, unknown>) {
@@ -4172,26 +4579,42 @@ function AdminScreen({
 
   async function resetMemberPin(memberId: string, memberName: string) {
     const confirmed = window.confirm(
-      `Reset PIN and revoke devices for ${memberName}?\n\nThis clears the current PIN, disables that member's existing devices in this workspace, and forces the member to choose a new PIN the next time they select their name.`,
+      `Reset PIN and revoke devices for ${memberName}?\n\nThis disables that member's existing devices and issues a replacement PIN. Deliver it directly to the member.`,
     );
     if (!confirmed) return;
-    await api(`/api/admin/team-members/${memberId}/reset-pin`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
-    });
-    setMessage(`PIN reset and devices revoked for ${memberName}.`);
-    refresh();
-    await load();
+    try {
+      const result = await api<{ temporaryPin: string }>(`/api/admin/team-members/${memberId}/reset-pin`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      setMessage(
+        `PIN reset and devices revoked for ${memberName}. Replacement PIN: ${result.temporaryPin}. Deliver it directly and do not include it in screenshots or messages.`,
+      );
+      refresh();
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to reset the member PIN.');
+    }
   }
 
   async function loadActivity(nextOffset = 0, append = false) {
+    if (activityFilters.from && activityFilters.to && activityFilters.from > activityFilters.to) {
+      setMessage('The activity start date must be on or before the end date.');
+      return;
+    }
     const params = new URLSearchParams();
     const queryKey = JSON.stringify(activityFilters);
     params.set('limit', '75');
     params.set('offset', String(nextOffset));
     if (activityFilters.search.trim()) params.set('search', activityFilters.search.trim());
-    if (activityFilters.from) params.set('from', activityFilters.from);
-    if (activityFilters.to) params.set('to', activityFilters.to);
+    if (activityFilters.from) {
+      params.set('from', activityFilters.from);
+      params.set('fromIso', localDayBoundaryIso(activityFilters.from));
+    }
+    if (activityFilters.to) {
+      params.set('to', activityFilters.to);
+      params.set('toIso', localDayBoundaryIso(activityFilters.to, true));
+    }
     if (activityFilters.teamMemberId) params.set('teamMemberId', activityFilters.teamMemberId);
     if (activityFilters.areaId) params.set('areaId', activityFilters.areaId);
     if (activityFilters.unitId) params.set('unitId', activityFilters.unitId);
@@ -4204,21 +4627,27 @@ function AdminScreen({
       setActivity((current) => (append ? [...current, ...result.checkins] : result.checkins));
       setActivityPage(result.page ?? null);
       setActivityQueryKey(queryKey);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to load the activity log.');
     } finally {
       setActivityLoading(false);
     }
   }
 
   async function patchCheckin(id: string, body: Record<string, unknown>) {
-    await api(`/api/admin/checkins/${id}`, {
-      method: 'PATCH',
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify(body),
-    });
-    setMessage('Activity log updated.');
-    refresh();
-    await load();
-    await loadActivity(0, false);
+    try {
+      await api(`/api/admin/checkins/${id}`, {
+        method: 'PATCH',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      setMessage('Activity log updated.');
+      refresh();
+      await load();
+      await loadActivity(0, false);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to update the activity log.');
+    }
   }
 
   const filteredActivity = useMemo(
@@ -4290,7 +4719,7 @@ function AdminScreen({
             <p className="muted">Enter the local admin passphrase for this workspace. This is not a public account login.</p>
             <label>
               Local admin passphrase
-              <input type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} />
+              <input type="password" autoComplete="current-password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} required />
             </label>
             <button className="primary">Unlock</button>
           </form>
@@ -4307,6 +4736,9 @@ function AdminScreen({
           <p className="eyebrow">Admin</p>
           <h1>{adminSection === 'setup' ? 'Manage mapping' : adminSection === 'activity' ? 'Activity Log' : 'Admin settings'}</h1>
         </div>
+        <button className="secondary" type="button" onClick={lockAdmin}>
+          Lock Admin
+        </button>
       </div>
       {message && <p className="notice">{message}</p>}
       {adminAuthMethod === 'superuser' && (
@@ -4373,8 +4805,9 @@ function AdminScreen({
                   New local admin passphrase
                   <input
                     type="password"
+                    autoComplete="new-password"
                     value={organizationAdminPassphrase}
-                    minLength={8}
+                    minLength={12}
                     onChange={(event) => setOrganizationAdminPassphrase(event.target.value)}
                   />
                 </label>
@@ -4394,13 +4827,14 @@ function AdminScreen({
             <h2>Filter activity</h2>
             <div className="filters">
               <input
+                aria-label="Search activity log"
                 placeholder="Search unit, location, area, or team member"
                 value={activityFilters.search}
                 onChange={(event) => setActivityFilters({ ...activityFilters, search: event.target.value })}
               />
-              <input type="date" value={activityFilters.from} onChange={(event) => setActivityFilters({ ...activityFilters, from: event.target.value })} />
-              <input type="date" value={activityFilters.to} onChange={(event) => setActivityFilters({ ...activityFilters, to: event.target.value })} />
-              <select value={activityFilters.teamMemberId} onChange={(event) => setActivityFilters({ ...activityFilters, teamMemberId: event.target.value })}>
+              <input aria-label="Activity from date" type="date" value={activityFilters.from} onChange={(event) => setActivityFilters({ ...activityFilters, from: event.target.value })} />
+              <input aria-label="Activity through date" type="date" value={activityFilters.to} onChange={(event) => setActivityFilters({ ...activityFilters, to: event.target.value })} />
+              <select aria-label="Filter activity by team member" value={activityFilters.teamMemberId} onChange={(event) => setActivityFilters({ ...activityFilters, teamMemberId: event.target.value })}>
                 <option value="">All team members</option>
                 {data.teamMembers.map((member) => (
                   <option key={member.id} value={member.id}>
@@ -4408,7 +4842,7 @@ function AdminScreen({
                   </option>
                 ))}
               </select>
-              <select value={activityFilters.areaId} onChange={(event) => setActivityFilters({ ...activityFilters, areaId: event.target.value })}>
+              <select aria-label="Filter activity by area" value={activityFilters.areaId} onChange={(event) => setActivityFilters({ ...activityFilters, areaId: event.target.value })}>
                 <option value="">All areas</option>
                 {data.areas.map((area) => (
                   <option key={area.id} value={area.id}>
@@ -4416,7 +4850,7 @@ function AdminScreen({
                   </option>
                 ))}
               </select>
-              <select value={activityFilters.unitId} onChange={(event) => setActivityFilters({ ...activityFilters, unitId: event.target.value })}>
+              <select aria-label="Filter activity by unit" value={activityFilters.unitId} onChange={(event) => setActivityFilters({ ...activityFilters, unitId: event.target.value })}>
                 <option value="">All units</option>
                 {data.units.map((unit) => (
                   <option key={unit.id} value={unit.id}>
@@ -4458,7 +4892,8 @@ function AdminScreen({
                 onPatch={patchCheckin}
               />
             ))}
-            {!filteredActivity.length && <p className="notice">No check-ins match the current filters.</p>}
+            {!filteredActivity.length && !activityLoading && <p className="notice">No check-ins match the current filters.</p>}
+            {activityLoading && !activity.length && <p className="notice" role="status">Loading activity...</p>}
             {activityPage?.hasMore && activityQueryKey === JSON.stringify(activityFilters) && (
               <button
                 className="secondary"
@@ -4478,6 +4913,7 @@ function AdminScreen({
           )}
           <section className="filters">
             <input
+              aria-label="Search admin setup records"
               placeholder="Search saved areas, locations, commands, or team members"
               value={setupSearch}
               onChange={(event) => setSetupSearch(event.target.value)}
@@ -4487,8 +4923,9 @@ function AdminScreen({
             <h2>Create area</h2>
             <p className="muted">Use broad, non-sensitive area names. Do not enter restricted room names, deployed locations, or sensitive operational details.</p>
             <form onSubmit={createArea} className="stack">
-              <input placeholder="Area name" value={areaForm.name} onChange={(event) => setAreaForm({ ...areaForm, name: event.target.value })} />
+              <input aria-label="New area name" placeholder="Area name" value={areaForm.name} onChange={(event) => setAreaForm({ ...areaForm, name: event.target.value })} minLength={2} required />
               <input
+                aria-label="New area sort order"
                 inputMode="numeric"
                 placeholder="Sort order"
                 value={areaForm.sort_order}
@@ -4502,7 +4939,7 @@ function AdminScreen({
             <h2>Create location</h2>
             <p className="warning-notice">{locationMappingNotice}</p>
             <form onSubmit={createLocation} className="stack">
-              <select value={locationForm.area_id} onChange={(event) => setLocationForm({ ...locationForm, area_id: event.target.value })}>
+              <select aria-label="Area for new location" value={locationForm.area_id} onChange={(event) => setLocationForm({ ...locationForm, area_id: event.target.value })} required>
                 {data?.areas.map((area) => (
                   <option key={area.id} value={area.id}>
                     {area.name}
@@ -4510,16 +4947,17 @@ function AdminScreen({
                 ))}
               </select>
               {!data?.areas.length && <p className="notice">Create an area first. Locations are assigned to areas.</p>}
-              <input placeholder="Location name" value={locationForm.name} onChange={(event) => setLocationForm({ ...locationForm, name: event.target.value })} />
+              <input aria-label="New location name" placeholder="Location name" value={locationForm.name} onChange={(event) => setLocationForm({ ...locationForm, name: event.target.value })} required />
               <AdminMapPicker
                 latitude={Number(locationForm.latitude)}
                 longitude={Number(locationForm.longitude)}
+                mapTileUrl={mapTileUrl}
                 onChange={(coords) =>
-                  setLocationForm({
-                    ...locationForm,
+                  setLocationForm((current) => ({
+                    ...current,
                     latitude: coords.latitude.toFixed(6),
                     longitude: coords.longitude.toFixed(6),
-                  })
+                  }))
                 }
               />
               <div className="grid-two">
@@ -4578,13 +5016,13 @@ function AdminScreen({
             <h2>Create unit</h2>
             <p className="muted">Do not enter sensitive mission details. Use ordinary department, division, or tenant-command labels only when they are not sensitive.</p>
             <form onSubmit={createUnit} className="stack">
-              <input placeholder="Unit name" value={unitForm.name} onChange={(event) => setUnitForm({ ...unitForm, name: event.target.value })} />
-              <select value={unitForm.unit_type} onChange={(event) => setUnitForm({ ...unitForm, unit_type: event.target.value as UnitType })}>
+              <input aria-label="New unit name" placeholder="Unit name" value={unitForm.name} onChange={(event) => setUnitForm({ ...unitForm, name: event.target.value })} required />
+              <select aria-label="New unit type" value={unitForm.unit_type} onChange={(event) => setUnitForm({ ...unitForm, unit_type: event.target.value as UnitType })}>
                 <option value="department">Department</option>
                 <option value="division">Division</option>
                 <option value="tenant">Tenant command</option>
               </select>
-              <select value={unitForm.location_id} onChange={(event) => setUnitForm({ ...unitForm, location_id: event.target.value })}>
+              <select aria-label="Location for new unit" value={unitForm.location_id} onChange={(event) => setUnitForm({ ...unitForm, location_id: event.target.value })}>
                 <option value="">Unassigned</option>
                 {data?.locations.map((location) => (
                   <option key={location.id} value={location.id}>
@@ -4592,7 +5030,7 @@ function AdminScreen({
                   </option>
                 ))}
               </select>
-              <input inputMode="numeric" value={unitForm.visit_interval_days} onChange={(event) => setUnitForm({ ...unitForm, visit_interval_days: event.target.value })} />
+              <input aria-label="Visit interval in days" type="number" min="1" max="3650" inputMode="numeric" value={unitForm.visit_interval_days} onChange={(event) => setUnitForm({ ...unitForm, visit_interval_days: event.target.value })} required />
               <button className="primary">Save unit</button>
             </form>
           </section>
@@ -4600,15 +5038,15 @@ function AdminScreen({
           <section className="panel">
             <h2>Create team member</h2>
             <p className="muted">
-              This is the current grant-access workflow: create the roster entry here, send the workspace link, then the member selects
-              their name and creates their own PIN on first sign-in.
+              Create the roster entry, send the workspace link, and deliver any initial PIN directly to the member. On local development
+              installs that do not issue an initial PIN, the member creates one on first sign-in.
             </p>
             <p className="warning-notice">
               Use minimum practical display identity, such as rank/last name or role/name. Do not enter phone, DOB, family details, or personal contact info.
             </p>
             <form onSubmit={createMember} className="stack">
-              <input placeholder="Name" value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} />
-              <input placeholder="Role" value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} />
+              <input aria-label="New team member name" placeholder="Name" value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} required />
+              <input aria-label="New team member role" placeholder="Role" value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} />
               <button className="primary">Save member</button>
             </form>
           </section>
@@ -4616,17 +5054,33 @@ function AdminScreen({
           <section className="coverage-list">
             {filteredAdminAreas.map((area) => (
               <article key={area.id} className="admin-row">
-                <input defaultValue={area.name} onBlur={(event) => patch(`/api/admin/areas/${area.id}`, { name: event.target.value })} />
                 <input
+                  aria-label={`Area name for ${area.name}`}
+                  defaultValue={area.name}
+                  onBlur={(event) => {
+                    if (event.target.value.trim() !== area.name) void patch(`/api/admin/areas/${area.id}`, { name: event.target.value });
+                  }}
+                />
+                <input
+                  aria-label={`Sort order for ${area.name}`}
                   inputMode="numeric"
                   defaultValue={area.sort_order}
-                  onBlur={(event) => patch(`/api/admin/areas/${area.id}`, { sort_order: Number(event.target.value) })}
+                  onBlur={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isFinite(value) && value !== area.sort_order) void patch(`/api/admin/areas/${area.id}`, { sort_order: value });
+                  }}
                 />
               </article>
             ))}
             {filteredAdminLocations.map((location) => (
               <article key={location.id} className="admin-row">
-                <input defaultValue={location.name} onBlur={(event) => patchLocation(location, { name: event.target.value })} />
+                <input
+                  aria-label={`Location name for ${location.name}`}
+                  defaultValue={location.name}
+                  onBlur={(event) => {
+                    if (event.target.value.trim() !== location.name) void patchLocation(location, { name: event.target.value });
+                  }}
+                />
                 <div className="grid-two">
                   <label>
                     Latitude
@@ -4655,14 +5109,26 @@ function AdminScreen({
             {filteredAdminUnits.map((unit) => (
               <article key={unit.id} className="admin-row">
                 <div>
-                  <input defaultValue={unit.name} onBlur={(event) => patch(`/api/admin/units/${unit.id}`, { name: event.target.value })} />
                   <input
+                    aria-label={`Unit name for ${unit.name}`}
+                    defaultValue={unit.name}
+                    onBlur={(event) => {
+                      if (event.target.value.trim() !== unit.name) void patch(`/api/admin/units/${unit.id}`, { name: event.target.value });
+                    }}
+                  />
+                  <input
+                    aria-label={`Visit interval in days for ${unit.name}`}
                     inputMode="numeric"
                     defaultValue={unit.visit_interval_days}
-                    onBlur={(event) => patch(`/api/admin/units/${unit.id}`, { visit_interval_days: Number(event.target.value) })}
+                    onBlur={(event) => {
+                      const value = Number(event.target.value);
+                      if (Number.isFinite(value) && value > 0 && value !== unit.visit_interval_days) {
+                        void patch(`/api/admin/units/${unit.id}`, { visit_interval_days: value });
+                      }
+                    }}
                   />
                 </div>
-                <select value={unit.location_id ?? ''} onChange={(event) => patch(`/api/admin/units/${unit.id}`, { location_id: event.target.value || null })}>
+                <select aria-label={`Location assignment for ${unit.name}`} value={unit.location_id ?? ''} onChange={(event) => void patch(`/api/admin/units/${unit.id}`, { location_id: event.target.value || null })}>
                   <option value="">Unassigned</option>
                   {data?.locations.map((location) => (
                     <option key={location.id} value={location.id}>
@@ -4678,8 +5144,20 @@ function AdminScreen({
             {filteredAdminTeamMembers.map((member) => (
               <article key={member.id} className="admin-row">
                 <div className="stack">
-                  <input defaultValue={member.name} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { name: event.target.value })} />
-                  <input defaultValue={member.role ?? ''} onBlur={(event) => patch(`/api/admin/team-members/${member.id}`, { role: event.target.value })} />
+                  <input
+                    aria-label={`Team member name for ${member.name}`}
+                    defaultValue={member.name}
+                    onBlur={(event) => {
+                      if (event.target.value.trim() !== member.name) void patch(`/api/admin/team-members/${member.id}`, { name: event.target.value });
+                    }}
+                  />
+                  <input
+                    aria-label={`Role for ${member.name}`}
+                    defaultValue={member.role ?? ''}
+                    onBlur={(event) => {
+                      if (event.target.value.trim() !== (member.role ?? '')) void patch(`/api/admin/team-members/${member.id}`, { role: event.target.value });
+                    }}
+                  />
                   <p className="muted">{member.active ? 'Active roster entry.' : 'Inactive roster entry.'}</p>
                 </div>
                 <div className="stack">
@@ -4720,21 +5198,49 @@ function Settings({
   members: TeamMember[];
   pendingCount: number;
   onIdentity: (identity: Identity) => void;
-  onSignOut: () => void;
-  onSwitchWorkspace: () => void;
+  onSignOut: () => Promise<void>;
+  onSwitchWorkspace: () => Promise<void>;
   onOpenSystemAdministration: () => void;
   showSystemAdministration: boolean;
 }) {
   const [pin, setPin] = useState('');
   const [newMember, setNewMember] = useState(members[0]?.id ?? '');
   const [newPin, setNewPin] = useState('');
+  const [currentPinForChange, setCurrentPinForChange] = useState('');
+  const [replacementPin, setReplacementPin] = useState('');
+  const [replacementPinConfirmation, setReplacementPinConfirmation] = useState('');
   const [message, setMessage] = useState('');
   const kioskHref = kioskLinkForWorkspace(workspace);
+
+  async function changePin(event: FormEvent) {
+    event.preventDefault();
+    if (replacementPin !== replacementPinConfirmation) {
+      setMessage('New PINs do not match.');
+      return;
+    }
+    try {
+      await api('/api/device/change-pin', {
+        method: 'POST',
+        headers: authHeaders(identity),
+        body: JSON.stringify({
+          currentPin: currentPinForChange,
+          newPin: replacementPin,
+          deviceToken: identity.deviceToken,
+        }),
+      });
+      setCurrentPinForChange('');
+      setReplacementPin('');
+      setReplacementPinConfirmation('');
+      setMessage('PIN changed. Other signed-in devices for this name were revoked.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to change PIN.');
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (pendingCount > 0) {
-      setMessage('Sync or intentionally discard pending visits before changing identity.');
+      setMessage('Upload pending visits before changing identity.');
       return;
     }
     const member = members.find((candidate) => candidate.id === newMember);
@@ -4759,7 +5265,7 @@ function Settings({
         deviceId: result.deviceId,
         sessionToken: result.sessionToken,
       };
-      localStorage.setItem(identityKey, JSON.stringify(next));
+      writeStoredJson(identityKey, next);
       onIdentity(next);
       setMessage('Identity changed.');
     } catch (err) {
@@ -4785,12 +5291,59 @@ function Settings({
           <h1>{identity.teamMemberName}</h1>
         </div>
       </div>
+      {message && <p className="notice" role="status">{message}</p>}
+      <section className="panel">
+        <h2>Change PIN</h2>
+        <p className="muted">Replace an administrator-issued or existing PIN. This device stays signed in; other devices using this name are revoked.</p>
+        <form onSubmit={changePin} className="stack">
+          <label>
+            Current PIN
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={currentPinForChange}
+              inputMode="numeric"
+              pattern="\d{4}"
+              maxLength={4}
+              onChange={(event) => setCurrentPinForChange(event.target.value.replace(/\D/g, '').slice(0, 4))}
+              required
+            />
+          </label>
+          <label>
+            New PIN
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={replacementPin}
+              inputMode="numeric"
+              pattern="\d{4}"
+              maxLength={4}
+              onChange={(event) => setReplacementPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+              required
+            />
+          </label>
+          <label>
+            Confirm new PIN
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={replacementPinConfirmation}
+              inputMode="numeric"
+              pattern="\d{4}"
+              maxLength={4}
+              onChange={(event) => setReplacementPinConfirmation(event.target.value.replace(/\D/g, '').slice(0, 4))}
+              required
+            />
+          </label>
+          <button className="primary">Change PIN</button>
+        </form>
+      </section>
       <section className="panel">
         <h2>Change identity</h2>
         <form onSubmit={submit} className="stack">
           <label>
             Current PIN
-            <input value={pin} inputMode="numeric" pattern="\d{4}" maxLength={4} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} />
+            <input type="password" autoComplete="current-password" value={pin} inputMode="numeric" pattern="\d{4}" maxLength={4} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} required />
           </label>
           <label>
             New name
@@ -4804,20 +5357,20 @@ function Settings({
           </label>
           <label>
             New PIN
-            <input value={newPin} inputMode="numeric" pattern="\d{4}" maxLength={4} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, '').slice(0, 4))} />
+            <input type="password" autoComplete="new-password" value={newPin} inputMode="numeric" pattern="\d{4}" maxLength={4} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, '').slice(0, 4))} required />
           </label>
           <button className="primary">Change</button>
         </form>
-        {message && <p className="notice">{message}</p>}
       </section>
       <section className="panel">
         <h2>Account</h2>
         <p className="muted">Use these controls to leave the current name or move to another workspace without losing the app state.</p>
         <div className="stack">
-          <button className="secondary" type="button" onClick={onSignOut}>
+          {pendingCount > 0 && <p className="warning-notice">Upload pending visits before signing out or switching workspaces.</p>}
+          <button className="secondary" type="button" onClick={() => void onSignOut()} disabled={pendingCount > 0}>
             Sign out of this account
           </button>
-          <button className="secondary" type="button" onClick={onSwitchWorkspace}>
+          <button className="secondary" type="button" onClick={() => void onSwitchWorkspace()} disabled={pendingCount > 0}>
             Switch workspace
           </button>
           <a className="secondary link-button" href={feedbackUrl} target="_blank" rel="noreferrer">
@@ -4865,37 +5418,72 @@ export default function App() {
   const [cachedAt, setCachedAt] = useState<string | null>(null);
   const [cachedMode, setCachedMode] = useState(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [workspace, setWorkspace] = useState<WorkspaceContext | null>(() => {
-    const stored = localStorage.getItem(workspaceKey);
-    if (!stored) return defaultWorkspace;
-    try {
-      return JSON.parse(stored) as WorkspaceContext;
-    } catch {
-      return defaultWorkspace;
-    }
-  });
+  const [workspace, setWorkspace] = useState<WorkspaceContext | null>(() => readStoredWorkspace() ?? defaultWorkspace);
   const [showWorkspaceEntry, setShowWorkspaceEntry] = useState(false);
-  const [showAdminSetup, setShowAdminSetup] = useState(() => Boolean(sessionStorage.getItem('deckplate.admin')));
-  const [showOperatorConsole, setShowOperatorConsole] = useState(() => Boolean(sessionStorage.getItem(operatorKey)) || operatorParamEnabled());
-  const [identity, setIdentity] = useState<Identity | null>(() => {
-    const stored = localStorage.getItem(identityKey);
-    if (!stored) return null;
-    const parsed = JSON.parse(stored) as Identity;
-    return parsed.sessionToken ? parsed : null;
-  });
+  const [showAdminSetup, setShowAdminSetup] = useState(() => Boolean(readSessionValue('deckplate.admin')));
+  const [showOperatorConsole, setShowOperatorConsole] = useState(() => Boolean(readSessionValue(operatorKey)) || operatorParamEnabled());
+  const [identity, setIdentity] = useState<Identity | null>(() => readStoredIdentity());
   const [screen, setScreen] = useState<Screen>('checkin');
   const [error, setError] = useState('');
   const [workspaceNotice, setWorkspaceNotice] = useState('');
   const [pendingCount, setPendingCount] = useState(0);
+  const [failedBatches, setFailedBatches] = useState<PendingVisitBatch[]>([]);
   const [syncState, setSyncState] = useState<SyncState>('synced');
   const [syncMessage, setSyncMessage] = useState('');
   const [refreshPin, setRefreshPin] = useState('');
   const [updateReady, setUpdateReady] = useState(false);
   const [applyUpdate, setApplyUpdate] = useState<(() => Promise<void>) | null>(null);
+  const syncInFlight = useRef<{ key: string; promise: Promise<void> } | null>(null);
+  const syncStateRef = useRef(syncState);
+  const contextEpoch = useRef(0);
+  syncStateRef.current = syncState;
 
-  function setActiveWorkspace(nextWorkspace: WorkspaceContext | null) {
+  async function setActiveWorkspace(nextWorkspace: WorkspaceContext | null) {
     const normalized = nextWorkspace ?? defaultWorkspace;
-    localStorage.setItem(workspaceKey, JSON.stringify(normalized));
+    const currentIdentity = readStoredIdentity();
+    const switchingWorkspace = Boolean(
+      currentIdentity && (currentIdentity.organizationId ?? defaultWorkspace.id) !== normalized.id,
+    );
+    if (currentIdentity && switchingWorkspace) {
+      try {
+        const pending = await countBlockingPendingBatches(
+          currentIdentity.teamMemberId,
+          currentIdentity.organizationId ?? null,
+        );
+        if (pending > 0) {
+          const notice = 'Upload pending visits before opening another workspace. Your current workspace is still active.';
+          setWorkspaceNotice(notice);
+          setSyncState('pending');
+          setSyncMessage(notice);
+          setShowWorkspaceEntry(false);
+          setIdentity(currentIdentity);
+          await load(currentIdentity);
+          return false;
+        }
+      } catch {
+        const notice = 'Offline visit storage could not be checked. Return to the current workspace before switching.';
+        setWorkspaceNotice(notice);
+        setSyncState('failed');
+        setSyncMessage(notice);
+        setShowWorkspaceEntry(false);
+        setIdentity(currentIdentity);
+        await load(currentIdentity);
+        return false;
+      }
+      if (navigator.onLine) {
+        try {
+          await api('/api/device/logout', {
+            method: 'POST',
+            headers: authHeaders(currentIdentity),
+            timeoutMs: 2500,
+          });
+        } catch {
+          // A local workspace switch can continue when an expired session cannot be revoked.
+        }
+      }
+    }
+    contextEpoch.current += 1;
+    writeStoredJson(workspaceKey, normalized);
     setWorkspace(normalized);
     setShowWorkspaceEntry(false);
     setWorkspaceNotice('');
@@ -4903,28 +5491,29 @@ export default function App() {
     setBootstrap(null);
     setCachedAt(null);
     setCachedMode(false);
-    const currentIdentity = localStorage.getItem(identityKey);
+    if (!currentIdentity || switchingWorkspace) {
+      setPendingCount(0);
+      setFailedBatches([]);
+      setSyncState('synced');
+      setSyncMessage('');
+    }
     if (currentIdentity) {
-      try {
-        const parsed = JSON.parse(currentIdentity) as Identity;
-        if ((parsed.organizationId ?? defaultWorkspace.id) !== normalized.id) {
-          localStorage.removeItem(identityKey);
-          setIdentity(null);
-        } else {
-          setIdentity(parsed);
-          void load(parsed);
-        }
-      } catch {
-        localStorage.removeItem(identityKey);
+      if ((currentIdentity.organizationId ?? defaultWorkspace.id) !== normalized.id) {
+        removeLocalValue(identityKey);
         setIdentity(null);
+      } else {
+        setIdentity(currentIdentity);
+        void load(currentIdentity);
+        void refreshPendingCount(currentIdentity);
       }
     }
-    sessionStorage.removeItem('deckplate.admin');
-    sessionStorage.removeItem(operatorKey);
+    removeSessionValue('deckplate.admin');
+    removeSessionValue(operatorKey);
     setShowAdminSetup(false);
     setShowOperatorConsole(false);
     setOperatorQueryParam(false);
     void loadTeamMembers(normalized);
+    return true;
   }
 
   function openOperatorConsole() {
@@ -4933,14 +5522,15 @@ export default function App() {
   }
 
   function closeOperatorConsole() {
-    sessionStorage.removeItem(operatorKey);
+    removeSessionValue(operatorKey);
     setShowOperatorConsole(false);
     setOperatorQueryParam(false);
   }
 
   function openWorkspaceAdminFromOperator(adminToken: string, organization: WorkspaceContext) {
-    localStorage.setItem(workspaceKey, JSON.stringify(organization));
-    sessionStorage.setItem('deckplate.admin', adminToken);
+    contextEpoch.current += 1;
+    writeStoredJson(workspaceKey, organization);
+    writeSessionValue('deckplate.admin', adminToken);
     setWorkspace(organization);
     setShowOperatorConsole(false);
     setOperatorQueryParam(false);
@@ -4951,25 +5541,31 @@ export default function App() {
     setCachedAt(null);
     setCachedMode(false);
     setScreen('admin');
-    const currentIdentity = localStorage.getItem(identityKey);
+    const currentIdentity = readStoredIdentity();
     if (currentIdentity) {
-      try {
-        const parsed = JSON.parse(currentIdentity) as Identity;
-        if ((parsed.organizationId ?? defaultWorkspace.id) !== organization.id) {
-          localStorage.removeItem(identityKey);
-          setIdentity(null);
-        }
-      } catch {
-        localStorage.removeItem(identityKey);
+      if ((currentIdentity.organizationId ?? defaultWorkspace.id) !== organization.id) {
+        removeLocalValue(identityKey);
         setIdentity(null);
       }
     }
     void loadTeamMembers(organization);
   }
 
-  function signOutIdentity(showWorkspacePicker = false) {
-    localStorage.removeItem(identityKey);
-    sessionStorage.removeItem('deckplate.admin');
+  async function signOutIdentity(showWorkspacePicker = false) {
+    if (identity && navigator.onLine && pendingCount === 0) {
+      try {
+        await api('/api/device/logout', {
+          method: 'POST',
+          headers: authHeaders(identity),
+          timeoutMs: 2500,
+        });
+      } catch {
+        // Local sign-out must still work when the network or session is unavailable.
+      }
+    }
+    contextEpoch.current += 1;
+    removeLocalValue(identityKey);
+    removeSessionValue('deckplate.admin');
     setIdentity(null);
     setShowAdminSetup(false);
     setShowWorkspaceEntry(showWorkspacePicker);
@@ -4980,14 +5576,17 @@ export default function App() {
     setSyncMessage('');
     setRefreshPin('');
     setPendingCount(0);
+    setFailedBatches([]);
   }
 
   function handleWorkspaceUnavailable(message = 'This workspace is unavailable. Select or activate a workspace to continue.') {
-    localStorage.removeItem(identityKey);
-    sessionStorage.removeItem('deckplate.admin');
+    contextEpoch.current += 1;
+    removeLocalValue(identityKey);
+    removeSessionValue('deckplate.admin');
     setIdentity(null);
     setBootstrap(null);
     setTeamMembers([]);
+    setFailedBatches([]);
     setShowAdminSetup(false);
     setShowWorkspaceEntry(true);
     setScreen('checkin');
@@ -5000,20 +5599,36 @@ export default function App() {
   async function loadWorkspaceFromUrl() {
     const requested = workspaceParam();
     if (!requested) return;
+    const requestEpoch = contextEpoch.current;
     try {
       const query = looksLikeUuid(requested) ? `organizationId=${encodeURIComponent(requested)}` : `slug=${encodeURIComponent(requested)}`;
       const result = await api<{ organization: WorkspaceContext | null }>(`/api/workspaces/resolve?${query}`);
-      if (result.organization) setActiveWorkspace(result.organization);
+      if (contextEpoch.current !== requestEpoch) return;
+      if (result.organization) await setActiveWorkspace(result.organization);
     } catch (err) {
-      handleWorkspaceUnavailable(err instanceof Error ? err.message : 'Workspace link could not be opened.');
+      if (contextEpoch.current !== requestEpoch) return;
+      const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
+      if (status === 400 || status === 404) {
+        handleWorkspaceUnavailable(err instanceof Error ? err.message : 'Workspace link could not be opened.');
+        return;
+      }
+      setWorkspaceNotice('The workspace link could not be verified. Continuing with the saved workspace until connectivity returns.');
+      if (identity) {
+        await load(identity);
+        await refreshPendingCount(identity);
+      } else {
+        await loadTeamMembers(workspace);
+      }
     }
   }
 
   async function loadTeamMembers(currentWorkspace = workspace) {
+    const requestEpoch = contextEpoch.current;
     try {
       const result = await api<{ teamMembers: TeamMember[]; organization?: WorkspaceContext | null }>(`/api/team-members${workspaceQuery(currentWorkspace)}`);
+      if (contextEpoch.current !== requestEpoch) return;
       if (result.organization) {
-        localStorage.setItem(workspaceKey, JSON.stringify(result.organization));
+        writeStoredJson(workspaceKey, result.organization);
         setWorkspace(result.organization);
       }
       setTeamMembers(result.teamMembers);
@@ -5021,6 +5636,7 @@ export default function App() {
       setError('');
       setWorkspaceNotice('');
     } catch (err) {
+      if (contextEpoch.current !== requestEpoch) return;
       const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
       if (status === 400 || status === 404) {
         handleWorkspaceUnavailable(err instanceof Error ? err.message : 'Workspace unavailable.');
@@ -5032,7 +5648,23 @@ export default function App() {
 
   async function load(currentIdentity = identity) {
     if (!currentIdentity) return;
-    const cached = await getBootstrapSnapshot(currentIdentity.organizationId);
+    const requestEpoch = contextEpoch.current;
+    const requestIsStale = () => contextEpoch.current !== requestEpoch;
+    let cached: Awaited<ReturnType<typeof getBootstrapSnapshot>> = null;
+    try {
+      cached = await getBootstrapSnapshot(currentIdentity.organizationId);
+    } catch {
+      if (requestIsStale()) return;
+      setCachedMode(false);
+      setCachedAt(null);
+      setSyncMessage('Offline storage is unavailable in this browser.');
+      if (!navigator.onLine) {
+        setSyncState('failed');
+        setError('Offline storage is unavailable. Reconnect and try again, or allow site storage in this browser.');
+        return;
+      }
+    }
+    if (requestIsStale()) return;
     if (cached) {
       setBootstrap(cached);
       setTeamMembers(cached.teamMembers);
@@ -5046,16 +5678,30 @@ export default function App() {
     }
     try {
       setError('');
-      const nextBootstrap = await api<Bootstrap>('/api/bootstrap', { headers: authHeaders(currentIdentity), timeoutMs: cached ? 3500 : 10000 });
+      const result = await api<Bootstrap>('/api/bootstrap', { headers: authHeaders(currentIdentity), timeoutMs: cached ? 3500 : 10000 });
+      if (requestIsStale()) return;
+      const nextBootstrap = {
+        ...result,
+        organizationId: result.organizationId ?? currentIdentity.organizationId ?? null,
+      };
       setBootstrap(nextBootstrap);
+      setTeamMembers(nextBootstrap.teamMembers);
       if (nextBootstrap.organization) {
-        localStorage.setItem(workspaceKey, JSON.stringify(nextBootstrap.organization));
+        writeStoredJson(workspaceKey, nextBootstrap.organization);
         setWorkspace(nextBootstrap.organization);
       }
       setCachedMode(false);
       setCachedAt(null);
-      await saveBootstrapSnapshot(nextBootstrap);
+      try {
+        await saveBootstrapSnapshot(nextBootstrap);
+        if (requestIsStale()) return;
+        setSyncMessage('');
+      } catch {
+        if (requestIsStale()) return;
+        setSyncMessage('Online, but offline storage is unavailable in this browser.');
+      }
     } catch (err) {
+      if (requestIsStale()) return;
       const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
       if (status === 403) {
         if (cached) {
@@ -5068,11 +5714,13 @@ export default function App() {
           return;
         }
         const pending = await countBlockingPendingBatches(currentIdentity.teamMemberId, currentIdentity.organizationId ?? null);
+        if (requestIsStale()) return;
         if (pending > 0) {
           setSyncState('auth');
           setSyncMessage('Sync needs PIN refresh.');
         } else {
-          localStorage.removeItem(identityKey);
+          contextEpoch.current += 1;
+          removeLocalValue(identityKey);
           setIdentity(null);
           setBootstrap(null);
           setSyncMessage('Session expired. Select your name and enter your PIN again.');
@@ -5095,26 +5743,65 @@ export default function App() {
 
   async function refreshPendingCount(currentIdentity = identity) {
     if (!currentIdentity) return;
-    const count = await countBlockingPendingBatches(currentIdentity.teamMemberId, currentIdentity.organizationId ?? null);
-    setPendingCount(count);
-    if (count > 0 && syncState === 'synced') setSyncState('pending');
+    const requestEpoch = contextEpoch.current;
+    try {
+      const batches = await getPendingBatches(currentIdentity.teamMemberId, currentIdentity.organizationId ?? null);
+      if (contextEpoch.current !== requestEpoch) return null;
+      const blocking = batches.filter((batch) => batch.syncStatus !== 'synced');
+      setPendingCount(blocking.length);
+      setFailedBatches(
+        blocking
+          .filter((batch) => batch.syncStatus === 'failed')
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+      );
+      if (blocking.length > 0 && syncStateRef.current === 'synced') setSyncState('pending');
+      return blocking.length;
+    } catch {
+      if (contextEpoch.current !== requestEpoch) return null;
+      setSyncMessage('Offline visit storage is unavailable in this browser.');
+      return null;
+    }
   }
 
-  async function syncPending(currentIdentity = identity) {
+  async function syncPendingOnce(currentIdentity = identity) {
     if (!currentIdentity) return;
-    const batches = (await getPendingBatches(currentIdentity.teamMemberId, currentIdentity.organizationId ?? null)).filter(
-      (batch) => batch.syncStatus !== 'synced',
-    );
+    let batches: PendingVisitBatch[];
+    try {
+      const storedBatches = await getPendingBatches(currentIdentity.teamMemberId, currentIdentity.organizationId ?? null);
+      const syncedBatches = storedBatches.filter((batch) => batch.syncStatus === 'synced');
+      await Promise.allSettled(syncedBatches.map((batch) => removePendingBatch(batch.clientBatchId)));
+      batches = storedBatches
+        .filter((batch) => batch.syncStatus !== 'synced')
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    } catch {
+      setSyncState('failed');
+      setSyncMessage('Offline visit storage is unavailable in this browser.');
+      return;
+    }
     setPendingCount(batches.length);
+    setFailedBatches(batches.filter((batch) => batch.syncStatus === 'failed'));
     if (!batches.length) {
-      setSyncState(cachedMode ? 'offline' : 'synced');
-      setSyncMessage('');
+      if (syncStateRef.current !== 'auth') {
+        setSyncState(cachedMode ? 'offline' : 'synced');
+        setSyncMessage('');
+      }
       return;
     }
     setSyncState('pending');
-    for (const batch of batches) {
+    const persistBatch = async (next: PendingVisitBatch) => {
       try {
-        await savePendingBatch({ ...batch, syncStatus: 'syncing', lastSyncError: null });
+        await savePendingBatch(next);
+        return true;
+      } catch {
+        setSyncState('failed');
+        setSyncMessage('Offline visit storage is unavailable in this browser.');
+        return false;
+      }
+    };
+    let deterministicFailures = 0;
+    for (const batch of batches) {
+      if (!(await persistBatch({ ...batch, syncStatus: 'syncing', lastSyncError: null }))) return;
+      try {
         const result = await api<{
           batchId: string;
           checkins: Array<{ id: string; score_awarded: number }>;
@@ -5131,6 +5818,7 @@ export default function App() {
             unitIds: batch.unitIds,
             latitude: batch.latitude,
             longitude: batch.longitude,
+            accuracyMeters: batch.accuracyMeters,
             manual: batch.manual,
             ...indicatorPayload({
               confidentialCareProvided: batch.confidentialCareProvided,
@@ -5138,42 +5826,125 @@ export default function App() {
             }),
           }),
         });
-        await savePendingBatch({
-          ...batch,
-          syncStatus: 'synced',
-          serverBatchId: result.batchId,
-          checkinIds: result.checkins.map((checkin) => checkin.id),
-          totalScore: result.totalScore,
-          lastSyncError: null,
-        });
-        await removePendingBatch(batch.clientBatchId);
+        if (
+          !(await persistBatch({
+            ...batch,
+            syncStatus: 'synced',
+            serverBatchId: result.batchId,
+            checkinIds: result.checkins.map((checkin) => checkin.id),
+            totalScore: result.totalScore,
+            lastSyncError: null,
+          }))
+        ) {
+          return;
+        }
+        window.dispatchEvent(new CustomEvent<BatchSyncedDetail>(batchSyncedEvent, {
+          detail: {
+            clientBatchId: batch.clientBatchId,
+            organizationId: currentIdentity.organizationId ?? null,
+            teamMemberId: currentIdentity.teamMemberId,
+            checkinIds: result.checkins.map((checkin) => checkin.id),
+            totalScore: result.totalScore,
+          },
+        }));
+        try {
+          await removePendingBatch(batch.clientBatchId);
+        } catch {
+          setSyncState('failed');
+          setSyncMessage('The uploaded visit could not be cleared from offline storage. Retry sync to reconcile it safely.');
+          return;
+        }
       } catch (err) {
         const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined;
         if (status === 403) {
-          await savePendingBatch({ ...batch, syncStatus: 'auth', lastSyncError: 'PIN refresh required.' });
+          if (!(await persistBatch({ ...batch, syncStatus: 'auth', lastSyncError: 'PIN refresh required.' }))) return;
           setSyncState('auth');
           setSyncMessage('Sync needs PIN refresh.');
           await refreshPendingCount(currentIdentity);
           return;
         }
         if (isNetworkFailure(err)) {
-          await savePendingBatch({ ...batch, syncStatus: 'pending', lastSyncError: 'Waiting for connectivity.' });
+          if (!(await persistBatch({ ...batch, syncStatus: 'pending', lastSyncError: 'Waiting for connectivity.' }))) return;
           setSyncState('offline');
           setSyncMessage('Offline - cached data.');
           await refreshPendingCount(currentIdentity);
           return;
         }
-        await savePendingBatch({ ...batch, syncStatus: 'failed', lastSyncError: err instanceof Error ? err.message : 'Sync failed.' });
-        setSyncState('failed');
-        setSyncMessage('Sync failed - retry available.');
-        await refreshPendingCount(currentIdentity);
-        return;
+        const deterministicClientFailure = status != null && status >= 400 && status < 500 && status !== 429;
+        if (!deterministicClientFailure) {
+          if (!(await persistBatch({
+            ...batch,
+            syncStatus: 'pending',
+            lastSyncError: err instanceof Error ? err.message : 'Temporary sync failure.',
+          }))) return;
+          setSyncState('failed');
+          setSyncMessage('Sync is temporarily unavailable. Retry is available.');
+          await refreshPendingCount(currentIdentity);
+          return;
+        }
+        if (
+          !(await persistBatch({
+            ...batch,
+            syncStatus: 'failed',
+            lastSyncError: err instanceof Error ? err.message : 'Sync failed.',
+          }))
+        ) {
+          return;
+        }
+        deterministicFailures += 1;
       }
     }
-    setSyncState('synced');
-    setSyncMessage('Online and synced.');
     await refreshPendingCount(currentIdentity);
+    if (deterministicFailures > 0) {
+      setSyncState('failed');
+      setSyncMessage(`${deterministicFailures} saved visit${deterministicFailures === 1 ? '' : 's'} need attention. Other visits were uploaded.`);
+    } else {
+      setSyncState('synced');
+      setSyncMessage('Online and synced.');
+    }
     await load(currentIdentity);
+  }
+
+  async function discardFailedBatch(batch: PendingVisitBatch) {
+    if (!identity) return;
+    const confirmed = window.confirm(
+      `Remove this failed saved visit from this device?\n\n${batch.unitNames.join(', ')}\n${niceDateTime(batch.occurredAt)}\n\nRetry first if the visit should be recorded. Removing it cannot be undone.`,
+    );
+    if (!confirmed) return;
+    try {
+      const latest = await getPendingBatch(batch.clientBatchId);
+      if (
+        !latest ||
+        latest.syncStatus !== 'failed' ||
+        latest.teamMemberId !== identity.teamMemberId ||
+        (latest.organizationId ?? null) !== (identity.organizationId ?? null)
+      ) {
+        setSyncMessage('That saved visit changed. Refreshing the pending list.');
+        await refreshPendingCount(identity);
+        return;
+      }
+      await removePendingBatch(batch.clientBatchId);
+      setSyncMessage('Failed saved visit removed from this device.');
+      const remaining = await refreshPendingCount(identity);
+      if (remaining === 0) setSyncState(cachedMode || !navigator.onLine ? 'offline' : 'synced');
+      else setSyncState('pending');
+    } catch (err) {
+      setSyncState('failed');
+      setSyncMessage(err instanceof Error ? err.message : 'Unable to remove the failed saved visit.');
+    }
+  }
+
+  async function syncPending(currentIdentity = identity) {
+    if (!currentIdentity) return;
+    const key = `${currentIdentity.organizationId ?? 'default'}:${currentIdentity.teamMemberId}:${currentIdentity.sessionToken}`;
+    if (syncInFlight.current?.key === key) return syncInFlight.current.promise;
+    const promise = syncPendingOnce(currentIdentity);
+    syncInFlight.current = { key, promise };
+    try {
+      await promise;
+    } finally {
+      if (syncInFlight.current?.promise === promise) syncInFlight.current = null;
+    }
   }
 
   async function refreshSession(event: FormEvent) {
@@ -5196,7 +5967,8 @@ export default function App() {
         deviceId: result.deviceId,
         sessionToken: result.sessionToken,
       };
-      localStorage.setItem(identityKey, JSON.stringify(next));
+      contextEpoch.current += 1;
+      writeStoredJson(identityKey, next);
       setIdentity(next);
       setRefreshPin('');
       setSyncState('pending');
@@ -5207,9 +5979,12 @@ export default function App() {
   }
 
   function handleIdentity(nextIdentity: Identity) {
+    contextEpoch.current += 1;
+    removeSessionValue('deckplate.admin');
+    setShowAdminSetup(false);
     setIdentity(nextIdentity);
     if (nextIdentity.organization) {
-      localStorage.setItem(workspaceKey, JSON.stringify(nextIdentity.organization));
+      writeStoredJson(workspaceKey, nextIdentity.organization);
       setWorkspace(nextIdentity.organization);
     }
     void load(nextIdentity);
@@ -5244,17 +6019,19 @@ export default function App() {
   useEffect(() => {
     if (!identity) return;
     const sync = () => void syncPending(identity);
-    window.addEventListener('online', sync);
-    document.addEventListener('visibilitychange', () => {
+    const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') sync();
-    });
+    };
+    window.addEventListener('online', sync);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', sync);
     void syncPending(identity);
     return () => {
       window.removeEventListener('online', sync);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', sync);
     };
-  }, [identity?.teamMemberId, identity?.sessionToken]);
+  }, [cachedMode, identity?.organizationId, identity?.teamMemberId, identity?.sessionToken]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -5263,7 +6040,40 @@ export default function App() {
   if (showOperatorConsole) {
     return <OperatorConsole onClose={closeOperatorConsole} onSuperuserAdmin={openWorkspaceAdminFromOperator} />;
   }
-  if (error) return <main className="center-shell"><p className="error">{error}</p></main>;
+  if (error) {
+    return (
+      <main className="center-shell">
+        <section className="panel stack">
+          <h1>Deckplating could not load</h1>
+          <p className="error" role="alert">{error}</p>
+          <button
+            className="primary"
+            type="button"
+            onClick={() => {
+              setError('');
+              if (identity) void load(identity);
+              else void loadTeamMembers(workspace);
+            }}
+          >
+            Try again
+          </button>
+          <button
+            className="secondary"
+            type="button"
+            onClick={() => {
+              if (identity) void signOutIdentity(true);
+              else {
+                setError('');
+                setShowWorkspaceEntry(true);
+              }
+            }}
+          >
+            Choose a workspace
+          </button>
+        </section>
+      </main>
+    );
+  }
   if (!identity) {
     if (showAdminSetup) {
       return (
@@ -5272,12 +6082,13 @@ export default function App() {
             refresh={() => void loadTeamMembers(workspace)}
             mapDefaultLatitude={workspace?.mapDefaultLatitude ?? 24.57}
             mapDefaultLongitude={workspace?.mapDefaultLongitude ?? -81.78}
+            mapTileUrl={undefined}
             workspace={workspace}
           />
-          <nav className="bottom-nav">
-            <button className="active">Admin</button>
+          <nav className="bottom-nav" aria-label="Admin navigation">
+            <button className="active" aria-current="page">Admin</button>
             <button onClick={() => {
-              sessionStorage.removeItem('deckplate.admin');
+              removeSessionValue('deckplate.admin');
               setShowAdminSetup(false);
               void loadTeamMembers(workspace);
             }}>
@@ -5304,7 +6115,7 @@ export default function App() {
         />
       );
     }
-    if (!teamMembers.length) return <main className="center-shell"><p>Loading Deckplating...</p></main>;
+    if (!teamMembers.length) return <main className="center-shell"><p role="status">Loading Deckplating...</p></main>;
     return (
       <IdentitySetup
         members={teamMembers}
@@ -5314,18 +6125,45 @@ export default function App() {
       />
     );
   }
-  if (!bootstrap) return <main className="center-shell"><p>Loading Deckplating...</p></main>;
+  if (!bootstrap) return <main className="center-shell"><p role="status">Loading Deckplating...</p></main>;
 
   if (kioskParamEnabled()) {
     return (
-      <KioskDashboard
-        identity={identity}
-        bootstrap={bootstrap}
-        workspace={workspace}
-        cachedAt={cachedAt}
-        cachedMode={cachedMode}
-        onRefresh={() => void load(identity)}
-      />
+      <>
+        <KioskDashboard
+          identity={identity}
+          bootstrap={bootstrap}
+          workspace={workspace}
+          cachedAt={cachedAt}
+          cachedMode={cachedMode}
+          onRefresh={() => void load(identity)}
+        />
+        {syncState === 'auth' && (
+          <div className="kiosk-auth-overlay" role="dialog" aria-modal="true" aria-labelledby="kiosk-auth-title">
+            <section className="panel stack">
+              <h2 id="kiosk-auth-title">Dashboard session needs PIN refresh</h2>
+              <p className="muted">Enter the current PIN for {identity.teamMemberName}, or exit the dashboard to choose another identity.</p>
+              <form className="stack" onSubmit={refreshSession}>
+                <label>
+                  Current PIN
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={refreshPin}
+                    inputMode="numeric"
+                    pattern="\d{4}"
+                    maxLength={4}
+                    onChange={(event) => setRefreshPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                    required
+                  />
+                </label>
+                <button className="primary">Refresh dashboard</button>
+              </form>
+              <a className="secondary link-button" href={workspaceHomeLink(workspace)}>Exit dashboard</a>
+            </section>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -5343,12 +6181,37 @@ export default function App() {
           if (pendingCount === 0) void applyUpdate?.();
         }}
       />
-      <MissionBrief units={bootstrap.units} tone={bootstrap.gamificationTone ?? 'professional'} recentRecovery={false} />
+      {failedBatches.length > 0 && (
+        <section className="sync-recovery" aria-labelledby="sync-recovery-title">
+          <div>
+            <p className="eyebrow" id="sync-recovery-title">Saved visits need attention</p>
+            <p>Retry after correcting the workspace data, or remove a visit that should not be recorded.</p>
+          </div>
+          <div className="sync-recovery-list">
+            {failedBatches.map((batch) => (
+              <article key={batch.clientBatchId} className="sync-recovery-row">
+                <div>
+                  <strong>{batch.unitNames.join(', ')}</strong>
+                  <small>{niceDateTime(batch.occurredAt)} - {batch.lastSyncError ?? 'Upload rejected.'}</small>
+                </div>
+                <button className="secondary danger-text" type="button" onClick={() => void discardFailedBatch(batch)}>
+                  Remove
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+      {syncState !== 'auth' && (
+        <MissionBrief units={bootstrap.units} tone={bootstrap.gamificationTone ?? 'professional'} recentRecovery={false} />
+      )}
       {syncState === 'auth' && (
         <form className="pin-refresh" onSubmit={refreshSession}>
           <label>
             Enter your current PIN to refresh sync
             <input
+              type="password"
+              autoComplete="current-password"
               value={refreshPin}
               inputMode="numeric"
               pattern="\d{4}"
@@ -5393,6 +6256,7 @@ export default function App() {
           refresh={load}
           mapDefaultLatitude={bootstrap.mapDefaultLatitude}
           mapDefaultLongitude={bootstrap.mapDefaultLongitude}
+          mapTileUrl={bootstrap.mapTileUrl}
           workspace={workspace}
         />
       )}
@@ -5415,10 +6279,10 @@ export default function App() {
           onSignOut={() => signOutIdentity(false)}
           onSwitchWorkspace={() => signOutIdentity(true)}
           onOpenSystemAdministration={openOperatorConsole}
-          showSystemAdministration={Boolean(sessionStorage.getItem(operatorKey))}
+          showSystemAdministration={Boolean(readSessionValue(operatorKey))}
         />
       )}
-      <nav className="bottom-nav">
+      <nav className="bottom-nav" aria-label="Primary navigation">
         {[
           ['checkin', 'Check In'],
           ['coverage', 'Coverage'],
@@ -5427,7 +6291,12 @@ export default function App() {
           ['admin', 'Admin'],
           ['settings', 'Account'],
         ].map(([id, label]) => (
-          <button key={id} className={screen === id ? 'active' : ''} onClick={() => setScreen(id as Screen)}>
+          <button
+            key={id}
+            className={screen === id ? 'active' : ''}
+            onClick={() => setScreen(id as Screen)}
+            aria-current={screen === id ? 'page' : undefined}
+          >
             {label}
           </button>
         ))}

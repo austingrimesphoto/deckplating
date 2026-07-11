@@ -1,4 +1,4 @@
-export type NotificationMode = 'disabled' | 'mailto' | 'smtp' | 'provider' | 'graph';
+export type NotificationMode = 'disabled' | 'mailto' | 'provider';
 
 export type NotificationConfig = {
   mode?: string;
@@ -6,10 +6,6 @@ export type NotificationConfig = {
   replyTo?: string;
   appBaseUrl: string;
   setupSiteBaseUrl: string;
-  smtpHost?: string;
-  smtpPort?: string;
-  smtpUser?: string;
-  smtpPassword?: string;
   providerApiKey?: string;
 };
 
@@ -31,7 +27,7 @@ export type NotificationResult = {
   mailtoUrl?: string;
 };
 
-export const notificationModes = new Set<NotificationMode>(['disabled', 'mailto', 'smtp', 'provider', 'graph']);
+export const notificationModes = new Set<NotificationMode>(['disabled', 'mailto', 'provider']);
 
 export function normalizeNotificationMode(value: string | undefined): NotificationMode {
   const mode = String(value ?? 'disabled').toLowerCase();
@@ -85,15 +81,6 @@ export async function sendWorkspaceApprovedNotification(
     const params = new URLSearchParams({ subject: message.subject, body: message.text });
     return { ...base, status: 'mailto: ready for operator', mailtoUrl: `mailto:${encodeURIComponent(input.recipientEmail)}?${params.toString()}` };
   }
-  if (mode === 'smtp') {
-    if (!config.smtpHost || !config.smtpPort || !config.smtpUser || !config.smtpPassword || !config.from) {
-      return { ...base, status: 'failed: smtp notification environment not configured' };
-    }
-    return { ...base, status: sender ? await sender({ to: input.recipientEmail, subject: message.subject, text: message.text, from: config.from, replyTo: config.replyTo }) : 'failed: smtp sender not implemented' };
-  }
-  if (mode === 'provider') {
-    if (!config.providerApiKey || !config.from) return { ...base, status: 'failed: provider notification environment not configured' };
-    return { ...base, status: sender ? await sender({ to: input.recipientEmail, subject: message.subject, text: message.text, from: config.from, replyTo: config.replyTo }) : 'failed: provider sender not implemented' };
-  }
-  return { ...base, status: 'failed: graph notification provider not configured' };
+  if (!config.providerApiKey || !config.from) return { ...base, status: 'failed: provider notification environment not configured' };
+  return { ...base, status: sender ? await sender({ to: input.recipientEmail, subject: message.subject, text: message.text, from: config.from, replyTo: config.replyTo }) : 'failed: provider sender not implemented' };
 }

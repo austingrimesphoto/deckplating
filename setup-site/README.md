@@ -49,5 +49,7 @@ Deploy only after reviewing changes and confirming the form attributes are intac
 
 ```bash
 npm --prefix setup-site run build
-netlify deploy --prod --dir=setup-site/dist
+netlify deploy --prod --no-build --dir=setup-site/dist --site deckplatingsetup
 ```
+
+The build starts from a clean `setup-site/dist` directory and copies `_headers` with the HTML and assets. Do not deploy the source directory directly; doing so bypasses the clean-build check and can omit the tested deployment artifact boundary.

@@ -50,7 +50,7 @@ See `docs/CENTRAL_OPERATOR_GUIDE.md` for the protected operator workflow.
 4. Local RMT lead activates the workspace with the code.
 5. Local RMT lead lands in Admin Setup with an organization-scoped admin session.
 6. Guided onboarding prompts the lead to confirm the local admin passphrase, then create roster, areas, locations, and units.
-7. Team members open `deckplating.netlify.app`, select the command workspace, select their name, set a PIN, and use the app.
+7. Managed hosting returns an initial member PIN once when the roster entry is created. The local lead delivers it directly; the member opens `deckplating.netlify.app`, selects the workspace and name, and signs in with that PIN.
 8. The system administrator confirms readiness from the operator summary before treating the workspace as live.
 
 The system administrator keeps overhead visibility into workspace status, setup-code state, activity health, and access posture. Command data remains tenant-scoped and must not be visible across workspaces.
@@ -89,7 +89,7 @@ Body:
 
 Behavior:
 
-- Disabled unless `CENTRAL_OPERATOR_PASSPHRASE_HASH` is configured.
+- Managed hosting should explicitly set `DECKPLATING_MANAGED_HOST=true`, a function-only `CREDENTIAL_PEPPER` of at least 32 bytes, and `CENTRAL_OPERATOR_PASSPHRASE_HASH`.
 - Uses a separate central operator passphrase, not a local organization admin passphrase.
 - Returns a short-lived central operator token.
 

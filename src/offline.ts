@@ -20,12 +20,35 @@ interface DeckplateOfflineDb extends DBSchema {
   };
 }
 
-const dbPromise = openDB<DeckplateOfflineDb>('deckplate-coverage-offline', 1, {
-  upgrade(db) {
-    db.createObjectStore('bootstrap');
-    const pending = db.createObjectStore('pendingBatches', { keyPath: 'clientBatchId' });
-    pending.createIndex('by-team', 'teamMemberId');
-    pending.createIndex('by-status', 'syncStatus');
+const legacyDefaultOrganizationId = '00000000-0000-4000-8000-000000000001';
+
+const dbPromise = openDB<DeckplateOfflineDb>('deckplate-coverage-offline', 3, {
+  upgrade(db, oldVersion, _newVersion, transaction) {
+    if (oldVersion < 1) {
+      db.createObjectStore('bootstrap');
+      const pending = db.createObjectStore('pendingBatches', { keyPath: 'clientBatchId' });
+      pending.createIndex('by-team', 'teamMemberId');
+      pending.createIndex('by-status', 'syncStatus');
+    }
+    if (oldVersion < 2) {
+      transaction.objectStore('bootstrap').delete('latest');
+    }
+    if (oldVersion < 3) {
+      const store = transaction.objectStore('pendingBatches');
+      const migrate = async () => {
+        let cursor = await store.openCursor();
+        while (cursor) {
+          const batch = cursor.value;
+          if (batch.syncStatus === 'synced') {
+            await cursor.delete();
+          } else if (batch.organizationId == null) {
+            await cursor.update({ ...batch, organizationId: legacyDefaultOrganizationId });
+          }
+          cursor = await cursor.continue();
+        }
+      };
+      void migrate().catch(() => transaction.abort());
+    }
   },
 });
 
@@ -35,14 +58,11 @@ export async function saveBootstrapSnapshot(bootstrap: Bootstrap) {
   const db = await dbPromise;
   const snapshot = { ...bootstrap, cachedAt: new Date().toISOString() };
   await db.put('bootstrap', snapshot, bootstrapKey(bootstrap.organizationId));
-  await db.put('bootstrap', snapshot, 'latest');
 }
 
 export async function getBootstrapSnapshot(organizationId?: string | null) {
   const db = await dbPromise;
-  const scopedSnapshot = await db.get('bootstrap', bootstrapKey(organizationId));
-  if (scopedSnapshot || organizationId != null) return scopedSnapshot ?? null;
-  return (await db.get('bootstrap', 'latest')) ?? null;
+  return (await db.get('bootstrap', bootstrapKey(organizationId))) ?? null;
 }
 
 export async function savePendingBatch(batch: PendingVisitBatch) {
@@ -52,9 +72,14 @@ export async function savePendingBatch(batch: PendingVisitBatch) {
 
 export async function getPendingBatches(teamMemberId?: string, organizationId?: string | null) {
   const db = await dbPromise;
-  const all = await db.getAll('pendingBatches');
-  return all.filter((batch) => {
-    if (teamMemberId && batch.teamMemberId !== teamMemberId) return false;
+  const all = teamMemberId
+    ? await db.getAllFromIndex('pendingBatches', 'by-team', teamMemberId)
+    : await db.getAll('pendingBatches');
+  const active = all.filter((batch) => batch.syncStatus !== 'synced');
+  await Promise.allSettled(
+    all.filter((batch) => batch.syncStatus === 'synced').map((batch) => db.delete('pendingBatches', batch.clientBatchId)),
+  );
+  return active.filter((batch) => {
     if (organizationId !== undefined && (batch.organizationId ?? null) !== (organizationId ?? null)) return false;
     return true;
   });
@@ -94,14 +119,32 @@ export function distanceMeters(aLat: number, aLon: number, bLat: number, bLon: n
   const x =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return earthRadius * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  const normalized = Math.min(1, Math.max(0, x));
+  return earthRadius * 2 * Math.atan2(Math.sqrt(normalized), Math.sqrt(1 - normalized));
 }
 
 export function getCachedLocationSummaries(units: UnitSummary[]) {
   const grouped = new Map<string, LocationSummary>();
   const rank = { gray: 4, red: 3, yellow: 2, green: 1 };
   for (const unit of units) {
-    if (!unit.location_id || unit.latitude == null || unit.longitude == null || unit.radius_meters == null) continue;
+    const { latitude, longitude, radius_meters: radiusMeters } = unit;
+    if (
+      !unit.location_id ||
+      typeof latitude !== 'number' ||
+      !Number.isFinite(latitude) ||
+      typeof longitude !== 'number' ||
+      !Number.isFinite(longitude) ||
+      typeof radiusMeters !== 'number' ||
+      !Number.isFinite(radiusMeters) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180 ||
+      radiusMeters < 25 ||
+      radiusMeters > 750
+    ) {
+      continue;
+    }
     const existing = grouped.get(unit.location_id);
     if (existing) {
       existing.units.push(unit);
@@ -112,9 +155,9 @@ export function getCachedLocationSummaries(units: UnitSummary[]) {
         area_id: unit.area_id ?? '',
         area_name: unit.area_name ?? '',
         name: unit.location_name ?? '',
-        latitude: unit.latitude,
-        longitude: unit.longitude,
-        radius_meters: unit.radius_meters,
+        latitude,
+        longitude,
+        radius_meters: radiusMeters,
         status: unit.status,
         units: [unit],
       });

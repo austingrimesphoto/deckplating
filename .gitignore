@@ -7,3 +7,4 @@ node_modules/.tmp/
 setup-site/dist/
 test-results/
 playwright-report/
+.release-backups/

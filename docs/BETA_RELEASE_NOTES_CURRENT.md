@@ -4,30 +4,28 @@ Use this as the draft release note for the current beta build.
 
 ## Title
 
-`v0.5.0-beta - Mission Board, pilot readiness, and multi-site foundation`
+`v0.6.0-beta - Security, reliability, and workflow hardening`
 
 ## What's New
 
-- Added Mission Board engagement features built around meaningful coverage rather than raw visit volume.
-- Added weekly winners and selected-month winners to the Mission Board.
-- Added a managed workspace request approval queue for System Administration.
-- Added Mission Brief nudges, compact badge rewards, and in-confirmation achievement cards.
-- Added pilot handoff, feedback, and Mission Board validation documents.
-- Added the first multi-site foundation migration with a default organization for current single-site installs.
-- Added organization-scoped admin credential and setup-code schema groundwork.
-- Updated the setup-site SQL block so new beta teams get the current schema support through Mission Board settings and multi-site groundwork.
+- Hardened user, admin, and operator token separation and expiry checks.
+- Added persistent authentication throttling, peppered slow credential hashes, administrator-issued PINs, self-service PIN rotation, and device revocation.
+- Made workspace approval/rejection, activation, deletion, PIN reset/change, and check-in scoring operations transaction-backed and concurrency-safe.
+- Added database-enforced tenant relationships, stricter request validation, sanitized server errors, and immutable check-in batch fingerprints.
+- Fixed mobile Coverage collisions, account-switch failure behavior, local-time Mission Board grouping, offline queue recovery, kiosk reauthentication, and map/search lifecycle issues.
+- Reduced the install precache and deferred the large map bundle until a map view is opened.
+- Added CI, tooling regression checks, setup-site workflow coverage, and desktop/mobile browser tests.
 
 ## Who Should Update
 
-- Update if you are starting a fresh beta team or preparing an outside-team pilot.
-- Update if you want Mission Board nudges, badge display, and current pilot documentation.
-- No urgent action is required if your current setup is working and you are not onboarding new testers yet.
+- Update before onboarding or continuing any managed-host beta workspace.
+- Apply migration `011` before deploying this application build.
 
 ## Setup Changes
 
 - Review `docs/SETUP_GUIDE.md`.
 - Review `docs/PILOT_READINESS_GUIDE.md` before handing the app to another RMT.
-- The setup-site SQL block now reflects the current beta schema support.
+- New local-admin passphrases must contain at least 12 characters.
 
 ## Database Changes
 
@@ -42,12 +40,13 @@ Use this as the draft release note for the current beta build.
   - `008_operator_audit_events.sql`
   - `009_activity_log_search_indexes.sql`
   - `010_workspace_request_queue.sql`
+  - `011_security_reliability_hardening.sql`
   - `seed.sql`
 
 ## Environment Variable Changes
 
-- Managed workspace request emails use `DECKPLATING_OPERATOR_EMAIL`, `DECKPLATING_FROM_EMAIL`, and `RESEND_API_KEY`.
-- Email links can be controlled with `DECKPLATING_APP_BASE_URL` and `DECKPLATING_SETUP_SITE_BASE_URL`.
+- Managed hosting requires `DECKPLATING_MANAGED_HOST=true`, a dedicated random `ADMIN_SESSION_SECRET` of at least 32 bytes, and a separate random `CREDENTIAL_PEPPER` of at least 32 bytes.
+- Notification delivery defaults to disabled; use only the documented `disabled`, `mailto`, or Resend-compatible `provider` mode.
 
 ## Known Issues
 

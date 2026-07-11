@@ -89,14 +89,14 @@ App production deploy from the root repo linked to `deckplating`:
 
 ```bash
 npm run build
-netlify deploy --prod --dir=dist
+netlify deploy --prod --no-build --dir=dist --site deckplating
 ```
 
 Setup-site production deploy from the setup-site Netlify project linked to `deckplatingsetup`:
 
 ```bash
 npm run build --prefix setup-site
-netlify deploy --prod --dir=setup-site/dist
+netlify deploy --prod --no-build --dir=setup-site/dist --site deckplatingsetup
 ```
 
 Do not deploy, change Netlify settings, alter Supabase, or inspect production data unless that deployment/operations step is explicitly requested and the reviewed changes have passed.

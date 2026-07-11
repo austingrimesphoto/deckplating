@@ -87,20 +87,22 @@ netlify dev
 Quality checks:
 
 ```bash
-npm run typecheck
-npm run build
-npm run test:tenant-isolation
+npm run validate
 npm run test:ui
 ```
 
-Required local development variables:
+`npm run validate` runs the tooling regression tests, tenant-isolation guard, TypeScript build, production bundle, and setup-site build. The Playwright suite additionally exercises desktop/mobile workflows and requires Chromium (`npx playwright install chromium`).
+
+Core local development variables:
 
 ```text
 SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 ADMIN_PASSPHRASE_HASH
 ADMIN_SESSION_SECRET
+CREDENTIAL_PEPPER
 CENTRAL_OPERATOR_PASSPHRASE_HASH
+DECKPLATING_MANAGED_HOST
 MAP_TILE_URL
 MAP_TILE_KEY
 MAP_DEFAULT_LATITUDE
@@ -108,17 +110,22 @@ MAP_DEFAULT_LONGITUDE
 INSTALLATION_NAME
 DECKPLATING_APP_BASE_URL
 DECKPLATING_SETUP_SITE_BASE_URL
+DECKPLATING_ALLOWED_ORIGINS
 NOTIFICATION_MODE
 NOTIFICATION_FROM
 NOTIFICATION_REPLY_TO
-SMTP_HOST
-SMTP_PORT
-SMTP_USER
-SMTP_PASSWORD
+NOTIFICATION_PROVIDER_API_KEY
+DECKPLATING_OPERATOR_EMAIL
+DECKPLATING_FROM_EMAIL
+RESEND_API_KEY
 ENABLE_MINISTRY_INDICATORS
 VITE_ENABLE_MINISTRY_INDICATORS
 ```
 
-`NOTIFICATION_MODE` defaults to `disabled`. Supported modes are `disabled`, `mailto`, `smtp`, `provider`, and `graph`. Missing notification variables must not block local development.
+Managed hosting should set `DECKPLATING_MANAGED_HOST=true`, a dedicated random `ADMIN_SESSION_SECRET` of at least 32 bytes, a separate random `CREDENTIAL_PEPPER` of at least 32 bytes, and `CENTRAL_OPERATOR_PASSPHRASE_HASH`. Keep the pepper only in the function environment; changing or losing it prevents verification of credentials created with it. Local development can leave managed hosting disabled.
+
+`DECKPLATING_ALLOWED_ORIGINS` optionally adds comma-separated HTTPS origins for reviewed setup-site previews or alternate frontends. The configured app and setup-site origins are always included; arbitrary origins are not allowed.
+
+`NOTIFICATION_MODE` defaults to `disabled`. The implemented modes are `disabled`, `mailto` (prepare an operator-controlled draft), and `provider` (send through the configured Resend-compatible provider key/from address). Unsupported or misspelled values normalize to `disabled`; SMTP and Microsoft Graph delivery are not implemented.
 
 `ENABLE_MINISTRY_INDICATORS` and `VITE_ENABLE_MINISTRY_INDICATORS` default to off. Leave them off for Navy-facing demonstrations.

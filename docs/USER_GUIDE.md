@@ -26,7 +26,9 @@ Activation is for an approved controlled demonstration workspace. Enter the one-
 
 ## Choose Name and PIN
 
-Select your team member display name and create a PIN. Display names may use practical workflow identity such as rank/last name or role/name. Do not enter phone numbers, dates of birth, family details, private contact information, or sensitive identifiers.
+Select your team member display name and enter the PIN issued by the local administrator. Advanced local-development installs may instead ask you to create a PIN on first sign-in. Display names may use practical workflow identity such as rank/last name or role/name. Do not enter phone numbers, dates of birth, family details, private contact information, or sensitive identifiers.
+
+After the first sign-in, open `Account` and use `Change PIN` to replace the administrator-issued PIN with a private 4-digit PIN. The current device remains signed in and the app revokes that member's other device sessions.
 
 ## Check In
 

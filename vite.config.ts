@@ -21,21 +21,18 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: [
-        'apple-touch-icon.png',
-        'deckplate-coverage-app-icon.png',
-        'deckplate-coverage-app-icon-192.png',
-        'deckplate-coverage-app-icon-512.png',
-        'deckplate-coverage-page-background.png',
-      ],
+      registerType: 'prompt',
       manifest: false,
       workbox: {
         navigateFallback: '/index.html',
-        globPatterns: ['**/*.{js,css,html,png,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,png,jpg,jpeg,webmanifest}'],
+        globIgnores: [
+          'assets/maplibre-*.js',
+          'assets/maplibre-gl-*.{js,css}',
+        ],
         cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
+        clientsClaim: false,
+        skipWaiting: false,
         runtimeCaching: [],
       },
     }),

@@ -1,7 +1,12 @@
 {
   "name": "Deckplating",
   "short_name": "Deckplating",
+  "description": "Workspace-scoped ministry coverage awareness for routine deckplate visits.",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
+  "lang": "en-US",
+  "dir": "ltr",
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#17324d",

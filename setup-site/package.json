@@ -1,8 +1,11 @@
 {
   "name": "deckplating-setup-site",
-  "version": "0.1.0",
+  "version": "0.6.0-beta",
   "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "build": "mkdir -p dist/assets && cp *.html dist/ && cp -R assets/. dist/assets/"
+    "build": "node scripts/build.mjs"
   }
 }

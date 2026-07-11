@@ -12,11 +12,11 @@ Managed dry run status:
 
 ## Enable Operator Access
 
-Set `CENTRAL_OPERATOR_PASSPHRASE_HASH` in the managed host environment.
+Set `DECKPLATING_MANAGED_HOST=true`, `CENTRAL_OPERATOR_PASSPHRASE_HASH`, a dedicated `ADMIN_SESSION_SECRET`, and a separate `CREDENTIAL_PEPPER` in the managed host environment.
 
 The value is a SHA-256 hash of the central operator passphrase. Do not reuse the local organization admin passphrase.
 
-Normal local development installs should leave this value blank.
+Normal local development installs should leave `DECKPLATING_MANAGED_HOST=false` and the central operator hash blank.
 
 The managed host also needs the normal production values already in place:
 
@@ -24,10 +24,27 @@ The managed host also needs the normal production values already in place:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `ADMIN_PASSPHRASE_HASH`
 - `ADMIN_SESSION_SECRET`
+- `CREDENTIAL_PEPPER`
 - `MAP_TILE_URL`
 - optional `MAP_TILE_KEY`
+- optional `DECKPLATING_ALLOWED_ORIGINS` for reviewed alternate frontend origins
+
+`ADMIN_SESSION_SECRET` and `CREDENTIAL_PEPPER` must be separate random values of at least 32 bytes; managed hosting does not fall back to the Supabase service-role key. Generate each with an approved secret generator (for example, `openssl rand -hex 32`) and store them only in the function environment. Do not rotate or remove the credential pepper without a credential migration plan. Explicit managed mode also fails closed unless the central operator hash is configured.
 
 If `CENTRAL_OPERATOR_PASSPHRASE_HASH` is added or rotated, redeploy the site before testing operator login.
+
+## Managed Deployment Checklist
+
+Before each managed deployment:
+
+- Confirm `DECKPLATING_MANAGED_HOST=true` in the production environment.
+- Confirm the dedicated `ADMIN_SESSION_SECRET` is at least 32 bytes and is not the service-role key, an admin passphrase, or an operator passphrase.
+- Confirm the separate `CREDENTIAL_PEPPER` is at least 32 bytes, function-scoped, and recoverably stored through the approved secret-management process.
+- Confirm `CENTRAL_OPERATOR_PASSPHRASE_HASH` is present and the plaintext passphrase is stored only through the approved administrative process.
+- Apply and review every Supabase migration in numeric order.
+- Run `npm ci`, `npm run validate`, `npm run test:ui`, and `npm audit --audit-level=high` against the reviewed commit.
+- Deploy the reviewed build, then verify operator login and one non-destructive workspace read before issuing or approving setup access.
+- Run live mutation checks only against an approved test target unless the production override and cleanup plan are intentional.
 
 ## Operator API Flow
 

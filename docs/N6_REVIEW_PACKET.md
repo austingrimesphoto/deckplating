@@ -57,7 +57,7 @@ This is not DoD enterprise identity.
 
 ## Notification/Email Model
 
-Notifications are pluggable and default to disabled. Supported modes are disabled, mailto, smtp, provider, and future graph placeholder. Official administrative contact email is used only when necessary for approval coordination. Setup code plaintext must not be logged; if emailed, it is sent only when the operator intentionally approves sending setup information to the official administrative contact.
+Notifications default to disabled. Implemented modes are disabled, an operator-controlled `mailto` draft, and a configured provider path currently wired to Resend. SMTP and Microsoft Graph delivery are not implemented. Official administrative contact email is used only when necessary for approval coordination. Setup code plaintext must not be logged; if emailed, it is sent only when the operator intentionally approves sending setup information to the official administrative contact.
 
 ## Open Questions for N6/Privacy/Records/Legal/OPSEC
 

@@ -416,32 +416,32 @@
             <div class="grid-two">
               <label>
                 Installation or command name
-                <input name="installation_or_command" required />
+                <input name="installation_or_command" minlength="2" maxlength="160" required />
               </label>
               <label>
                 Preferred workspace slug, if known
-                <input name="preferred_workspace_slug" placeholder="example-rmt" />
+                <input name="preferred_workspace_slug" maxlength="80" placeholder="example-rmt" />
               </label>
             </div>
             <div class="grid-two">
               <label>
                 Lead name
-                <input name="lead_name" required />
+                <input name="lead_name" minlength="2" maxlength="120" required />
               </label>
               <label>
                 Lead role
-                <input name="lead_role" placeholder="Example: command chaplain, RP lead" required />
+                <input name="lead_role" minlength="2" maxlength="120" placeholder="Example: command chaplain, RP lead" required />
               </label>
             </div>
             <div class="grid-two">
               <label>
                 Administrative contact email
-                <input name="official_contact_email" type="email" required />
+                <input name="official_contact_email" type="email" maxlength="254" autocomplete="email" required />
                 <span class="helper">Use an official contact email when possible. Do not use personal email unless authorized.</span>
               </label>
               <label>
                 RMT size
-                <input name="rmt_size" inputmode="numeric" required />
+                <input name="rmt_size" type="number" min="1" max="999" step="1" inputmode="numeric" required />
               </label>
             </div>
             <label>
@@ -450,7 +450,7 @@
             </label>
             <label>
               Short use case
-              <textarea name="short_use_case" required placeholder="Describe the non-sensitive coverage workflow you want to test."></textarea>
+              <textarea name="short_use_case" minlength="10" maxlength="2000" required placeholder="Describe the non-sensitive coverage workflow you want to test."></textarea>
             </label>
             <label class="checkline">
               <input name="safe_use_boundaries_confirmed" type="checkbox" required />
@@ -512,11 +512,11 @@
             <div class="grid-two">
               <label>
                 Installation or command
-                <input name="installation_or_command" required />
+                <input name="installation_or_command" minlength="2" maxlength="160" required />
               </label>
               <label>
                 Administrative contact email, optional
-                <input name="pilot_lead_email" type="email" />
+                <input name="pilot_lead_email" type="email" maxlength="254" autocomplete="email" />
                 <span class="helper">Use official email where possible. Do not enter phone numbers.</span>
               </label>
             </div>
@@ -545,11 +545,11 @@
             <div class="grid-two">
               <label>
                 Number of users
-                <input name="number_of_users" inputmode="numeric" />
+                <input name="number_of_users" type="number" min="1" max="999" step="1" inputmode="numeric" />
               </label>
               <label>
                 Phone/browser used
-                <input name="browser_or_pwa_used" placeholder="Example: iPhone Safari home-screen app" />
+                <input name="browser_or_pwa_used" maxlength="160" placeholder="Example: iPhone Safari home-screen app" />
               </label>
             </div>
             <div class="grid-two">
@@ -575,19 +575,19 @@
             </div>
             <label>
               What confused the team during onboarding?
-              <textarea name="onboarding_confusion" placeholder="Workspace link, setup code, local admin passphrase, roster, map setup, etc."></textarea>
+              <textarea name="onboarding_confusion" maxlength="2000" placeholder="Workspace link, setup code, local admin passphrase, roster, map setup, etc."></textarea>
             </label>
             <label>
               What blocked or slowed real use?
-              <textarea name="operational_blockers" placeholder="Check-in, GPS/map, offline sync, account switching, admin setup, performance, etc. Do not include sensitive data."></textarea>
+              <textarea name="operational_blockers" maxlength="2000" placeholder="Check-in, GPS/map, offline sync, account switching, admin setup, performance, etc. Do not include sensitive data."></textarea>
             </label>
             <label>
               What should be improved or added?
-              <textarea name="feature_requests" placeholder="Keep this focused on one workflow or adoption problem."></textarea>
+              <textarea name="feature_requests" maxlength="2000" placeholder="Keep this focused on one workflow or adoption problem."></textarea>
             </label>
             <label>
               Top issue before another RMT tries it
-              <textarea name="top_issue_before_next_team" required></textarea>
+              <textarea name="top_issue_before_next_team" minlength="2" maxlength="2000" required></textarea>
             </label>
             <button type="submit">Send Demonstration Feedback</button>
           </form>
@@ -606,6 +606,8 @@
           window.location.href = 'workspace-request-thanks.html';
           return;
         }
+        formData.delete('bot-field');
+        formData.delete('form-name');
         const submitButton = form.querySelector('button[type="submit"]');
         submitButton.disabled = true;
         workspaceRequestStatus.textContent = 'Sending request...';
