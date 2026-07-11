@@ -38,7 +38,7 @@ npm run test:database
 
 The command starts the local stack, resets it, runs the tracked SQL assertion in a rollback-only transaction, runs the behavior harness, and destroys the stack. It refuses non-loopback database or API URLs.
 
-The expected cold-run budget is under 12 minutes, including container downloads. Warm local runs should be substantially faster. The first observed GitHub Actions runtime for this branch will be recorded in the pull request.
+The expected cold-run budget is under 12 minutes, including container downloads. Warm local runs should be substantially faster. The controlled-failure GitHub Actions run on July 11, 2026 took 1 minute 22 seconds: approximately 41 seconds started the cold container stack, 13 seconds reset and migrated the database, and the targeted assertions reached the intentional failure in under 1 second. The normal-run duration is recorded in the pull request.
 
 ## Test Boundaries
 
