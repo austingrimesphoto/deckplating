@@ -38,7 +38,7 @@ npm run test:database
 
 The command starts the local stack, resets it, runs the tracked SQL assertion in a rollback-only transaction, runs the behavior harness, and destroys the stack. It refuses non-loopback database or API URLs.
 
-The expected cold-run budget is under 12 minutes, including container downloads. Warm local runs should be substantially faster. The controlled-failure GitHub Actions run on July 11, 2026 took 1 minute 22 seconds: approximately 41 seconds started the cold container stack, 13 seconds reset and migrated the database, and the targeted assertions reached the intentional failure in under 1 second. The normal-run duration is recorded in the pull request.
+The expected cold-run budget is under 12 minutes, including container downloads. Warm local runs should be substantially faster. The controlled-failure GitHub Actions run on July 11, 2026 reached the expected failure in 1 minute 22 seconds: approximately 41 seconds started the cold container stack and 13 seconds reset and migrated the database. The normal run completed in 1 minute 39 seconds; the shared suite reported 63 seconds, including approximately 48 seconds for stack startup, 13 seconds for reset/migration, and 2.4 seconds for all SQL, concurrency, and PostgREST assertions.
 
 ## Test Boundaries
 
@@ -87,3 +87,4 @@ All organization IDs, record IDs, credential material, device material, fingerpr
 - The local stack enables Supabase's legacy automatic table grants because this production project predates the newer default-deny grant behavior; RLS remains enabled and is tested with the local anonymous role.
 - The administrator recovery/login race is exercised at the exact database boundary used by the application: initial credential read, compare-and-set legacy upgrade, recovery upsert, and credential-version invalidation. The Netlify handler itself is not started in this job.
 - Container patch versions can advance independently of the hosted production patch version, while PostgreSQL major version 17 and migration behavior remain pinned by repository configuration and tests.
+- The official `supabase/setup-cli@v1` action currently declares a deprecated Node.js 20 action runtime. GitHub executes that setup action under Node.js 24 and emits a non-failing annotation; the application tests themselves remain pinned to Node.js 22.
