@@ -7,7 +7,7 @@ const { Client } = pg;
 
 class CheckFailure extends Error {}
 
-const expectedMigrationVersions = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(3, '0'));
+const expectedMigrationVersions = Array.from({ length: 13 }, (_, index) => String(index + 1).padStart(3, '0'));
 const expectedCompositeConstraints = [
   'devices_team_member_id_fkey',
   'locations_area_id_fkey',
@@ -562,7 +562,7 @@ async function verifyAdminRecoveryLoginRace(client) {
     where credential.id = $2
       and credential.organization_id = $3
       and credential.passphrase_hash = $4
-    returning credential.updated_at`;
+    returning credential.updated_at::text as updated_at`;
   const recoverySql = `
     with delay as materialized (select pg_sleep(0.25))
     insert into public.organization_admin_credentials (organization_id, passphrase_hash, active)
@@ -570,7 +570,7 @@ async function verifyAdminRecoveryLoginRace(client) {
     on conflict (organization_id) do update
     set passphrase_hash = excluded.passphrase_hash,
         active = true
-    returning updated_at`;
+    returning updated_at::text as updated_at`;
   const results = await runOverlapping('admin-recovery-login', [
     (queryClient) =>
       queryClient.query(loginCasSql, [
@@ -584,7 +584,7 @@ async function verifyAdminRecoveryLoginRace(client) {
   expectCondition(results.every((result) => result.status === 'fulfilled'), 'admin recovery/login race returned an error');
 
   const finalState = await client.query(
-    `select passphrase_hash, updated_at
+    `select passphrase_hash, updated_at::text as updated_at
      from public.organization_admin_credentials
      where organization_id = $1`,
     [fixture.organizationA],
@@ -593,7 +593,7 @@ async function verifyAdminRecoveryLoginRace(client) {
   const loginUpdate = results[0].value.rows[0];
   if (loginUpdate) {
     expectCondition(
-      new Date(loginUpdate.updated_at).getTime() !== new Date(finalState.rows[0].updated_at).getTime(),
+      loginUpdate.updated_at !== finalState.rows[0].updated_at,
       'recovery did not invalidate the in-flight login credential version',
     );
   }
@@ -712,6 +712,103 @@ async function verifyPostgrestRelationshipsAndRls() {
   }
 }
 
+async function verifyLargeWorkspaceReads(client) {
+  const organizationId = crypto.randomUUID();
+  const areaId = crypto.randomUUID();
+  const locationId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const deviceId = crypto.randomUUID();
+  cleanupOrganizationIds.add(organizationId);
+
+  await client.query(
+    `insert into public.organizations (id, name, slug, active) values ($1, 'CI Large Workspace', $2, true)`,
+    [organizationId, `ci-large-${organizationId.slice(0, 8)}`],
+  );
+  await client.query(
+    `insert into public.areas (id, organization_id, name, sort_order) values ($1, $2, 'CI Large Area', 1)`,
+    [areaId, organizationId],
+  );
+  await client.query(
+    `insert into public.locations (id, organization_id, area_id, name, latitude, longitude, radius_meters, active)
+     values ($1, $2, $3, 'CI Large Location', 24.57, -81.78, 120, true)`,
+    [locationId, organizationId, areaId],
+  );
+  await client.query(
+    `insert into public.team_members (id, organization_id, name, role, active, pin_hash)
+     values ($1, $2, 'CI Large Member', 'Tester', true, $3)`,
+    [memberId, organizationId, randomSecret()],
+  );
+  await client.query(
+    `insert into public.devices (id, organization_id, team_member_id, device_token_hash, device_label, active)
+     values ($1, $2, $3, $4, 'CI Large Device', true)`,
+    [deviceId, organizationId, memberId, randomSecret()],
+  );
+  await client.query(
+    `insert into public.units
+       (id, organization_id, location_id, name, unit_type, visit_interval_days, active)
+     select md5($1::text || ':unit:' || sequence_number)::uuid, $1::uuid, $2::uuid,
+            'CI Large Unit ' || lpad(sequence_number::text, 4, '0'), 'department', 30, true
+     from generate_series(1, 1205) as generated(sequence_number)`,
+    [organizationId, locationId],
+  );
+  await client.query(
+    `insert into public.checkin_batches
+       (id, organization_id, client_batch_id, location_id, team_member_id, device_id, occurred_at, received_at,
+        confidential_care_provided, referral_provided)
+     select md5($1::text || ':batch:' || sequence_number)::uuid, $1::uuid,
+            md5($1::text || ':client:' || sequence_number)::uuid, $2::uuid, $3::uuid, $4::uuid,
+            '2026-06-15T12:00:00Z'::timestamptz + sequence_number * interval '1 second',
+            '2026-06-15T12:00:00Z'::timestamptz + sequence_number * interval '1 second', true, null
+     from generate_series(1, 1205) as generated(sequence_number)`,
+    [organizationId, locationId, memberId, deviceId],
+  );
+  await client.query(
+    `insert into public.checkins
+       (id, organization_id, unit_id, location_id, team_member_id, checked_in_at,
+        geofence_verified, score_awarded, batch_id)
+     select md5($1::text || ':checkin:' || sequence_number)::uuid, $1::uuid,
+            md5($1::text || ':unit:' || sequence_number)::uuid, $2::uuid, $3::uuid,
+            '2026-06-15T12:00:00Z'::timestamptz + sequence_number * interval '1 second',
+            true, 1, md5($1::text || ':batch:' || sequence_number)::uuid
+     from generate_series(1, 1205) as generated(sequence_number)`,
+    [organizationId, locationId, memberId],
+  );
+
+  const latestIds = [];
+  let afterUnitId = null;
+  for (;;) {
+    const result = await serviceApi.rpc('get_latest_active_checkins_page', {
+      p_organization_id: organizationId,
+      p_after_unit_id: afterUnitId,
+      p_page_size: 500,
+    });
+    expectCondition(!result.error, 'large coverage cursor RPC failed');
+    const page = result.data ?? [];
+    latestIds.push(...page.map((row) => row.id));
+    if (page.length < 500) break;
+    afterUnitId = page.at(-1).id;
+  }
+  expectCondition(latestIds.length === 1205, 'large coverage cursor omitted rows');
+  expectCondition(new Set(latestIds).size === 1205, 'large coverage cursor duplicated rows');
+
+  const leaderboard = await client.query(
+    `select public.get_leaderboard_period($1, '2026-06-01T00:00:00Z', '2026-07-01T00:00:00Z', 'UTC', array[$2]::uuid[]) as result`,
+    [organizationId, areaId],
+  );
+  const leaderboardResult = leaderboard.rows[0].result;
+  expectCondition(leaderboardResult.distinct_units_covered === 1205, 'large leaderboard omitted distinct units');
+  expectCondition(leaderboardResult.rows?.[0]?.qualifying_checkins === 1205, 'large leaderboard omitted check-ins');
+  expectCondition(leaderboardResult.rows?.[0]?.gray_to_green_units === 1205, 'large leaderboard first-visit total is incomplete');
+
+  const indicators = await client.query(
+    `select * from public.get_indicator_report_page($1, '2026-06-01T00:00:00Z', '2026-07-01T00:00:00Z', null, 500)`,
+    [organizationId],
+  );
+  expectCondition(indicators.rows.length === 1, 'large indicator aggregation returned an unexpected group count');
+  expectCondition(Number(indicators.rows[0].visits) === 1205, 'large indicator aggregation omitted visits');
+  expectCondition(Number(indicators.rows[0].single_unit_indicator_visits) === 1205, 'large indicator aggregation miscounted batches');
+}
+
 async function cleanup(client) {
   for (const organizationId of Array.from(cleanupOrganizationIds).reverse()) {
     await client.query('select public.delete_deckplating_organization($1)', [organizationId]).catch(() => {});
@@ -726,7 +823,7 @@ async function cleanup(client) {
 async function main() {
   await withClient('orchestrator', async (client) => {
     try {
-      await runCheck('empty migration chain applies 001-012 in order', () => verifyMigrations(client));
+      await runCheck('empty migration chain applies 001-013 in order', () => verifyMigrations(client));
       await seedFixture(client);
       await runCheck('tenant composite foreign keys reject cross-workspace records', () =>
         verifyCompositeTenantConstraints(client),
@@ -744,6 +841,9 @@ async function main() {
       await client.query("notify pgrst, 'reload schema'");
       await runCheck('PostgREST embeds resolve composite relationships and RLS blocks anon',
         verifyPostgrestRelationshipsAndRls,
+      );
+      await runCheck('large workspace cursors and aggregates preserve more than 1,000 rows', () =>
+        verifyLargeWorkspaceReads(client),
       );
     } finally {
       await cleanup(client);

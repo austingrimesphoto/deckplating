@@ -10,6 +10,7 @@ const files = {
   migration008: fs.readFileSync(new URL('../supabase/migrations/008_operator_audit_events.sql', import.meta.url), 'utf8'),
   migration010: fs.readFileSync(new URL('../supabase/migrations/010_workspace_request_queue.sql', import.meta.url), 'utf8'),
   migration011: fs.readFileSync(new URL('../supabase/migrations/011_security_reliability_hardening.sql', import.meta.url), 'utf8'),
+  migration013: fs.readFileSync(new URL('../supabase/migrations/013_large_workspace_reads.sql', import.meta.url), 'utf8'),
   notifications: fs.readFileSync(new URL('../src/lib/notifications.ts', import.meta.url), 'utf8'),
 };
 
@@ -104,7 +105,7 @@ check(
     has(api, "organizationState.updated_at !== (parsed.organizationUpdatedAt ?? null)")
 );
 check('Bootstrap/dashboard/leaderboard use token organization scope', has(api, "path === '/bootstrap'") && has(api, 'getCoverage(user.organizationId)') && has(api, "path === '/dashboard'") && has(api, "path === '/leaderboard'") && has(section(api, "path === '/leaderboard'", "if (method === 'POST' && path === '/workspaces/activate')"), 'user.organizationId'));
-check('Mission Board month, week, and active-day calculations use the requesting device time zone', has(api, 'const timeZone = parseTimeZone(params.timeZone)') && has(api, 'zonedMidnight(calendarMonthStart, timeZone)') && has(api, 'zonedDayKey(checkin.checked_in_at, dayKeyFormatter)') && has(files.app, "params.set('timeZone', timeZone)"));
+check('Mission Board month, week, and active-day calculations use the requesting device time zone', has(api, 'const timeZone = parseTimeZone(params.timeZone)') && has(api, 'zonedMidnight(calendarMonthStart, timeZone)') && has(api, 'p_time_zone: timeZone') && has(files.migration013, 'checked_in_at at time zone p_time_zone') && has(files.app, "params.set('timeZone', timeZone)"));
 check(
   'Check-in creation validates units and commits idempotency, scoring, and inserts transactionally',
   has(checkinRoute, 'scoped(unitsQuery, user.organizationId)') &&
@@ -124,7 +125,7 @@ check(
     has(files.migration011, "interval '14 days'") &&
     has(files.migration011, 'insert into public.checkins'),
 );
-check('Mission Board first-visit lookup returns one database row per unit instead of full check-in history', has(api, "supabase.rpc('get_first_active_checkins_before'") && has(files.migration011, 'create or replace function get_first_active_checkins_before') && has(files.migration011, 'select distinct on (checkin.unit_id)'));
+check('Mission Board totals and first visits aggregate in the database instead of loading full history', has(api, "supabase.rpc('get_leaderboard_period'") && has(files.migration013, 'create or replace function get_leaderboard_period') && has(files.migration013, 'group by checkin.unit_id'));
 check('Check-in batch idempotency is organization-unique in schema', has(files.migration005, 'drop constraint if exists checkin_batches_client_batch_id_key') && has(files.migration005, 'on checkin_batches(organization_id, client_batch_id)'));
 check(
   'Database foreign keys enforce tenant-consistent relationships',
