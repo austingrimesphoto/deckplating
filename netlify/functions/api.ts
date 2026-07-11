@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
 import { normalizeNotificationMode, sendWorkspaceApprovedNotification } from '../../src/lib/notifications';
 import { createCredentialCodec } from './lib/credential-codec';
+import { collectCursorPages, collectKeysetPages } from './lib/cursor-pagination';
 
 type Status = 'green' | 'yellow' | 'red' | 'gray';
 type FixedVoidReason = 'accidental' | 'wrong_unit' | 'duplicate' | 'incorrect_datetime' | 'incorrect_member';
@@ -413,6 +414,9 @@ const scoped = (query: any, organizationId: string | null) =>
 const withOrganization = <T extends Record<string, unknown>>(values: T, organizationId: string | null) =>
   organizationId ? { ...values, organization_id: organizationId } : values;
 
+const allById = <T extends { id: string }>(buildQuery: (afterId: string | null, limit: number) => PromiseLike<{ data: T[] | null; error: unknown }>) =>
+  collectCursorPages<T>(buildQuery);
+
 const uniqueUuidValues = (values: unknown[]) => {
   const nonEmptyValues = values.filter((value) => value != null && value !== '');
   if (nonEmptyValues.some((value) => typeof value !== 'string')) {
@@ -737,19 +741,6 @@ const zonedMidnight = (calendarDate: Date, timeZone: string) => {
     if (adjustment === 0) break;
   }
   return new Date(candidate);
-};
-
-const zonedDayKeyFormatter = (timeZone: string) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
-
-const zonedDayKey = (value: string, formatter: Intl.DateTimeFormat) => {
-  const parts = Object.fromEntries(
-    formatter
-      .formatToParts(new Date(value))
-      .filter((part) => part.type !== 'literal')
-      .map((part) => [part.type, part.value]),
-  );
-  return `${parts.year}-${parts.month}-${parts.day}`;
 };
 
 const isLatitude = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= -90 && value <= 90;
@@ -1626,23 +1617,32 @@ async function requireUser(event: HandlerEvent) {
 
 async function getLatestActiveCheckins(organizationId: string | null) {
   if (organizationId && (await organizationSchemaEnabled())) {
-    const { data, error } = await supabase.rpc('get_latest_active_checkins', {
-      p_organization_id: organizationId,
-    });
-    if (!error) return (data ?? []) as Array<{ unit_id: string; checked_in_at: string; visitor: string | null }>;
-    if (!isMissingRelationError(error)) throw error;
+    try {
+      return await allById<{ id: string; unit_id: string; checked_in_at: string; visitor: string | null }>((afterId, limit) =>
+        supabase.rpc('get_latest_active_checkins_page', {
+          p_organization_id: organizationId,
+          p_after_unit_id: afterId,
+          p_page_size: limit,
+        }),
+      );
+    } catch (error) {
+      if (!isMissingRelationError(error)) throw error;
+    }
   }
-  const query = scoped(
-    supabase
-      .from('checkins')
-      .select('unit_id, checked_in_at, team_members!checkins_team_member_id_fkey(name)')
-      .is('voided_at', null),
-    organizationId,
-  ).order('checked_in_at', { ascending: false });
-  const { data, error } = await query;
-  if (error) throw error;
+  const data = await allById<any>((afterId, limit) => {
+    let query = scoped(
+      supabase
+        .from('checkins')
+        .select('id, unit_id, checked_in_at, team_members!checkins_team_member_id_fkey(name)')
+        .is('voided_at', null),
+      organizationId,
+    ).order('id').limit(limit);
+    if (afterId) query = query.gt('id', afterId);
+    return query;
+  });
+  data.sort((a, b) => b.checked_in_at.localeCompare(a.checked_in_at) || b.id.localeCompare(a.id));
   const latest = new Map<string, { unit_id: string; checked_in_at: string; visitor: string | null }>();
-  for (const checkin of data ?? []) {
+  for (const checkin of data) {
     if (latest.has(checkin.unit_id)) continue;
     const member = checkin.team_members as { name?: string } | null;
     latest.set(checkin.unit_id, {
@@ -1654,47 +1654,25 @@ async function getLatestActiveCheckins(organizationId: string | null) {
   return Array.from(latest.values());
 }
 
-async function getFirstActiveCheckinsBefore(organizationId: string | null, before: string) {
-  if (organizationId && (await organizationSchemaEnabled())) {
-    const { data, error } = await supabase.rpc('get_first_active_checkins_before', {
-      p_organization_id: organizationId,
-      p_before: before,
-    });
-    if (!error) return (data ?? []) as Array<{ unit_id: string; checked_in_at: string }>;
-    if (!isMissingRelationError(error)) throw error;
-  }
-  const query = scoped(
-    supabase
-      .from('checkins')
-      .select('unit_id, checked_in_at')
-      .is('voided_at', null)
-      .lt('checked_in_at', before),
-    organizationId,
-  ).order('checked_in_at', { ascending: true });
-  const { data, error } = await query;
-  if (error) throw error;
-  const first = new Map<string, { unit_id: string; checked_in_at: string }>();
-  for (const checkin of data ?? []) {
-    if (!first.has(checkin.unit_id)) first.set(checkin.unit_id, checkin);
-  }
-  return Array.from(first.values());
-}
-
 async function getCoverage(organizationId: string | null) {
-  const areaQuery = scoped(supabase.from('areas').select('*'), organizationId).order('sort_order');
-  const unitQuery = scoped(
-    supabase
-      .from('units')
-      .select('*, locations(*, areas(*))')
-      .eq('active', true),
-    organizationId,
-  ).order('name');
-  const [{ data: areas, error: areaError }, { data: units, error: unitError }, checkins] =
-    await Promise.all([areaQuery, unitQuery, getLatestActiveCheckins(organizationId)]);
-
-  if (areaError || unitError) {
-    throw areaError ?? unitError;
-  }
+  const [areas, units, checkins] = await Promise.all([
+    allById<any>((afterId, limit) => {
+      let query = scoped(supabase.from('areas').select('*'), organizationId).order('id').limit(limit);
+      if (afterId) query = query.gt('id', afterId);
+      return query;
+    }),
+    allById<any>((afterId, limit) => {
+      let query = scoped(
+        supabase.from('units').select('*, locations(*, areas(*))').eq('active', true),
+        organizationId,
+      ).order('id').limit(limit);
+      if (afterId) query = query.gt('id', afterId);
+      return query;
+    }),
+    getLatestActiveCheckins(organizationId),
+  ]);
+  areas.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+  units.sort((a, b) => a.name.localeCompare(b.name));
 
   const latest = new Map<string, { checked_in_at: string; visitor: string | null }>();
   for (const checkin of checkins) {
@@ -1707,7 +1685,7 @@ async function getCoverage(organizationId: string | null) {
   }
 
   const now = Date.now();
-  const summaries = (units ?? []).map((unit: any) => {
+  const summaries = units.map((unit: any) => {
     const last = latest.get(unit.id);
     const days =
       last?.checked_in_at != null
@@ -1736,7 +1714,7 @@ async function getCoverage(organizationId: string | null) {
     };
   });
 
-  return { areas: areas ?? [], units: summaries };
+  return { areas, units: summaries };
 }
 
 async function getLocationSummaries(organizationId: string | null) {
@@ -2215,34 +2193,45 @@ async function route(event: HandlerEvent) {
         returned: paged.length,
         total: search && events && events.length < scanLimit ? filtered.length : null,
         hasMore: search ? filtered.length > offset + limit || (events ?? []).length === scanLimit : paged.length === limit,
+        truncated: Boolean(search && (events ?? []).length === scanLimit),
+        scanLimit: search ? scanLimit : null,
       },
     });
   }
 
   if (method === 'GET' && path === '/operator/organizations') {
-    const [{ data: organizations, error: orgError }, { data: setupCodes, error: codeError }] = await Promise.all([
-      supabase.from('organizations').select('id, slug, name, active, created_at, updated_at').order('created_at', { ascending: false }),
-      supabase
-        .from('organization_setup_codes')
-        .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
-        .order('created_at', { ascending: false }),
+    const [organizations, setupCodes] = await Promise.all([
+      allById<any>((afterId, limit) => {
+        let query = supabase.from('organizations').select('id, slug, name, active, created_at, updated_at').order('id').limit(limit);
+        if (afterId) query = query.gt('id', afterId);
+        return query;
+      }),
+      allById<any>((afterId, limit) => {
+        let query = supabase
+          .from('organization_setup_codes')
+          .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
+          .order('id')
+          .limit(limit);
+        if (afterId) query = query.gt('id', afterId);
+        return query;
+      }),
     ]);
-    if (orgError) throw orgError;
-    if (codeError) throw codeError;
+    organizations.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
+    setupCodes.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
     const onboardingByOrg = new Map<string, WorkspaceOnboardingSummary>();
     await Promise.all(
-      (organizations ?? []).map(async (organization: any) => {
+      organizations.map(async (organization: any) => {
         onboardingByOrg.set(organization.id, await getWorkspaceOnboardingSummary(organization.id));
       }),
     );
     const codesByOrg = new Map<string, any[]>();
-    for (const code of setupCodes ?? []) {
+    for (const code of setupCodes) {
       const values = codesByOrg.get(code.organization_id) ?? [];
       values.push(code);
       codesByOrg.set(code.organization_id, values);
     }
     return json(200, {
-      organizations: (organizations ?? []).map((organization: any) => {
+      organizations: organizations.map((organization: any) => {
         const codes = codesByOrg.get(organization.id) ?? [];
         return {
           ...organization,
@@ -2308,46 +2297,31 @@ async function route(event: HandlerEvent) {
     if (organizationError) throw organizationError;
     if (!organization) return json(404, { error: 'Organization not found.' });
 
+    const byId = <T extends { id: string }>(table: string, columns: string) =>
+      allById<T>((afterId, limit) => {
+        let query = scoped(supabase.from(table).select(columns), organizationId).order('id').limit(limit);
+        if (afterId) query = query.gt('id', afterId);
+        return query;
+      });
     const [settings, areas, locations, units, teamMembers, batches, checkins] = await Promise.all([
-      scoped(supabase.from('app_settings').select('key, value').order('key'), organizationId),
-      scoped(supabase.from('areas').select('id, name, sort_order').order('sort_order'), organizationId),
-      scoped(
-        supabase
-          .from('locations')
-          .select('id, area_id, name, latitude, longitude, radius_meters, active, created_at, updated_at')
-          .order('name'),
-        organizationId,
-      ),
-      scoped(
-        supabase
-          .from('units')
-          .select('id, location_id, name, unit_type, visit_interval_days, active, created_at, updated_at')
-          .order('name'),
-        organizationId,
-      ),
-      scoped(supabase.from('team_members').select('id, name, role, active, created_at').order('name'), organizationId),
-      scoped(
-        supabase
-          .from('checkin_batches')
-          .select(
-            'id, client_batch_id, location_id, team_member_id, occurred_at, received_at, confidential_care_provided, referral_provided, outcomes_recorded_at, created_at, updated_at, updated_by_team_member_id',
-          )
-          .order('occurred_at', { ascending: false }),
-        organizationId,
-      ),
-      scoped(
-        supabase
-          .from('checkins')
-          .select(
-            'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, distance_meters, score_awarded, batch_id, voided_at, voided_by_team_member_id, void_reason, created_at, updated_at, updated_by_team_member_id',
-          )
-          .order('checked_in_at', { ascending: false }),
-        organizationId,
-      ),
+      collectKeysetPages<any>((afterKey, limit) => {
+        let query = scoped(supabase.from('app_settings').select('key, value'), organizationId).order('key').limit(limit);
+        if (afterKey) query = query.gt('key', afterKey);
+        return query;
+      }, (row) => row.key),
+      byId<any>('areas', 'id, name, sort_order'),
+      byId<any>('locations', 'id, area_id, name, latitude, longitude, radius_meters, active, created_at, updated_at'),
+      byId<any>('units', 'id, location_id, name, unit_type, visit_interval_days, active, created_at, updated_at'),
+      byId<any>('team_members', 'id, name, role, active, created_at'),
+      byId<any>('checkin_batches', 'id, client_batch_id, location_id, team_member_id, occurred_at, received_at, confidential_care_provided, referral_provided, outcomes_recorded_at, created_at, updated_at, updated_by_team_member_id'),
+      byId<any>('checkins', 'id, unit_id, location_id, team_member_id, checked_in_at, geofence_verified, distance_meters, score_awarded, batch_id, voided_at, voided_by_team_member_id, void_reason, created_at, updated_at, updated_by_team_member_id'),
     ]);
-    const error =
-      settings.error ?? areas.error ?? locations.error ?? units.error ?? teamMembers.error ?? batches.error ?? checkins.error;
-    if (error) throw error;
+    areas.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    locations.sort((a, b) => a.name.localeCompare(b.name));
+    units.sort((a, b) => a.name.localeCompare(b.name));
+    teamMembers.sort((a, b) => a.name.localeCompare(b.name));
+    batches.sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id.localeCompare(a.id));
+    checkins.sort((a, b) => b.checked_in_at.localeCompare(a.checked_in_at) || b.id.localeCompare(a.id));
     await tryRecordOperatorAudit(organizationId, 'workspace_safe_export_downloaded', { slug: organization.slug });
     return json(200, {
       generatedAt: new Date().toISOString(),
@@ -2359,13 +2333,14 @@ async function route(event: HandlerEvent) {
           'Setup-code plaintext, setup-code hashes, passphrase hashes, PIN hashes, device-token hashes, devices, service keys, counseling notes, referral details, medical details, personal details, and sensitive operational details.',
       },
       organization,
-      settings: settings.data ?? [],
-      areas: areas.data ?? [],
-      locations: locations.data ?? [],
-      units: units.data ?? [],
-      teamMembers: teamMembers.data ?? [],
-      checkinBatches: batches.data ?? [],
-      checkins: checkins.data ?? [],
+      pagination: { strategy: 'keyset', pageSize: 500, complete: true },
+      settings,
+      areas,
+      locations,
+      units,
+      teamMembers,
+      checkinBatches: batches,
+      checkins,
     });
   }
 
@@ -2515,39 +2490,44 @@ async function route(event: HandlerEvent) {
       if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
       throw error;
     }
-    const query = supabase
-      .from('team_members')
-      .select('id, name')
-      .eq('active', true)
-      .order('name');
-    const { data: teamMembers, error } = await scoped(query, organizationId);
-    if (error) throw error;
+    const teamMembers = await allById<any>((afterId, limit) => {
+      let query = scoped(
+        supabase.from('team_members').select('id, name').eq('active', true),
+        organizationId,
+      ).order('id').limit(limit);
+      if (afterId) query = query.gt('id', afterId);
+      return query;
+    });
+    teamMembers.sort((a, b) => a.name.localeCompare(b.name));
     return json(200, {
       organizationId,
       organization: await organizationSummary(organizationId),
-      teamMembers: (teamMembers ?? []).map((member: any) => ({ ...member, role: null })),
+      teamMembers: teamMembers.map((member: any) => ({ ...member, role: null })),
     });
   }
 
   if (method === 'GET' && path === '/bootstrap') {
     const user = await requireUser(event);
     if (!user) return json(403, { error: 'Authentication required.' });
-    const teamMemberQuery = scoped(
-      supabase.from('team_members').select('id, name, role').eq('active', true),
-      user.organizationId,
-    ).order('name');
-    const [{ data: teamMembers, error }, coverage, gamificationTone] = await Promise.all([
-      teamMemberQuery,
+    const [teamMembers, coverage, gamificationTone] = await Promise.all([
+      allById<any>((afterId, limit) => {
+        let query = scoped(
+          supabase.from('team_members').select('id, name, role').eq('active', true),
+          user.organizationId,
+        ).order('id').limit(limit);
+        if (afterId) query = query.gt('id', afterId);
+        return query;
+      }),
       getCoverage(user.organizationId),
       getGamificationTone(user.organizationId),
     ]);
-    if (error) throw error;
+    teamMembers.sort((a, b) => a.name.localeCompare(b.name));
     const mapSettings = await getWorkspaceMapSettings(user.organizationId);
     return json(200, {
       organizationId: user.organizationId,
       organization: await organizationSummary(user.organizationId),
       areas: coverage.areas,
-      teamMembers: teamMembers ?? [],
+      teamMembers,
       units: coverage.units,
       mapTileUrl: (process.env.MAP_TILE_URL ?? '').replace('{key}', process.env.MAP_TILE_KEY ?? ''),
       ...mapSettings,
@@ -3077,11 +3057,16 @@ async function route(event: HandlerEvent) {
         'id, checked_in_at, geofence_verified, score_awarded, voided_at, void_reason, team_members!checkins_team_member_id_fkey(name), checkin_batches!checkins_batch_id_fkey(confidential_care_provided, referral_provided)',
       )
       .eq('unit_id', unitId);
-    const { data, error } = await scoped(detailQuery, user.organizationId).order('checked_in_at', { ascending: false }).limit(100);
+    const detailLimit = 100;
+    const { data, error } = await scoped(detailQuery, user.organizationId)
+      .order('checked_in_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(detailLimit + 1);
     if (error) throw error;
+    const detailRows = (data ?? []).slice(0, detailLimit);
     return json(200, {
       unit,
-      checkins: (data ?? []).map((checkin: any) => ({
+      checkins: detailRows.map((checkin: any) => ({
         id: checkin.id,
         checked_in_at: checkin.checked_in_at,
         team_member_name: checkin.team_members?.name ?? 'Unknown member',
@@ -3092,6 +3077,12 @@ async function route(event: HandlerEvent) {
         confidential_care_provided: checkin.checkin_batches?.confidential_care_provided ?? null,
         referral_provided: checkin.checkin_batches?.referral_provided ?? null,
       })),
+      page: {
+        limit: detailLimit,
+        returned: detailRows.length,
+        hasMore: (data ?? []).length > detailLimit,
+        truncated: (data ?? []).length > detailLimit,
+      },
     });
   }
 
@@ -3101,67 +3092,20 @@ async function route(event: HandlerEvent) {
     if (!user) return json(403, { error: 'Authentication required.' });
     const params = event.queryStringParameters ?? {};
     const range = dateRangeFilters(params);
-    let query = scoped(
-      supabase
-      .from('checkins')
-      .select(
-        'id, batch_id, checked_in_at, location_id, checkin_batches!checkins_batch_id_fkey(id, location_id, occurred_at, confidential_care_provided, referral_provided), units(id, location_id, locations(id, name, area_id, areas(id, name))), locations(id, name, area_id, areas(id, name))',
-      )
-      .not('batch_id', 'is', null)
-      .is('voided_at', null)
-      .order('checked_in_at', { ascending: false })
-      .limit(2000),
-      user.organizationId,
+    const rows = await allById<any>((afterId, limit) => supabase.rpc('get_indicator_report_page', {
+      p_organization_id: user.organizationId,
+      p_from: range.from,
+      p_to: range.to,
+      p_after_key: afterId,
+      p_page_size: limit,
+    }));
+    rows.sort((a, b) =>
+      b.confidential_care_count + b.referral_count - (a.confidential_care_count + a.referral_count) ||
+      a.key.localeCompare(b.key),
     );
-    if (range.from) query = query.gte('checked_in_at', range.from);
-    if (range.to) query = query.lte('checked_in_at', range.to);
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    const batches = new Map<string, any[]>();
-    for (const row of data ?? []) {
-      if (!row.batch_id) continue;
-      const rows = batches.get(row.batch_id) ?? [];
-      rows.push(row);
-      batches.set(row.batch_id, rows);
-    }
-
-    const reports = new Map<string, any>();
-    for (const rows of batches.values()) {
-      const first: any = rows[0];
-      const batch = first.checkin_batches;
-      const directLocation = first.locations;
-      const unitLocation = first.units?.locations;
-      const location = directLocation ?? unitLocation ?? null;
-      const area = location?.areas ?? null;
-      const key = `${area?.id ?? 'none'}:${location?.id ?? batch?.location_id ?? 'unmapped'}`;
-      const row = reports.get(key) ?? {
-        key,
-        area_id: area?.id ?? null,
-        area_name: area?.name ?? 'Unassigned',
-        location_id: location?.id ?? batch?.location_id ?? null,
-        location_name: location?.name ?? 'Unmapped',
-        visits: 0,
-        confidential_care_count: 0,
-        referral_count: 0,
-        single_unit_indicator_visits: 0,
-        multi_unit_indicator_visits: 0,
-      };
-      row.visits += 1;
-      if (batch?.confidential_care_provided === true) row.confidential_care_count += 1;
-      if (batch?.referral_provided === true) row.referral_count += 1;
-      if (batch?.confidential_care_provided === true || batch?.referral_provided === true) {
-        if (rows.length === 1) row.single_unit_indicator_visits += 1;
-        else row.multi_unit_indicator_visits += 1;
-      }
-      reports.set(key, row);
-    }
-
     return json(200, {
-      rows: Array.from(reports.values()).sort(
-        (a, b) => b.confidential_care_count + b.referral_count - (a.confidential_care_count + a.referral_count),
-      ),
+      rows: rows.map(({ id: _cursor, ...row }) => row),
+      page: { strategy: 'keyset', complete: true, returned: rows.length },
     });
   }
 
@@ -3177,122 +3121,55 @@ async function route(event: HandlerEvent) {
     const calendarMonthEnd = new Date(Date.UTC(year, monthNumber, 1));
     const monthStart = zonedMidnight(calendarMonthStart, timeZone);
     const monthEnd = zonedMidnight(calendarMonthEnd, timeZone);
-    const start = monthStart.toISOString();
-    const end = monthEnd.toISOString();
     const now = new Date();
-    const [monthlyResult, firstVisitsBeforeEnd, coverage] = await Promise.all([
-      scoped(
-        supabase
-        .from('checkins')
-        .select('unit_id, checked_in_at, score_awarded, team_members!checkins_team_member_id_fkey(id, name), units(id, location_id, locations(id, area_id))')
-        .is('voided_at', null)
-        .gte('checked_in_at', start)
-        .lt('checked_in_at', end),
-        user.organizationId,
-      ),
-      getFirstActiveCheckinsBefore(user.organizationId, end),
-      getCoverage(user.organizationId),
-    ]);
-    if (monthlyResult.error) throw monthlyResult.error;
-    const monthlyCheckins = monthlyResult.data ?? [];
-
-    const firstVisitByUnit = new Map<string, string>();
-    for (const checkin of firstVisitsBeforeEnd) {
-      if (!firstVisitByUnit.has(checkin.unit_id)) firstVisitByUnit.set(checkin.unit_id, checkin.checked_in_at);
-    }
-
-    const sweptAreaIds = new Set(
+    const coverage = await getCoverage(user.organizationId);
+    const sweptAreaIds =
       (coverage.areas ?? [])
         .filter((area: any) =>
           coverage.units
             .filter((unit: any) => unit.area_id === area.id)
             .every((unit: any) => unit.status !== 'red' && unit.status !== 'gray'),
         )
-        .map((area: any) => area.id),
-    );
+        .map((area: any) => area.id);
 
-    const dayKeyFormatter = zonedDayKeyFormatter(timeZone);
-    const buildLeaderboardRows = (checkins: any[]) => {
-      const rows = new Map<string, any>();
-      for (const checkin of checkins) {
-        const member = checkin.team_members as any;
-        if (!member) continue;
-        const row = rows.get(member.id) ?? {
-          team_member_id: member.id,
-          name: member.name,
-          qualifying_checkins: 0,
-          distinct_units: new Set<string>(),
-          recovered_units: 0,
-          gray_to_green_units: new Set<string>(),
-          coverage_sweep_areas: new Set<string>(),
-          active_days: new Set<string>(),
-          score: 0,
-        };
-        if (checkin.score_awarded > 0) row.qualifying_checkins += 1;
-        if (checkin.score_awarded >= 3) row.recovered_units += 1;
-        if (checkin.score_awarded > 0 && firstVisitByUnit.get(checkin.unit_id) === checkin.checked_in_at) {
-          row.gray_to_green_units.add(checkin.unit_id);
-        }
-        const areaId = (checkin.units as any)?.locations?.area_id ?? null;
-        if (checkin.score_awarded > 0 && areaId && sweptAreaIds.has(areaId)) {
-          row.coverage_sweep_areas.add(areaId);
-        }
-        row.distinct_units.add(checkin.unit_id);
-        row.active_days.add(zonedDayKey(checkin.checked_in_at, dayKeyFormatter));
-        row.score += checkin.score_awarded;
-        rows.set(member.id, row);
-      }
-      return Array.from(rows.values())
-        .map((row) => {
-          const distinctUnits = row.distinct_units.size;
-          const activeDays = row.active_days.size;
-          const grayToGreenUnits = row.gray_to_green_units.size;
-          const coverageSweepAreas = row.coverage_sweep_areas.size;
-          const badges = [];
-          if (row.qualifying_checkins > 0) badges.push('first_rounds');
-          if (row.recovered_units > 0) badges.push('recovery_team');
-          if (grayToGreenUnits > 0) badges.push('gray_to_green');
-          if (distinctUnits >= 5) badges.push('wide_coverage');
-          if (activeDays >= 4) badges.push('sustained_presence');
-          if (coverageSweepAreas > 0) badges.push('coverage_sweep');
-          return {
-            ...row,
-            distinct_units: distinctUnits,
-            active_days: activeDays,
-            gray_to_green_units: grayToGreenUnits,
-            coverage_sweep_areas: coverageSweepAreas,
-            badges,
-          };
-        })
-        .sort((a, b) => b.score - a.score || b.recovered_units - a.recovered_units || b.distinct_units - a.distinct_units || a.name.localeCompare(b.name));
+    const readPeriod = async (periodStart: Date, periodEnd: Date) => {
+      const { data, error } = await supabase.rpc('get_leaderboard_period', {
+        p_organization_id: user.organizationId,
+        p_start: periodStart.toISOString(),
+        p_end: periodEnd.toISOString(),
+        p_time_zone: timeZone,
+        p_swept_area_ids: sweptAreaIds,
+      });
+      if (error) throw error;
+      const result = (data ?? { rows: [], units_recovered: 0, distinct_units_covered: 0 }) as any;
+      result.rows = (result.rows ?? []).map((row: any) => {
+        const badges = [];
+        if (row.qualifying_checkins > 0) badges.push('first_rounds');
+        if (row.recovered_units > 0) badges.push('recovery_team');
+        if (row.gray_to_green_units > 0) badges.push('gray_to_green');
+        if (row.distinct_units >= 5) badges.push('wide_coverage');
+        if (row.active_days >= 4) badges.push('sustained_presence');
+        if (row.coverage_sweep_areas > 0) badges.push('coverage_sweep');
+        return { ...row, badges };
+      });
+      return result;
     };
-
-    const recoveredUnitsThisMonth = new Set<string>();
-    const distinctUnitsCovered = new Set<string>();
-    for (const checkin of monthlyCheckins) {
-      if (checkin.score_awarded >= 3) recoveredUnitsThisMonth.add(checkin.unit_id);
-      distinctUnitsCovered.add(checkin.unit_id);
-    }
+    const monthly = await readPeriod(monthStart, monthEnd);
 
     const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone });
     const labelPeriod = (periodStart: Date, periodEndExclusive: Date) => {
       const endInclusive = new Date(periodEndExclusive.getTime() - 1);
       return `${dateFormatter.format(periodStart)}-${dateFormatter.format(endInclusive)}`;
     };
-    const periodWinner = (type: 'week' | 'month', periodStart: Date, periodEndExclusive: Date) => {
-      const rows = buildLeaderboardRows(
-        monthlyCheckins.filter((checkin: any) => {
-          const checkedInAt = new Date(checkin.checked_in_at);
-          return checkedInAt >= periodStart && checkedInAt < periodEndExclusive;
-        }),
-      );
+    const periodWinner = async (type: 'week' | 'month', periodStart: Date, periodEndExclusive: Date, result?: any) => {
+      const period = result ?? await readPeriod(periodStart, periodEndExclusive);
       return {
         type,
         label: type === 'month' ? new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone }).format(periodStart) : labelPeriod(periodStart, periodEndExclusive),
         start: periodStart.toISOString(),
         end: periodEndExclusive.toISOString(),
         final: periodEndExclusive <= now,
-        winner: rows[0] ?? null,
+        winner: period.rows[0] ?? null,
       };
     };
 
@@ -3306,22 +3183,21 @@ async function route(event: HandlerEvent) {
       if (calendarPeriodEnd > calendarMonthEnd) calendarPeriodEnd.setTime(calendarMonthEnd.getTime());
       const periodStart = zonedMidnight(calendarPeriodStart, timeZone);
       const periodEnd = zonedMidnight(calendarPeriodEnd, timeZone);
-      if (periodStart <= now) weeklyWinners.push(periodWinner('week', periodStart, periodEnd));
+      if (periodStart <= now) weeklyWinners.push(await periodWinner('week', periodStart, periodEnd));
       calendarPeriodStart = calendarPeriodEnd;
     }
 
-    const rows = buildLeaderboardRows(monthlyCheckins);
     return json(200, {
       month,
       timeZone,
-      rows,
+      rows: monthly.rows,
       winners: {
         weeks: weeklyWinners,
-        month: periodWinner('month', monthStart, monthEnd),
+        month: await periodWinner('month', monthStart, monthEnd, monthly),
       },
       summary: {
-        units_recovered_this_month: recoveredUnitsThisMonth.size,
-        distinct_units_covered: distinctUnitsCovered.size,
+        units_recovered_this_month: monthly.units_recovered,
+        distinct_units_covered: monthly.distinct_units_covered,
         overdue_remaining: coverage.units.filter((unit: any) => unit.status === 'red').length,
         never_visited_remaining: coverage.units.filter((unit: any) => unit.status === 'gray').length,
       },
@@ -3563,15 +3439,22 @@ async function route(event: HandlerEvent) {
 
   if (method === 'GET' && path === '/admin/locations') {
     const organizationId = adminContext!.organizationId;
+    const readTable = <T extends { id: string }>(table: string, columns: string) => allById<T>((afterId, limit) => {
+      let query = scoped(supabase.from(table).select(columns), organizationId).order('id').limit(limit);
+      if (afterId) query = query.gt('id', afterId);
+      return query;
+    });
     const [areas, locations, units, members] = await Promise.all([
-      scoped(supabase.from('areas').select('*'), organizationId).order('sort_order'),
-      scoped(supabase.from('locations').select('*, areas(*)'), organizationId).order('name'),
-      scoped(supabase.from('units').select('*'), organizationId).order('name'),
-      scoped(supabase.from('team_members').select('id, name, role, active, created_at'), organizationId).order('name'),
+      readTable<any>('areas', '*'),
+      readTable<any>('locations', '*, areas(*)'),
+      readTable<any>('units', '*'),
+      readTable<any>('team_members', 'id, name, role, active, created_at'),
     ]);
-    const error = areas.error ?? locations.error ?? units.error ?? members.error;
-    if (error) throw error;
-    return json(200, { areas: areas.data, locations: locations.data, units: units.data, teamMembers: members.data });
+    areas.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    locations.sort((a, b) => a.name.localeCompare(b.name));
+    units.sort((a, b) => a.name.localeCompare(b.name));
+    members.sort((a, b) => a.name.localeCompare(b.name));
+    return json(200, { areas, locations, units, teamMembers: members });
   }
 
   if (method === 'POST' && path === '/admin/areas') {
@@ -3689,6 +3572,8 @@ async function route(event: HandlerEvent) {
           : count == null
             ? checkins.length === limit
             : offset + checkins.length < count,
+        truncated: needsMappedFiltering && (data ?? []).length === scanLimit,
+        scanLimit: needsMappedFiltering ? scanLimit : null,
       },
     });
   }
