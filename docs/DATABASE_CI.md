@@ -66,7 +66,7 @@ The tracked `supabase/tests/011_security_reliability_hardening.sql` assertion ru
 
 ## Controlled Failure
 
-The workflow-dispatch input `controlled_failure` sets a test-only mode that deliberately expects two check-ins from an idempotent retry. A correct database produces one row, so the job must fail with the sanitized message:
+The workflow-dispatch input `controlled_failure` sets a test-only mode that deliberately expects two check-ins from an idempotent retry. Before the workflow exists on the default branch, a push to a `ci/**` branch with `[controlled-db-failure]` in the commit message activates the same proof. A correct database produces one row, so the job must fail with the sanitized message:
 
 ```text
 controlled failure: intentionally false idempotency expectation

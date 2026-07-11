@@ -1,6 +1,9 @@
 name: Database behavior checks
 
 on:
+  push:
+    branches:
+      - 'ci/**'
   pull_request:
   workflow_dispatch:
     inputs:
@@ -35,7 +38,7 @@ jobs:
       - run: npm ci
       - name: Reset empty database and run behavior checks
         env:
-          DECKPLATING_TEST_CONTROLLED_FAILURE: ${{ github.event_name == 'workflow_dispatch' && inputs.controlled_failure && 'idempotency' || '' }}
+          DECKPLATING_TEST_CONTROLLED_FAILURE: ${{ ((github.event_name == 'workflow_dispatch' && inputs.controlled_failure) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[controlled-db-failure]'))) && 'idempotency' || '' }}
         run: npm run test:database
       - name: Stop disposable Supabase stack
         if: always()
