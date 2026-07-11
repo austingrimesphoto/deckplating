@@ -1,0 +1,58 @@
+project_id = "deckplating-ci"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+# The production project predates Supabase's new default-deny table grants.
+# Keep the disposable stack aligned so service-role PostgREST tests exercise
+# the same relationships; RLS still blocks anon/authenticated table access.
+auto_expose_new_tables = true
+
+[api.tls]
+enabled = false
+
+[db]
+port = 54322
+shadow_port = 54320
+health_timeout = "3m"
+major_version = 17
+
+[db.pooler]
+enabled = false
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[db.seed]
+enabled = false
+sql_paths = ["./seed.sql"]
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = false
+
+[local_smtp]
+enabled = false
+
+[storage]
+enabled = false
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = []
+jwt_expiry = 3600
+enable_signup = false
+enable_anonymous_sign_ins = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false
