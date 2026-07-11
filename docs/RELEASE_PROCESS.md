@@ -56,7 +56,7 @@ supabase migration list --linked
 
 Do not migrate until a provider recovery point or a locally verified logical archive exists. A local archive must include schema and data, have owner-only permissions, pass its checksum, and produce a valid `pg_restore --list` inventory. Keep it in an ignored directory and never commit database contents.
 
-Confirm the dry run lists only reviewed migrations. For this release, `011_security_reliability_hardening.sql` and `supabase/tests/011_security_reliability_hardening.sql` were also executed together inside a rollback-only transaction before the real push. Migration `011` must be applied before the matching Netlify deployment; the API intentionally fails closed when its transaction, credential, and rate-limit functions are missing.
+Confirm the dry run lists only reviewed migrations. For this release, migrations `011` and `012` plus `supabase/tests/011_security_reliability_hardening.sql` were also executed inside rollback-only transactions before each real push. Both migrations must be applied before the matching Netlify deployment; the API intentionally fails closed when its transaction, credential, and rate-limit functions are missing.
 
 ## Deploy The Reviewed Artifacts
 

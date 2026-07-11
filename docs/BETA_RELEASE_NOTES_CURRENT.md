@@ -41,6 +41,7 @@ Use this as the draft release note for the current beta build.
   - `009_activity_log_search_indexes.sql`
   - `010_workspace_request_queue.sql`
   - `011_security_reliability_hardening.sql`
+  - `012_remove_checkin_loop_shadow.sql`
   - `seed.sql`
 
 ## Environment Variable Changes
