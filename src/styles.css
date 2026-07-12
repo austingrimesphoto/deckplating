@@ -163,6 +163,10 @@ h2 {
   -webkit-backdrop-filter: blur(14px);
 }
 
+.screen-title > div {
+  min-width: 0;
+}
+
 .sync-bar {
   position: relative;
   z-index: 30;
@@ -1546,6 +1550,10 @@ small,
 }
 
 @media (max-width: 520px) {
+  .screen-title {
+    flex-wrap: wrap;
+  }
+
   .winner-row {
     grid-template-columns: 1fr;
   }
