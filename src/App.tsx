@@ -92,6 +92,30 @@ type OperatorAuditEvent = {
   organization: Pick<WorkspaceContext, 'id' | 'slug' | 'name'> | null;
 };
 
+type CredentialRotationStatus = {
+  configuration: {
+    activeFormat: string;
+    dedicatedPepperConfigured: boolean;
+    activeKeyId: string | null;
+    previousPepperConfigured: boolean;
+    previousKeyId: string | null;
+    previousKeyLimit: number;
+  };
+  inventory: {
+    total: number;
+    counts: Array<{ credentialType: string; format: string; keyId: string | null; count: number }>;
+  };
+  preflight: {
+    adminSessionSecret: { blockerCount: number; ready: boolean; blockerFormats: string[] };
+    previousCredentialPepper: {
+      retiringKeyId: string;
+      blockerCount: number;
+      ready: boolean;
+      blockerFormats: string[];
+    } | null;
+  };
+};
+
 type OperatorWorkspaceRequest = {
   id: string;
   installation_or_command: string;
@@ -1081,6 +1105,7 @@ function OperatorConsole({
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditQueryKey, setAuditQueryKey] = useState('');
   const [auditMessage, setAuditMessage] = useState('');
+  const [credentialRotation, setCredentialRotation] = useState<CredentialRotationStatus | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [organizationForm, setOrganizationForm] = useState({ name: '', slug: '' });
@@ -1157,6 +1182,17 @@ function OperatorConsole({
       handleOperatorLoadError(err, 'Unable to load the operator audit.');
     } finally {
       setAuditLoading(false);
+    }
+  }
+
+  async function loadCredentialRotation(currentToken = token) {
+    try {
+      const result = await api<CredentialRotationStatus>('/api/operator/credential-rotation/status', {
+        headers: { authorization: `Bearer ${currentToken}` },
+      });
+      setCredentialRotation(result);
+    } catch (err) {
+      handleOperatorLoadError(err, 'Unable to load credential rotation status.');
     }
   }
 
@@ -1460,6 +1496,7 @@ function OperatorConsole({
     if (!token) return;
     void loadOrganizations(token);
     void loadAuditEvents(token);
+    void loadCredentialRotation(token);
   }, [token]);
 
   useEffect(() => {
@@ -1559,6 +1596,62 @@ function OperatorConsole({
       {message && <p className="notice">{message}</p>}
       {error && <p className="error">{error}</p>}
       <WhatChangedPanel audience="operator" />
+      <section className="panel">
+        <div className="screen-title inline-title">
+          <div>
+            <p className="eyebrow">Credential safety</p>
+            <h2>Rotation readiness</h2>
+          </div>
+          <button className="secondary" onClick={() => void loadCredentialRotation()}>
+            Refresh credential counts
+          </button>
+        </div>
+        {!credentialRotation && <p className="muted">Credential rotation inventory is loading.</p>}
+        {credentialRotation && (
+          <>
+            <p className="muted">
+              Active format: {credentialRotation.configuration.activeFormat}
+              {credentialRotation.configuration.activeKeyId ? ` (${credentialRotation.configuration.activeKeyId})` : ''}.
+              Previous pepper: {credentialRotation.configuration.previousPepperConfigured
+                ? `staged (${credentialRotation.configuration.previousKeyId})`
+                : 'not staged'}.
+            </p>
+            <dl className="mission-stats">
+              <div>
+                <dt>Stored credentials</dt>
+                <dd>{credentialRotation.inventory.total}</dd>
+              </div>
+              <div>
+                <dt>Session-secret blockers</dt>
+                <dd>{credentialRotation.preflight.adminSessionSecret.blockerCount}</dd>
+              </div>
+              <div>
+                <dt>Previous-key blockers</dt>
+                <dd>{credentialRotation.preflight.previousCredentialPepper?.blockerCount ?? 'Not staged'}</dd>
+              </div>
+            </dl>
+            <div className="activity-list">
+              {credentialRotation.inventory.counts.map((row) => (
+                <div className="activity-row" key={`${row.credentialType}:${row.format}:${row.keyId ?? 'none'}`}>
+                  <div className="activity-summary">
+                    <span>{row.credentialType.replace(/_/g, ' ')}</span>
+                    <strong>{row.count}</strong>
+                  </div>
+                  <small>{row.format}{row.keyId ? ` - key ${row.keyId}` : ''}</small>
+                </div>
+              ))}
+            </div>
+            <p className={credentialRotation.preflight.adminSessionSecret.ready ? 'notice' : 'warning-notice'}>
+              ADMIN_SESSION_SECRET rotation is {credentialRotation.preflight.adminSessionSecret.ready ? 'ready' : 'blocked'}.
+            </p>
+            {credentialRotation.preflight.previousCredentialPepper && (
+              <p className={credentialRotation.preflight.previousCredentialPepper.ready ? 'notice' : 'warning-notice'}>
+                Previous credential pepper removal is {credentialRotation.preflight.previousCredentialPepper.ready ? 'ready' : 'blocked'}.
+              </p>
+            )}
+          </>
+        )}
+      </section>
       <section className="panel">
         <div className="screen-title inline-title">
           <div>

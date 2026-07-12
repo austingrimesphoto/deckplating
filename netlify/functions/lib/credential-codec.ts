@@ -10,11 +10,21 @@ export const credentialHashPrefixes = {
 type CredentialCodecOptions = {
   adminSessionSecret?: string;
   credentialPepper?: string;
+  previousCredentialPepper?: string;
   randomBytes?: (size: number) => Buffer;
+};
+
+export type CredentialVerification = {
+  verified: boolean;
+  needsUpgrade: boolean;
+  keySource: 'current' | 'previous' | 'session' | 'legacy' | null;
 };
 
 const deriveCredentialPepper = (root: string, label: string) =>
   root ? crypto.createHmac('sha256', root).update(`deckplating:${label}:credential-pepper`).digest('hex') : '';
+
+const credentialPepperKeyId = (root: string) =>
+  root ? crypto.createHash('sha256').update(`deckplating:credential-pepper-key-id\0${root}`).digest('hex').slice(0, 12) : '';
 
 const deriveCredentialKey = (context: string, secret: string, salt: Buffer, pepper = '') =>
   new Promise<Buffer>((resolve, reject) => {
@@ -30,10 +40,17 @@ const deriveCredentialKey = (context: string, secret: string, salt: Buffer, pepp
 export function createCredentialCodec({
   adminSessionSecret = '',
   credentialPepper = '',
+  previousCredentialPepper = '',
   randomBytes = crypto.randomBytes,
 }: CredentialCodecOptions = {}) {
   const sessionDerivedCredentialPepper = deriveCredentialPepper(adminSessionSecret, 'session-root-v1');
   const dedicatedCredentialPepper = deriveCredentialPepper(credentialPepper, 'dedicated-v1');
+  const previousDedicatedCredentialPepper =
+    previousCredentialPepper && previousCredentialPepper !== credentialPepper
+      ? deriveCredentialPepper(previousCredentialPepper, 'dedicated-v1')
+      : '';
+  const activeKeyId = credentialPepperKeyId(credentialPepper);
+  const previousKeyId = previousDedicatedCredentialPepper ? credentialPepperKeyId(previousCredentialPepper) : '';
   const activePrefix = credentialPepper
     ? credentialHashPrefixes.dedicated
     : adminSessionSecret
@@ -47,25 +64,36 @@ export function createCredentialCodec({
     value.startsWith(`${credentialHashPrefixes.sessionDerived}$`) ||
     value.startsWith(`${credentialHashPrefixes.dedicated}$`);
 
-  const isCurrentCredentialHash = (value: string) => value.startsWith(`${activePrefix}$`);
+  const isCurrentCredentialHash = (value: string) =>
+    activePrefix === credentialHashPrefixes.dedicated
+      ? value.startsWith(`${credentialHashPrefixes.dedicated}$${activeKeyId}$`)
+      : value.startsWith(`${activePrefix}$`);
 
   const createCredentialHash = async (context: string, secret: string) => {
     const salt = randomBytes(16);
     const derivedKey = await deriveCredentialKey(context, secret, salt, activePepper);
-    return `${activePrefix}$${salt.toString('base64url')}$${derivedKey.toString('base64url')}`;
+    return activePrefix === credentialHashPrefixes.dedicated
+      ? `${activePrefix}$${activeKeyId}$${salt.toString('base64url')}$${derivedKey.toString('base64url')}`
+      : `${activePrefix}$${salt.toString('base64url')}$${derivedKey.toString('base64url')}`;
   };
 
-  const verifyCredentialHash = async (
+  const verifyCredentialHashDetailed = async (
     storedHash: string,
     context: string,
     secret: string,
     legacyHashes: string[] = [],
-  ) => {
+  ): Promise<CredentialVerification> => {
     if (!isVersionedCredentialHash(storedHash)) {
-      return legacyHashes.some((candidate) => constantTimeEqual(storedHash, candidate));
+      const verified = legacyHashes.some((candidate) => constantTimeEqual(storedHash, candidate));
+      return { verified, needsUpgrade: verified, keySource: verified ? 'legacy' : null };
     }
 
-    const [prefix, encodedSalt, encodedHash, extra] = storedHash.split('$');
+    const parts = storedHash.split('$');
+    const prefix = parts[0];
+    const keyedDedicated = prefix === credentialHashPrefixes.dedicated && parts.length === 4;
+    const keyId = keyedDedicated ? parts[1] : '';
+    const encodedSalt = keyedDedicated ? parts[2] : parts[1];
+    const encodedHash = keyedDedicated ? parts[3] : parts[2];
     if (
       (prefix !== credentialHashPrefixes.legacy &&
         prefix !== credentialHashPrefixes.rawDedicated &&
@@ -73,11 +101,18 @@ export function createCredentialCodec({
         prefix !== credentialHashPrefixes.dedicated) ||
       !encodedSalt ||
       !encodedHash ||
-      extra
-    ) return false;
-    if (prefix === credentialHashPrefixes.rawDedicated && !credentialPepper) return false;
-    if (prefix === credentialHashPrefixes.sessionDerived && !sessionDerivedCredentialPepper) return false;
-    if (prefix === credentialHashPrefixes.dedicated && !dedicatedCredentialPepper) return false;
+      (!keyedDedicated && parts.length !== 3) ||
+      (keyedDedicated && !keyId)
+    ) return { verified: false, needsUpgrade: false, keySource: null };
+    if (prefix === credentialHashPrefixes.rawDedicated && !credentialPepper && !previousCredentialPepper) {
+      return { verified: false, needsUpgrade: false, keySource: null };
+    }
+    if (prefix === credentialHashPrefixes.sessionDerived && !sessionDerivedCredentialPepper) {
+      return { verified: false, needsUpgrade: false, keySource: null };
+    }
+    if (prefix === credentialHashPrefixes.dedicated && !dedicatedCredentialPepper && !previousDedicatedCredentialPepper) {
+      return { verified: false, needsUpgrade: false, keySource: null };
+    }
 
     let salt: Buffer;
     let expected: Buffer;
@@ -85,24 +120,62 @@ export function createCredentialCodec({
       salt = Buffer.from(encodedSalt, 'base64url');
       expected = Buffer.from(encodedHash, 'base64url');
     } catch {
-      return false;
+      return { verified: false, needsUpgrade: false, keySource: null };
     }
-    if (salt.length !== 16 || expected.length !== 32) return false;
+    if (salt.length !== 16 || expected.length !== 32) {
+      return { verified: false, needsUpgrade: false, keySource: null };
+    }
 
-    let verificationPepper = '';
-    if (prefix === credentialHashPrefixes.rawDedicated) verificationPepper = credentialPepper;
-    if (prefix === credentialHashPrefixes.sessionDerived) verificationPepper = sessionDerivedCredentialPepper;
-    if (prefix === credentialHashPrefixes.dedicated) verificationPepper = dedicatedCredentialPepper;
-    const actual = await deriveCredentialKey(context, secret, salt, verificationPepper);
-    return crypto.timingSafeEqual(actual, expected);
+    const candidates: Array<{ pepper: string; keySource: CredentialVerification['keySource']; needsUpgrade: boolean }> = [];
+    if (prefix === credentialHashPrefixes.legacy) {
+      candidates.push({ pepper: '', keySource: 'legacy', needsUpgrade: activePrefix !== prefix });
+    } else if (prefix === credentialHashPrefixes.sessionDerived) {
+      candidates.push({ pepper: sessionDerivedCredentialPepper, keySource: 'session', needsUpgrade: activePrefix !== prefix });
+    } else if (prefix === credentialHashPrefixes.rawDedicated) {
+      if (credentialPepper) candidates.push({ pepper: credentialPepper, keySource: 'current', needsUpgrade: true });
+      if (previousCredentialPepper && previousCredentialPepper !== credentialPepper) {
+        candidates.push({ pepper: previousCredentialPepper, keySource: 'previous', needsUpgrade: true });
+      }
+    } else if (keyedDedicated) {
+      if (keyId === activeKeyId && dedicatedCredentialPepper) {
+        candidates.push({ pepper: dedicatedCredentialPepper, keySource: 'current', needsUpgrade: false });
+      } else if (keyId === previousKeyId && previousDedicatedCredentialPepper) {
+        candidates.push({ pepper: previousDedicatedCredentialPepper, keySource: 'previous', needsUpgrade: true });
+      }
+    } else {
+      if (dedicatedCredentialPepper) {
+        candidates.push({ pepper: dedicatedCredentialPepper, keySource: 'current', needsUpgrade: true });
+      }
+      if (previousDedicatedCredentialPepper) {
+        candidates.push({ pepper: previousDedicatedCredentialPepper, keySource: 'previous', needsUpgrade: true });
+      }
+    }
+
+    for (const candidate of candidates) {
+      const actual = await deriveCredentialKey(context, secret, salt, candidate.pepper);
+      if (crypto.timingSafeEqual(actual, expected)) {
+        return { verified: true, needsUpgrade: candidate.needsUpgrade, keySource: candidate.keySource };
+      }
+    }
+    return { verified: false, needsUpgrade: false, keySource: null };
   };
+
+  const verifyCredentialHash = async (
+    storedHash: string,
+    context: string,
+    secret: string,
+    legacyHashes: string[] = [],
+  ) => (await verifyCredentialHashDetailed(storedHash, context, secret, legacyHashes)).verified;
 
   return {
     activePrefix,
+    activeKeyId: activeKeyId || null,
+    previousKeyId: previousKeyId || null,
     createCredentialHash,
     isCurrentCredentialHash,
     isVersionedCredentialHash,
     verifyCredentialHash,
+    verifyCredentialHashDetailed,
   };
 }
 

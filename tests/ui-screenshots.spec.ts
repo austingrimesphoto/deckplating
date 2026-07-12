@@ -824,6 +824,36 @@ test('captures operator console', async ({ page }, testInfo) => {
       },
     }),
   );
+  await page.route('**/api/operator/credential-rotation/status', (route) =>
+    route.fulfill({
+      json: {
+        configuration: {
+          activeFormat: 'scrypt-v4-keyed',
+          dedicatedPepperConfigured: true,
+          activeKeyId: 'current-demo',
+          previousPepperConfigured: true,
+          previousKeyId: 'previous-demo',
+          previousKeyLimit: 1,
+        },
+        inventory: {
+          total: 5,
+          counts: [
+            { credentialType: 'team_member_pin', format: 'scrypt-v4-keyed', keyId: 'current-demo', count: 4 },
+            { credentialType: 'organization_admin', format: 'scrypt-v3', keyId: null, count: 1 },
+          ],
+        },
+        preflight: {
+          adminSessionSecret: { blockerCount: 1, ready: false, blockerFormats: ['scrypt-v3'] },
+          previousCredentialPepper: {
+            retiringKeyId: 'previous-demo',
+            blockerCount: 0,
+            ready: true,
+            blockerFormats: ['scrypt-v2', 'scrypt-v4-unkeyed', 'scrypt-v4-keyed:previous-demo'],
+          },
+        },
+      },
+    }),
+  );
 
   await page.goto('/?operator=1');
   await page.getByLabel('Central operator passphrase').fill('demo-operator-passphrase');

@@ -12,6 +12,7 @@ const files = {
   migration011: fs.readFileSync(new URL('../supabase/migrations/011_security_reliability_hardening.sql', import.meta.url), 'utf8'),
   migration013: fs.readFileSync(new URL('../supabase/migrations/013_large_workspace_reads.sql', import.meta.url), 'utf8'),
   migration014: fs.readFileSync(new URL('../supabase/migrations/014_transactional_admin_workflows.sql', import.meta.url), 'utf8'),
+  migration015: fs.readFileSync(new URL('../supabase/migrations/015_credential_rotation_inventory.sql', import.meta.url), 'utf8'),
   notifications: fs.readFileSync(new URL('../src/lib/notifications.ts', import.meta.url), 'utf8'),
 };
 
@@ -44,6 +45,8 @@ const workspaceRequestPublic = section(api, "if (method === 'POST' && path === '
 const operatorWorkspaceRequests = section(api, "if (method === 'GET' && path === '/operator/workspace-requests')", "if (method === 'GET' && path === '/operator/audit-events')");
 const operatorWorkspaceRejection = section(api, 'const operatorRequestRejectMatch', "if (method === 'GET' && path === '/operator/audit-events')");
 const operatorAuthentication = section(api, 'const createOperatorToken', 'async function recordOperatorAudit');
+const credentialRotationLogic = section(api, 'async function getCredentialRotationStatus', 'const slugify');
+const credentialRotationRoutes = section(api, "path === '/operator/credential-rotation/status'", "if (method === 'GET' && path === '/operator/workspace-requests')");
 const operatorOrganizations = section(api, "if (method === 'GET' && path === '/operator/organizations')", "if (method === 'POST' && path === '/operator/organizations')");
 const operatorAdminSession = section(api, 'const operatorAdminSessionMatch', 'const operatorSetupCodeMatch');
 const operatorExport = section(api, 'const operatorExportMatch', 'const operatorSetupCodeMatch');
@@ -69,7 +72,7 @@ check(
   'PIN hashes include organization context with legacy upgrade path',
   has(api, 'pinCredentialContext') &&
     has(api, "`pin:${organizationId ?? 'single-org'}:${teamMemberId}`") &&
-    has(registerDevice, 'verifyCredentialHash(') &&
+    has(registerDevice, 'verifyCredentialHashDetailed(') &&
     has(registerDevice, 'legacyPinHash(body.teamMemberId, body.pin)') &&
     has(registerDevice, 'createCredentialHash(pinCredentialContext(') &&
     has(registerDevice, 'scoped(update, organizationId)') &&
@@ -77,10 +80,10 @@ check(
     has(credentialCodec, "sessionDerived: 'scrypt-v3'") &&
     has(credentialCodec, "dedicated: 'scrypt-v4'") &&
     has(credentialCodec, "deriveCredentialPepper(adminSessionSecret, 'session-root-v1')") &&
-    has(credentialCodec, 'verificationPepper = credentialPepper') &&
-    has(credentialCodec, 'verificationPepper = sessionDerivedCredentialPepper') &&
-    has(credentialCodec, 'verificationPepper = dedicatedCredentialPepper') &&
-    has(api, 'configuredCredentialPepper && Buffer.byteLength(configuredCredentialPepper'),
+    has(credentialCodec, 'previousCredentialPepper') &&
+    has(credentialCodec, "keySource: 'previous'") &&
+    has(credentialCodec, 'needsUpgrade: true') &&
+    has(api, 'configuredPreviousCredentialPepper && Buffer.byteLength(configuredPreviousCredentialPepper'),
 );
 check('Signed user sessions derive organization scope server-side', has(userToken, 'parsed.organizationId') && has(userToken, 'scoped(baseQuery, organizationId)') && has(userToken, 'member.organization_id !== organizationId'));
 check(
@@ -201,6 +204,17 @@ check(
     !has(operatorStatusRoute, 'passphrase_hash') &&
     !has(operatorAdminRecovery, '.select(\'passphrase_hash') &&
     !has(operatorDeleteRoute, 'passphrase_hash'),
+);
+check(
+  'Operator credential inventory exposes aggregates and enforces rotation preflight without hashes',
+  has(credentialRotationLogic, "supabase.rpc('get_credential_rotation_inventory'") &&
+    has(credentialRotationRoutes, "target === 'admin-session-secret'") &&
+    has(credentialRotationRoutes, 'previousCredentialPepperKeyId') &&
+    has(credentialRotationRoutes, 'credential_rotation_preflight_overridden') &&
+    has(files.migration015, 'create or replace function get_credential_rotation_inventory') &&
+    has(files.migration015, 'group by credential_type, format, key_id') &&
+    !has(credentialRotationLogic, 'pin_hash') &&
+    !has(credentialRotationLogic, 'passphrase_hash'),
 );
 check(
   'Workspace request approval is transactional, operator-gated, audited, and omits setup-code hashes from results',

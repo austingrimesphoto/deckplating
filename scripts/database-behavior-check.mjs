@@ -7,7 +7,7 @@ const { Client } = pg;
 
 class CheckFailure extends Error {}
 
-const expectedMigrationVersions = Array.from({ length: 14 }, (_, index) => String(index + 1).padStart(3, '0'));
+const expectedMigrationVersions = Array.from({ length: 15 }, (_, index) => String(index + 1).padStart(3, '0'));
 const expectedCompositeConstraints = [
   'devices_team_member_id_fkey',
   'locations_area_id_fkey',
@@ -266,7 +266,7 @@ async function verifyMigrations(client) {
   expectCondition(
     actual.length === expectedMigrationVersions.length &&
       actual.every((version, index) => version === expectedMigrationVersions[index]),
-    'empty database did not apply migrations 001 through 014 in order',
+    'empty database did not apply migrations 001 through 015 in order',
   );
 }
 
@@ -964,6 +964,46 @@ async function verifyTransactionalAdminWorkflows(client) {
   );
 }
 
+async function verifyCredentialRotationInventory(client) {
+  const keyedMemberId = crypto.randomUUID();
+  const sessionMemberId = crypto.randomUUID();
+  const unkeyedMemberId = crypto.randomUUID();
+  const keyedHash = 'scrypt-v4$key-id-1234$AAECAwQFBgcICQoLDA0ODw$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const sessionHash = 'scrypt-v3$AAECAwQFBgcICQoLDA0ODw$BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+  const unkeyedHash = 'scrypt-v4$AAECAwQFBgcICQoLDA0ODw$CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
+  await client.query(
+    `insert into public.team_members (id, organization_id, name, role, active, pin_hash)
+     values
+       ($1, $4, 'CI Keyed Credential', 'Tester', true, $5),
+       ($2, $4, 'CI Session Credential', 'Tester', true, $6),
+       ($3, $4, 'CI Unkeyed Credential', 'Tester', true, $7)`,
+    [keyedMemberId, sessionMemberId, unkeyedMemberId, fixture.organizationA, keyedHash, sessionHash, unkeyedHash],
+  );
+
+  const result = await client.query('select public.get_credential_rotation_inventory() as inventory');
+  const inventory = result.rows[0].inventory;
+  const keyed = inventory.counts.find((row) =>
+    row.credentialType === 'team_member_pin' && row.format === 'scrypt-v4-keyed' && row.keyId === 'key-id-1234');
+  const session = inventory.counts.find((row) =>
+    row.credentialType === 'team_member_pin' && row.format === 'scrypt-v3');
+  const unkeyed = inventory.counts.find((row) =>
+    row.credentialType === 'team_member_pin' && row.format === 'scrypt-v4-unkeyed');
+  expectCondition(keyed?.count === 1 && session?.count === 1 && unkeyed?.count === 1, 'credential inventory format counts are incomplete');
+  const serialized = JSON.stringify(inventory);
+  expectCondition(
+    !serialized.includes(keyedHash) &&
+      !serialized.includes(sessionHash) &&
+      !serialized.includes(unkeyedHash) &&
+      !serialized.includes(keyedMemberId),
+    'credential inventory exposed a stored hash or member identifier',
+  );
+
+  const anonymous = await anonApi.rpc('get_credential_rotation_inventory');
+  expectCondition(Boolean(anonymous.error), 'anonymous role executed credential inventory');
+  const service = await serviceApi.rpc('get_credential_rotation_inventory');
+  expectCondition(!service.error && service.data?.counts, 'service role could not execute credential inventory');
+}
+
 async function verifyLargeWorkspaceReads(client) {
   const organizationId = crypto.randomUUID();
   const areaId = crypto.randomUUID();
@@ -1075,7 +1115,7 @@ async function cleanup(client) {
 async function main() {
   await withClient('orchestrator', async (client) => {
     try {
-      await runCheck('empty migration chain applies 001-014 in order', () => verifyMigrations(client));
+      await runCheck('empty migration chain applies 001-015 in order', () => verifyMigrations(client));
       await seedFixture(client);
       await runCheck('tenant composite foreign keys reject cross-workspace records', () =>
         verifyCompositeTenantConstraints(client),
@@ -1096,6 +1136,9 @@ async function main() {
       );
       await runCheck('admin dependent mutations roll back, retry, serialize, and audit atomically', () =>
         verifyTransactionalAdminWorkflows(client),
+      );
+      await runCheck('credential rotation inventory returns aggregates without credential rows', () =>
+        verifyCredentialRotationInventory(client),
       );
       await runCheck('large workspace cursors and aggregates preserve more than 1,000 rows', () =>
         verifyLargeWorkspaceReads(client),

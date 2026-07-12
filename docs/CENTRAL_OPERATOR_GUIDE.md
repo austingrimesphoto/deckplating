@@ -27,13 +27,14 @@ The managed host also needs the normal production values already in place:
 - `ADMIN_PASSPHRASE_HASH`
 - `ADMIN_SESSION_SECRET`
 - optional but strongly recommended `CREDENTIAL_PEPPER`
+- optional during a reviewed online rotation only `CREDENTIAL_PEPPER_PREVIOUS`
 - `MAP_TILE_URL`
 - optional `MAP_TILE_KEY`
 - optional `DECKPLATING_ALLOWED_ORIGINS` for reviewed alternate frontend origins
 
 `ADMIN_SESSION_SECRET` must be a dedicated random value of at least 32 bytes; managed hosting does not fall back to the Supabase service-role key. If `CREDENTIAL_PEPPER` is configured, it must be a separate random value of at least 32 bytes. Generate each with an approved secret generator (for example, `openssl rand -hex 32`) and store them only in the function environment. Explicit managed mode also fails closed unless the central operator hash is configured.
 
-Without `CREDENTIAL_PEPPER`, the API derives a domain-separated pepper from `ADMIN_SESSION_SECRET` and writes `scrypt-v3` credential hashes. A dedicated pepper makes new credentials `scrypt-v4`; successful logins and credential resets upgrade older hashes to the active format. Legacy raw-pepper `scrypt-v2` hashes remain verifiable while the same dedicated pepper is configured. Before rotating `ADMIN_SESSION_SECRET` while any v3 credentials may remain, configure a dedicated pepper, allow active credentials to migrate through login or reset, and plan resets for every remaining credential. Do not rotate or remove a dedicated pepper without a separate credential migration plan, because existing v2 and v4 credentials require it for verification.
+Without `CREDENTIAL_PEPPER`, the API derives a domain-separated pepper from `ADMIN_SESSION_SECRET` and writes `scrypt-v3` credential hashes. A dedicated pepper makes new credentials keyed `scrypt-v4`; successful logins and resets upgrade older hashes. `CREDENTIAL_PEPPER_PREVIOUS` supports exactly one old pepper during a deliberate online rotation, and the embedded non-secret key ID makes remaining dependencies countable. Never remove a root key until the operator rotation preflight passes or a reviewed reset-plan override is recorded. See `docs/ADMINISTRATOR_RUNBOOK.md` for staging, recovery, and rollback.
 
 If `CENTRAL_OPERATOR_PASSPHRASE_HASH` is added or rotated, redeploy the site before testing operator login.
 
