@@ -262,6 +262,7 @@ Controlled demonstration hosts that use the workspace request approval queue sho
 - `DECKPLATING_MANAGED_HOST=true`
 - `ADMIN_SESSION_SECRET` (a dedicated random secret of at least 32 bytes, function-scoped)
 - `CREDENTIAL_PEPPER` (a separate random secret of at least 32 bytes, function-scoped and strongly recommended)
+- `CREDENTIAL_PEPPER_PREVIOUS` (leave unset except during a reviewed online pepper rotation)
 - `CENTRAL_OPERATOR_PASSPHRASE_HASH`
 - `DECKPLATING_OPERATOR_EMAIL`
 - `DECKPLATING_FROM_EMAIL`
@@ -270,7 +271,7 @@ Controlled demonstration hosts that use the workspace request approval queue sho
 - `DECKPLATING_SETUP_SITE_BASE_URL`
 - `NOTIFICATION_MODE` (`disabled`, `mailto`, or `provider`)
 
-If `CREDENTIAL_PEPPER` is absent, the API derives a domain-separated pepper from `ADMIN_SESSION_SECRET` and writes `scrypt-v3` credential hashes. A configured dedicated pepper produces `scrypt-v4` hashes, and successful logins or credential resets upgrade older hashes, including legacy raw-pepper `scrypt-v2` credentials. Do not rotate `ADMIN_SESSION_SECRET` while `scrypt-v3` credentials remain: configure a dedicated pepper first, migrate active credentials through logins and resets, and plan resets for any credentials that cannot be migrated normally.
+If `CREDENTIAL_PEPPER` is absent, the API derives a domain-separated pepper from `ADMIN_SESSION_SECRET` and writes `scrypt-v3` credential hashes. A configured dedicated pepper produces keyed `scrypt-v4` hashes, and successful logins or resets upgrade older credentials. `CREDENTIAL_PEPPER_PREVIOUS` supports one bounded old key during rotation. Do not rotate `ADMIN_SESSION_SECRET` while v3 credentials remain or remove a previous pepper while its keyed/unkeyed blockers remain; use the operator preflight and recovery procedure in `docs/ADMINISTRATOR_RUNBOOK.md`.
 
 `NOTIFICATION_MODE` defaults to `disabled`. Use `provider` only with the reviewed Resend provider key and from address, or `mailto` to prepare a draft for the operator without sending automatically. SMTP and Microsoft Graph delivery are not implemented. If the email variables are blank, workspace requests and approvals still work, but notification status is recorded as skipped or failed configuration rather than pretending a message was sent.
 

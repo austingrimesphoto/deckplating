@@ -59,6 +59,7 @@ test('environment file serialization prevents line injection and validates setup
     SUPABASE_SERVICE_ROLE_KEY: 'role-key',
     ADMIN_PASSPHRASE_HASH: 'hash',
     ADMIN_SESSION_SECRET: 'secret',
+    CREDENTIAL_PEPPER: 'credential-pepper',
     MAP_TILE_URL: '',
     MAP_TILE_KEY: '',
     MAP_DEFAULT_LATITUDE: '24.57',
@@ -66,7 +67,7 @@ test('environment file serialization prevents line injection and validates setup
     INSTALLATION_NAME: 'Example #1\nSecond line',
   });
   assert.match(env, /INSTALLATION_NAME="Example #1\\nSecond line"/);
-  assert.equal(env.trimEnd().split('\n').length, 9);
+  assert.equal(env.trimEnd().split('\n').length, 10);
   assert.doesNotThrow(() => validateHttpUrl('http://localhost:54321', 'Supabase URL'));
   assert.throws(() => validateHttpUrl('http://example.com', 'Supabase URL'), /must use HTTPS/);
   assert.doesNotThrow(() => validateCoordinate('24.57', 'Latitude', -90, 90));

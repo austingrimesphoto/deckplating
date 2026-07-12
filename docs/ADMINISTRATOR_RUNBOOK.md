@@ -27,7 +27,49 @@ Procedure:
 
 Use the same helper later for emergency central-operator passphrase rotation.
 
-Credential hashes written without a dedicated `CREDENTIAL_PEPPER` use the `scrypt-v3` format. Configuring a dedicated pepper changes new and successfully verified credentials to `scrypt-v4`; legacy raw-pepper `scrypt-v2` credentials also migrate to v4 after successful verification. Before rotating `ADMIN_SESSION_SECRET`, configure a dedicated pepper and migrate every remaining v3 credential through a successful login or reset; use planned resets for credentials that cannot be migrated through normal use.
+Credential hashes written without a dedicated `CREDENTIAL_PEPPER` use the `scrypt-v3` format. Configuring a dedicated pepper changes new and successfully verified credentials to keyed `scrypt-v4`; legacy raw-pepper `scrypt-v2` and unkeyed `scrypt-v4` credentials migrate after successful verification. Use the staged procedures below before rotating either root key.
+
+## Credential Rotation Preflight And Recovery
+
+The operator console shows aggregate credential counts by type, format, and non-secret key ID. It never returns a stored hash, workspace ID, member ID, or credential owner. Refresh **Credential safety / Rotation readiness** before and after each stage.
+
+You can automate the same check from a reviewed administrative shell:
+
+```bash
+DECKPLATING_CREDENTIAL_PREFLIGHT_BASE_URL=https://deckplating.netlify.app \
+DECKPLATING_CREDENTIAL_PREFLIGHT_ALLOW_PROD=YES \
+DECKPLATING_CREDENTIAL_PREFLIGHT_TARGET=admin-session-secret \
+DECKPLATING_CREDENTIAL_PREFLIGHT_OPERATOR_PASSPHRASE='use approved secret input' \
+npm run credentials:preflight
+```
+
+The command exits `0` only when rotation is allowed, `2` when dependent credentials block rotation, and `1` for configuration or connectivity failures. Do not paste the JSON output into public tickets; it is aggregate security metadata.
+
+### Migrate v3 before rotating ADMIN_SESSION_SECRET
+
+1. Back up the current Netlify environment and database using the release runbook. Keep the old `ADMIN_SESSION_SECRET` recoverable.
+2. Add a new, separate `CREDENTIAL_PEPPER` of at least 32 random bytes; leave `ADMIN_SESSION_SECRET` unchanged.
+3. Deploy. New credentials become keyed `scrypt-v4`; successful member/admin login opportunistically upgrades older credentials.
+4. Refresh rotation readiness. Reset inactive or unavailable member PINs and local-admin passphrases through the existing operator/admin recovery controls until the `scrypt-v3` blocker count is zero.
+5. Run `credentials:preflight` with target `admin-session-secret`. Do not rotate on exit code `2`.
+6. Rotate `ADMIN_SESSION_SECRET`, deploy, and verify operator, local-admin, and member login. Existing signed sessions are expected to expire.
+
+Rollback: restore the prior `ADMIN_SESSION_SECRET` and redeploy. Credentials already upgraded to dedicated keyed v4 remain valid because they no longer depend on the session secret. If the old session secret is unavailable, use the reviewed reset plan to reset every remaining v3 credential before proceeding.
+
+### Rotate CREDENTIAL_PEPPER online
+
+Only one previous pepper is supported, preventing an unbounded key ring.
+
+1. Back up the environment/database and record the current non-secret key ID from Rotation readiness.
+2. Set `CREDENTIAL_PEPPER_PREVIOUS` to the exact old `CREDENTIAL_PEPPER` value.
+3. Replace `CREDENTIAL_PEPPER` with the new random value and deploy both together.
+4. Confirm the console shows a new active key ID and the old ID as previous. Successful logins upgrade old keyed, unkeyed v4, and v2 credentials to the new keyed v4 format.
+5. Reset credentials that cannot migrate through normal login until the previous-key blocker count is zero.
+6. Run `credentials:preflight` with target `credential-pepper`. Remove `CREDENTIAL_PEPPER_PREVIOUS` only on exit code `0`, then deploy and re-run login checks.
+
+Rollback before previous-key removal: restore the old pepper as `CREDENTIAL_PEPPER` and keep the new value as `CREDENTIAL_PEPPER_PREVIOUS`; deploy. Both key IDs remain verifiable and successful login rekeys toward the restored active key. Rollback after prematurely removing the previous key: immediately restore `CREDENTIAL_PEPPER_PREVIOUS` and deploy; if it cannot be recovered, execute the reviewed reset plan for every blocked v2/v4 credential.
+
+A blocked rotation may proceed only under a reviewed reset/override plan. Set `DECKPLATING_CREDENTIAL_PREFLIGHT_OVERRIDE_REVIEWED=YES` and a non-sensitive ticket/change reference in `DECKPLATING_CREDENTIAL_PREFLIGHT_PLAN_REFERENCE`. The API records the target, blocker count, key ID, and plan reference in the operator audit; never put key material or plaintext credentials in that reference.
 
 ## Enter The Operator Console
 

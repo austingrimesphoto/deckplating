@@ -20,12 +20,15 @@ const context = 'pin:00000000-0000-4000-8000-000000000001:11111111-1111-4111-811
 const secret = '0427';
 const sessionSecret = 'session-secret-0123456789abcdef-0123456789abcdef';
 const dedicatedPepper = 'credential-pepper-0123456789abcdef-0123456789abcdef';
+const nextDedicatedPepper = 'next-credential-pepper-0123456789abcdef-0123456789abcdef';
 const wrongSecret = 'wrong-secret-0123456789abcdef-0123456789abcdef';
 const salt = Buffer.from('000102030405060708090a0b0c0d0e0f', 'hex');
 const expectedV1 = 'scrypt-v1$AAECAwQFBgcICQoLDA0ODw$Ou3vGcoqMgFD3Oik_cBZYqMrBqvU9CAhBBxEvjTScTg';
 const expectedV2 = 'scrypt-v2$AAECAwQFBgcICQoLDA0ODw$Mg8irFBhXX5kbBqPsYl981WiZ0FPzeNWHt_5b8qZTGY';
 const expectedV3 = 'scrypt-v3$AAECAwQFBgcICQoLDA0ODw$VTfC8cU4K9k0dAkJiqhL9XDL_I6pBAH-Pz2qpdxzB_E';
 const expectedV4 = 'scrypt-v4$AAECAwQFBgcICQoLDA0ODw$8JOS1OD9gt8H8jJcfk4gXEWK64iCoeLXfgKtaF_b4ag';
+const expectedV4Keyed = 'scrypt-v4$e1bbb9e32409$AAECAwQFBgcICQoLDA0ODw$8JOS1OD9gt8H8jJcfk4gXEWK64iCoeLXfgKtaF_b4ag';
+const expectedNextV4Keyed = 'scrypt-v4$5ae63bda5898$AAECAwQFBgcICQoLDA0ODw$bYdOBMq2cbVoYpko086aa8QI7MbUWbTBHKV9cuvzKDo';
 const fixedRandomBytes = (size) => {
   assert.equal(size, salt.length);
   return Buffer.from(salt);
@@ -51,14 +54,17 @@ test('credential codec selects active prefixes and matches independent fixed vec
   assert.equal(sessionDerived.activePrefix, credentialHashPrefixes.sessionDerived);
   assert.equal(dedicated.activePrefix, credentialHashPrefixes.dedicated);
   assert.equal(dedicatedWithoutSession.activePrefix, credentialHashPrefixes.dedicated);
+  assert.equal(dedicated.activeKeyId, 'e1bbb9e32409');
+  assert.equal(dedicated.previousKeyId, null);
 
   assert.equal(await legacy.createCredentialHash(context, secret), expectedV1);
   assert.equal(await sessionDerived.createCredentialHash(context, secret), expectedV3);
-  assert.equal(await dedicated.createCredentialHash(context, secret), expectedV4);
-  assert.equal(await dedicatedWithoutSession.createCredentialHash(context, secret), expectedV4);
+  assert.equal(await dedicated.createCredentialHash(context, secret), expectedV4Keyed);
+  assert.equal(await dedicatedWithoutSession.createCredentialHash(context, secret), expectedV4Keyed);
   assert.equal(await dedicated.verifyCredentialHash(expectedV1, context, secret), true);
   assert.equal(await dedicated.verifyCredentialHash(expectedV3, context, secret), true);
   assert.equal(await dedicated.verifyCredentialHash(expectedV4, context, secret), true);
+  assert.equal(await dedicated.verifyCredentialHash(expectedV4Keyed, context, secret), true);
 });
 
 test('credential codec preserves released scrypt-v2 raw-pepper verification and upgrades it', async () => {
@@ -70,7 +76,35 @@ test('credential codec preserves released scrypt-v2 raw-pepper verification and 
   assert.equal(codec.isVersionedCredentialHash(expectedV2), true);
   assert.equal(codec.isCurrentCredentialHash(expectedV2), false);
   assert.equal(await codec.verifyCredentialHash(expectedV2, context, secret), true);
-  assert.match(await codec.createCredentialHash(context, secret), /^scrypt-v4\$/);
+  assert.match(await codec.createCredentialHash(context, secret), /^scrypt-v4\$e1bbb9e32409\$/);
+});
+
+test('credential codec selects one bounded previous pepper and upgrades every old-key format', async () => {
+  const rotating = createCredentialCodec({
+    credentialPepper: nextDedicatedPepper,
+    previousCredentialPepper: dedicatedPepper,
+    randomBytes: fixedRandomBytes,
+  });
+  assert.equal(rotating.activeKeyId, '5ae63bda5898');
+  assert.equal(rotating.previousKeyId, 'e1bbb9e32409');
+  assert.equal(await rotating.createCredentialHash(context, secret), expectedNextV4Keyed);
+
+  for (const oldHash of [expectedV2, expectedV4, expectedV4Keyed]) {
+    const verification = await rotating.verifyCredentialHashDetailed(oldHash, context, secret);
+    assert.deepEqual(verification, { verified: true, needsUpgrade: true, keySource: 'previous' });
+  }
+  assert.deepEqual(
+    await rotating.verifyCredentialHashDetailed(expectedNextV4Keyed, context, secret),
+    { verified: true, needsUpgrade: false, keySource: 'current' },
+  );
+});
+
+test('credential codec fails closed when a still-dependent previous pepper is removed', async () => {
+  const withoutPrevious = createCredentialCodec({ credentialPepper: nextDedicatedPepper });
+  assert.equal(await withoutPrevious.verifyCredentialHash(expectedV2, context, secret), false);
+  assert.equal(await withoutPrevious.verifyCredentialHash(expectedV4, context, secret), false);
+  assert.equal(await withoutPrevious.verifyCredentialHash(expectedV4Keyed, context, secret), false);
+  assert.equal(await withoutPrevious.verifyCredentialHash(expectedNextV4Keyed, context, secret), true);
 });
 
 test('credential codec rejects wrong or missing keys for every peppered format', async () => {
@@ -94,6 +128,7 @@ test('credential codec rejects malformed hashes and retains explicit legacy-hash
     '',
     'scrypt-v5$AA$AA',
     'scrypt-v4$AA$AA',
+    'scrypt-v4$unknown-key$AA$AA',
     `scrypt-v4$${salt.toString('base64url')}$AA`,
     `scrypt-v4$${salt.toString('base64url')}$${Buffer.alloc(32).toString('base64url')}$extra`,
   ];

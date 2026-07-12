@@ -3,6 +3,11 @@ import { createClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
 import { normalizeNotificationMode, sendWorkspaceApprovedNotification } from '../../src/lib/notifications';
 import { createCredentialCodec } from './lib/credential-codec';
+import {
+  credentialRotationBlockerCount,
+  type CredentialInventoryCount,
+  validCredentialRotationOverride,
+} from './lib/credential-rotation';
 import { collectCursorPages, collectKeysetPages } from './lib/cursor-pagination';
 
 type Status = 'green' | 'yellow' | 'red' | 'gray';
@@ -85,6 +90,7 @@ const configuredAdminSessionSecret = process.env.ADMIN_SESSION_SECRET?.trim() ??
 const adminSessionSecret = configuredAdminSessionSecret || serviceRoleKey;
 const centralOperatorPassphraseHash = process.env.CENTRAL_OPERATOR_PASSPHRASE_HASH ?? '';
 const configuredCredentialPepper = process.env.CREDENTIAL_PEPPER?.trim() ?? '';
+const configuredPreviousCredentialPepper = process.env.CREDENTIAL_PEPPER_PREVIOUS?.trim() ?? '';
 const managedHostRequested = /^true$/i.test(process.env.DECKPLATING_MANAGED_HOST ?? '');
 const managedHostEnabled = managedHostRequested || Boolean(centralOperatorPassphraseHash);
 const defaultOrganizationId =
@@ -209,12 +215,15 @@ const matchesSha256 = (value: string, expectedHash: string) =>
   Boolean(expectedHash) && constantTimeEqual(sha256(value), expectedHash);
 
 const {
+  activeKeyId: activeCredentialPepperKeyId,
   createCredentialHash,
-  isCurrentCredentialHash,
+  previousKeyId: previousCredentialPepperKeyId,
   verifyCredentialHash,
+  verifyCredentialHashDetailed,
 } = createCredentialCodec({
   adminSessionSecret: configuredAdminSessionSecret,
   credentialPepper: configuredCredentialPepper,
+  previousCredentialPepper: configuredPreviousCredentialPepper,
 });
 
 const legacyPinHash = (teamMemberId: string, pin: string) => sha256(`${teamMemberId}:${pin}`);
@@ -1063,16 +1072,15 @@ async function tryOrganizationAdminLogin(
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const modernHash = isCurrentCredentialHash(data.passphrase_hash);
-  const matches = await verifyCredentialHash(
+  const verification = await verifyCredentialHashDetailed(
     data.passphrase_hash,
     organizationAdminCredentialContext(organizationId),
     passphrase,
     [organizationAdminHash(organizationId, passphrase)],
   );
-  if (!matches) return null;
+  if (!verification.verified) return null;
   let credentialUpdatedAt = data.updated_at ?? null;
-  if (!modernHash) {
+  if (verification.needsUpgrade) {
     const { data: upgraded, error: upgradeError } = await supabase
       .from('organization_admin_credentials')
       .update({ passphrase_hash: await createCredentialHash(organizationAdminCredentialContext(organizationId), passphrase) })
@@ -1180,6 +1188,50 @@ async function tryRecordOperatorAudit(
     });
     if (managedHostEnabled) throw error;
   }
+}
+
+async function getCredentialRotationStatus() {
+  const { data, error } = await supabase.rpc('get_credential_rotation_inventory');
+  if (error) {
+    if (isMissingRelationError(error)) throw new RequestValidationError(503, 'Credential rotation inventory is not configured yet.');
+    throw error;
+  }
+  const inventory = (data ?? { total: 0, counts: [] }) as { total?: number; counts?: CredentialInventoryCount[] };
+  const counts = (inventory.counts ?? []).map((row) => ({ ...row, count: Number(row.count) || 0 }));
+  const sessionSecretBlockers = credentialRotationBlockerCount(counts, 'admin-session-secret');
+  const previousPepperBlockers = previousCredentialPepperKeyId
+    ? credentialRotationBlockerCount(counts, 'credential-pepper', previousCredentialPepperKeyId)
+    : null;
+  return {
+    configuration: {
+      activeFormat: configuredCredentialPepper
+        ? 'scrypt-v4-keyed'
+        : configuredAdminSessionSecret
+          ? 'scrypt-v3'
+          : 'scrypt-v1',
+      dedicatedPepperConfigured: Boolean(configuredCredentialPepper),
+      activeKeyId: activeCredentialPepperKeyId,
+      previousPepperConfigured: Boolean(configuredPreviousCredentialPepper),
+      previousKeyId: previousCredentialPepperKeyId,
+      previousKeyLimit: 1,
+    },
+    inventory: { total: Number(inventory.total) || 0, counts },
+    preflight: {
+      adminSessionSecret: {
+        blockerCount: sessionSecretBlockers,
+        ready: sessionSecretBlockers === 0,
+        blockerFormats: ['scrypt-v3'],
+      },
+      previousCredentialPepper: previousCredentialPepperKeyId
+        ? {
+            retiringKeyId: previousCredentialPepperKeyId,
+            blockerCount: previousPepperBlockers,
+            ready: previousPepperBlockers === 0,
+            blockerFormats: ['scrypt-v2', 'scrypt-v4-unkeyed', `scrypt-v4-keyed:${previousCredentialPepperKeyId}`],
+          }
+        : null,
+    },
+  };
 }
 
 const slugify = (value: string) =>
@@ -1762,19 +1814,18 @@ async function registerDevice(body: { teamMemberId: string; pin: string; deviceT
   if (!member.pin_hash && managedHostEnabled) {
     return json(403, { error: 'This roster entry needs an initial PIN from the local administrator.' });
   }
-  const existingPinIsModern = Boolean(member.pin_hash && isCurrentCredentialHash(member.pin_hash));
-  const pinMatches = member.pin_hash
-    ? await verifyCredentialHash(
+  const pinVerification = member.pin_hash
+    ? await verifyCredentialHashDetailed(
         member.pin_hash,
         pinCredentialContext(body.teamMemberId, organizationId),
         body.pin,
         [pinHash(body.teamMemberId, body.pin, organizationId), legacyPinHash(body.teamMemberId, body.pin)],
       )
-    : true;
-  if (!pinMatches) {
+    : { verified: true, needsUpgrade: true, keySource: 'legacy' as const };
+  if (!pinVerification.verified) {
     return json(403, { error: 'PIN does not match.' });
   }
-  const nextPinHash = !member.pin_hash || !existingPinIsModern
+  const nextPinHash = !member.pin_hash || pinVerification.needsUpgrade
     ? await createCredentialHash(pinCredentialContext(body.teamMemberId, organizationId), body.pin)
     : null;
   const deviceTokenHash = sha256(body.deviceToken);
@@ -1848,6 +1899,9 @@ async function route(event: HandlerEvent) {
     Buffer.byteLength(adminSessionSecret, 'utf8') < 32 ||
     (managedHostEnabled && Buffer.byteLength(configuredAdminSessionSecret, 'utf8') < 32) ||
     (configuredCredentialPepper && Buffer.byteLength(configuredCredentialPepper, 'utf8') < 32) ||
+    (configuredPreviousCredentialPepper && Buffer.byteLength(configuredPreviousCredentialPepper, 'utf8') < 32) ||
+    (configuredPreviousCredentialPepper && !configuredCredentialPepper) ||
+    (configuredPreviousCredentialPepper && configuredPreviousCredentialPepper === configuredCredentialPepper) ||
     (managedHostRequested && !centralOperatorPassphraseHash)
   ) {
     throw new Error('Server token signing is not configured securely.');
@@ -1929,6 +1983,70 @@ async function route(event: HandlerEvent) {
     if (!(await organizationSchemaEnabled()) || !(await organizationAdminSchemaEnabled())) {
       return json(400, { error: 'Organization workspace tables are not available for this database yet.' });
     }
+  }
+
+  if (method === 'GET' && path === '/operator/credential-rotation/status') {
+    return json(200, await getCredentialRotationStatus());
+  }
+
+  if (method === 'POST' && path === '/operator/credential-rotation/preflight') {
+    const body = readBody<{
+      target?: string;
+      retiringKeyId?: string;
+      override?: { reviewed?: boolean; planReference?: string };
+    }>(event);
+    assertAllowedFields(body as Record<string, unknown>, ['target', 'retiringKeyId', 'override']);
+    if (!['admin-session-secret', 'credential-pepper'].includes(body.target ?? '')) {
+      return json(400, { error: 'target must be admin-session-secret or credential-pepper.' });
+    }
+    const status = await getCredentialRotationStatus();
+    const target = body.target as 'admin-session-secret' | 'credential-pepper';
+    let blockerCount: number;
+    let retiringKeyId: string | null = null;
+    if (target === 'admin-session-secret') {
+      blockerCount = status.preflight.adminSessionSecret.blockerCount;
+    } else {
+      retiringKeyId = body.retiringKeyId?.trim() || previousCredentialPepperKeyId;
+      if (!previousCredentialPepperKeyId) {
+        return json(409, {
+          error: 'Stage the old pepper in CREDENTIAL_PEPPER_PREVIOUS before an online pepper rotation.',
+          status,
+        });
+      }
+      if (retiringKeyId !== previousCredentialPepperKeyId) {
+        return json(400, { error: 'retiringKeyId must match the configured previous credential key ID.' });
+      }
+      blockerCount = status.preflight.previousCredentialPepper?.blockerCount ?? 0;
+    }
+
+    const planReference = body.override?.planReference?.trim() ?? '';
+    const validOverride = validCredentialRotationOverride(body.override);
+    if (blockerCount > 0 && !validOverride) {
+      return json(409, {
+        error: 'Credential rotation preflight is blocked until dependent credentials migrate or a reviewed reset plan is supplied.',
+        target,
+        retiringKeyId,
+        blockerCount,
+        status,
+      });
+    }
+    if (blockerCount > 0 && validOverride) {
+      await recordOperatorAudit(null, 'credential_rotation_preflight_overridden', {
+        target,
+        retiringKeyId,
+        blockerCount,
+        planReference,
+      });
+    }
+    return json(200, {
+      allowed: true,
+      target,
+      retiringKeyId,
+      blockerCount,
+      overrideUsed: blockerCount > 0,
+      planReference: blockerCount > 0 ? planReference : null,
+      status,
+    });
   }
 
   if (method === 'GET' && path === '/operator/workspace-requests') {

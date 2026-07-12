@@ -13,13 +13,14 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "npm run test:tooling && npm run test:tenant-isolation",
-    "test:tooling": "node --test tests/tooling.node.test.mjs tests/credential-codec.node.test.mjs tests/cursor-pagination.node.test.mjs",
+    "test:tooling": "node --test tests/tooling.node.test.mjs tests/credential-codec.node.test.mjs tests/credential-rotation.node.test.mjs tests/cursor-pagination.node.test.mjs",
     "test:database": "bash scripts/run-database-behavior-suite.sh",
     "test:database:behavior": "node scripts/database-behavior-check.mjs",
     "test:ui": "npm run build && npm --prefix setup-site run build && playwright test",
     "test:tenant-isolation": "node scripts/tenant-isolation-check.mjs",
     "test:integration:two-workspace": "node scripts/two-workspace-integration-check.mjs",
     "test:smoke:first-pilot": "node scripts/first-pilot-smoke-check.mjs",
+    "credentials:preflight": "node scripts/credential-rotation-preflight.mjs",
     "validate": "npm test && npm run build && npm --prefix setup-site run build"
   },
   "dependencies": {
