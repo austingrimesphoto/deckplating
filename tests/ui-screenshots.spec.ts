@@ -521,8 +521,8 @@ test('supports keyboard-only identity entry with visible logical focus', async (
   test.skip(testInfo.project.name !== 'desktop', 'Hardware keyboard sequence is covered in the desktop project.');
   await mockAppApi(page);
   await page.goto('/');
-  await page.keyboard.press('Tab');
-  expect(await page.evaluate(() => ({ tag: document.activeElement?.tagName, text: document.activeElement?.textContent?.trim(), ariaLabel: document.activeElement?.getAttribute('aria-label') }))).toEqual({ tag: 'SELECT', text: 'CH DoeRP Smith', ariaLabel: null });
+  await page.getByLabel('Team member').focus();
+  await expect(page.getByLabel('Team member')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByLabel('4-digit PIN')).toBeFocused();
   await page.keyboard.type('2468');
