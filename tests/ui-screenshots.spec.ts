@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -402,6 +403,277 @@ function clearExpectedApiError(page: Page, expected: string) {
   browserErrors.set(page, remaining);
 }
 
+async function expectNoAccessibilityViolations(page: Page, testInfo: import('@playwright/test').TestInfo) {
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
+  if (results.violations.length) {
+    await testInfo.attach('axe-violations', {
+      body: Buffer.from(JSON.stringify(results.violations, null, 2)),
+      contentType: 'application/json',
+    });
+  }
+  expect(
+    results.violations.map((violation) => ({
+      id: violation.id,
+      impact: violation.impact,
+      nodes: violation.nodes.map((node) => ({
+        target: node.target.join(' '),
+        html: node.html,
+        failureSummary: node.failureSummary,
+      })),
+    })),
+  ).toEqual([]);
+}
+
+async function expectNoHorizontalWorkflowLoss(page: Page) {
+  const result = await page.evaluate(() => {
+    const viewportWidth = document.documentElement.clientWidth;
+    const overflow = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - viewportWidth;
+    const clippedControls = Array.from(document.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href]'))
+      .filter((element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0 &&
+          (rect.left < -1 || rect.right > viewportWidth + 1);
+      })
+      .map((element) => element.getAttribute('aria-label') || element.textContent?.trim() || element.tagName);
+    return { overflow, clippedControls };
+  });
+  expect(result).toEqual({ overflow: 0, clippedControls: [] });
+}
+
+async function expectMobileTouchTargets(page: Page) {
+  const undersized = await page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('button, a.button, a.link-button'))
+    .filter((element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0 &&
+        (rect.width < 44 || rect.height < 44);
+    })
+    .map((element) => ({ name: element.getAttribute('aria-label') || element.textContent?.trim(), width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })));
+  expect(undersized).toEqual([]);
+}
+
+test('passes standards-based accessibility audits on user, kiosk, and admin views', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mockAppApi(page);
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Select your name' })).toBeVisible();
+  await expectNoAccessibilityViolations(page, testInfo);
+
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'CH Doe' })).toBeVisible();
+  await expectNoAccessibilityViolations(page, testInfo);
+
+  for (const view of [
+    { button: 'Coverage', heading: 'Needs attention first' },
+    { button: 'Map', heading: 'Mapped locations' },
+    { button: 'Scores', heading: 'Meaningful coverage' },
+    { button: 'Account', heading: 'Change PIN' },
+  ]) {
+    await page.getByRole('button', { name: view.button, exact: true }).click();
+    await expect(page.getByRole('heading', { name: view.heading })).toBeVisible();
+    await expectNoAccessibilityViolations(page, testInfo);
+  }
+
+  await page.getByRole('button', { name: 'Admin', exact: true }).click();
+  await page.getByLabel('Local admin passphrase').fill('demo-admin-passphrase');
+  await page.getByRole('button', { name: 'Unlock' }).click();
+  await expect(page.getByRole('heading', { name: /Quality controls/ })).toBeVisible();
+  await expectNoAccessibilityViolations(page, testInfo);
+
+  await page.goto('/?kiosk=1');
+  await expect(page.getByRole('heading', { name: 'Demo Installation' })).toBeVisible();
+  await expectNoAccessibilityViolations(page, testInfo);
+});
+
+test('keeps primary workflows available at effective 200% and 400% zoom', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'Desktop viewport reflow represents browser zoom.');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mockAppApi(page);
+  await page.setViewportSize({ width: 640, height: 900 });
+  await page.goto('/');
+  await expectNoHorizontalWorkflowLoss(page);
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'CH Doe' })).toBeVisible();
+  await expectNoHorizontalWorkflowLoss(page);
+
+  await page.setViewportSize({ width: 320, height: 900 });
+  await expectNoHorizontalWorkflowLoss(page);
+  await page.getByRole('button', { name: 'Coverage' }).click();
+  await expect(page.getByRole('heading', { name: 'Needs attention first' })).toBeVisible();
+  await expectNoHorizontalWorkflowLoss(page);
+  await page.getByRole('button', { name: 'Admin', exact: true }).click();
+  await page.getByLabel('Local admin passphrase').fill('demo-admin-passphrase');
+  await page.getByRole('button', { name: 'Unlock' }).click();
+  await expect(page.getByRole('heading', { name: /Quality controls/ })).toBeVisible();
+  await expectNoHorizontalWorkflowLoss(page);
+
+  await page.goto('/?kiosk=1');
+  await expect(page.getByRole('heading', { name: 'Demo Installation' })).toBeVisible();
+  await expectNoHorizontalWorkflowLoss(page);
+});
+
+test('supports keyboard-only identity entry with visible logical focus', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'Hardware keyboard sequence is covered in the desktop project.');
+  await mockAppApi(page);
+  await page.goto('/');
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => ({ tag: document.activeElement?.tagName, text: document.activeElement?.textContent?.trim(), ariaLabel: document.activeElement?.getAttribute('aria-label') }))).toEqual({ tag: 'SELECT', text: 'CH DoeRP Smith', ariaLabel: null });
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('4-digit PIN')).toBeFocused();
+  await page.keyboard.type('2468');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Continue' })).toBeFocused();
+  const outline = await page.getByRole('button', { name: 'Continue' }).evaluate((element) => getComputedStyle(element).outlineStyle);
+  expect(outline).not.toBe('none');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'CH Doe' })).toBeVisible();
+
+  const navigation = page.getByRole('navigation', { name: 'Primary navigation' });
+  const expectedOrder = ['Check In', 'Coverage', 'Map', 'Scores', 'Admin', 'Account'];
+  await expect(navigation.getByRole('button')).toHaveText(expectedOrder);
+  const headings: Record<string, string> = {
+    'Check In': 'CH Doe',
+    Coverage: 'Needs attention first',
+    Map: 'Mapped locations',
+    Scores: 'Meaningful coverage',
+    Admin: 'Admin',
+    Account: 'Change PIN',
+  };
+  for (const label of expectedOrder) {
+    const button = navigation.getByRole('button', { name: label, exact: true });
+    await button.focus();
+    await expect(button).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { name: headings[label] })).toBeVisible();
+  }
+
+  await navigation.getByRole('button', { name: 'Admin', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  const adminPassphrase = page.getByLabel('Local admin passphrase');
+  await adminPassphrase.focus();
+  await page.keyboard.type('demo-admin-passphrase');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Unlock' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: /Quality controls/ })).toBeVisible();
+});
+
+test('announces and associates identity form errors', async ({ page }) => {
+  await mockAppApi(page);
+  await page.unroute('**/api/device/register');
+  await page.route('**/api/device/register', (route) => route.fulfill({ status: 403, json: { error: 'PIN does not match.' } }));
+  await page.goto('/');
+  const pin = page.getByLabel('4-digit PIN');
+  await pin.fill('0000');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  const error = page.getByRole('alert');
+  await expect(error).toHaveText('PIN does not match.');
+  await expect(pin).toHaveAttribute('aria-invalid', 'true');
+  await expect(pin).toHaveAttribute('aria-describedby', 'identity-pin-error');
+  clearExpectedApiError(page, 'API response: POST /api/device/register returned 403');
+  browserErrors.set(
+    page,
+    (browserErrors.get(page) ?? []).filter(
+      (entry) => entry !== 'console.error: Failed to load resource: the server responded with a status of 403 (Forbidden)',
+    ),
+  );
+});
+
+test('honors reduced motion and mobile touch target minimums', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mockAppApi(page);
+  await page.goto('/');
+  if (testInfo.project.name === 'mobile') await expectMobileTouchTargets(page);
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'CH Doe' })).toBeVisible();
+  const motion = await page.locator('.mission-brief').evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { animationName: style.animationName, transitionDuration: style.transitionDuration, transform: style.transform };
+  });
+  expect(motion).toEqual({ animationName: 'none', transitionDuration: '0s', transform: 'none' });
+  if (testInfo.project.name === 'mobile') await expectMobileTouchTargets(page);
+});
+
+test('traps kiosk PIN-refresh focus and restores it after recovery', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'Hardware keyboard focus trapping is covered in the desktop project.');
+  await mockAppApi(page);
+  let sessionExpired = true;
+  await page.route('**/api/checkins', async (route) => {
+    const body = route.request().postDataJSON() as { clientBatchId: string };
+    if (sessionExpired) {
+      await route.fulfill({ status: 403, json: { error: 'PIN refresh required.' } });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        batchId: '71717171-7171-4717-8717-717171717171',
+        clientBatchId: body.clientBatchId,
+        checkins: [{ id: '72727272-7272-4727-8727-727272727272', score_awarded: 1 }],
+        totalScore: 1,
+      },
+    });
+  });
+  await page.goto('/?kiosk=1');
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Demo Installation' })).toBeVisible();
+  const now = new Date().toISOString();
+  await seedPendingBatches(page, [{
+    clientBatchId: '73737373-7373-4737-8737-737373737373',
+    organizationId: workspace.id,
+    teamMemberId: teamMembers[0].id,
+    teamMemberName: teamMembers[0].name,
+    deviceToken: '44444444-4444-4444-8444-444444444444',
+    unitIds: [units[0].id],
+    unitNames: [units[0].name],
+    locationId: locations[0].id,
+    locationName: locations[0].name,
+    manual: true,
+    occurredAt: now,
+    confidentialCareProvided: null,
+    referralProvided: null,
+    syncStatus: 'pending',
+    lastSyncError: null,
+    createdAt: now,
+    updatedAt: now,
+  }]);
+  const fullscreenButton = page.getByRole('button', { name: 'Fullscreen' });
+  await fullscreenButton.focus();
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  const dialog = page.getByRole('dialog', { name: 'Dashboard session needs PIN refresh' });
+  await expect(dialog).toBeVisible();
+  const pin = dialog.getByLabel('Current PIN');
+  const refresh = dialog.getByRole('button', { name: 'Refresh dashboard' });
+  const exit = dialog.getByRole('link', { name: 'Exit dashboard' });
+  await expect(pin).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(refresh).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(exit).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(pin).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(exit).toBeFocused();
+  sessionExpired = false;
+  await pin.fill('2468');
+  await refresh.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(fullscreenButton).toBeFocused();
+  clearExpectedApiError(page, 'API response: POST /api/checkins returned 403');
+  browserErrors.set(
+    page,
+    (browserErrors.get(page) ?? []).filter(
+      (entry) => entry !== 'console.error: Failed to load resource: the server responded with a status of 403 (Forbidden)',
+    ),
+  );
+});
+
 test('captures core user and admin screens', async ({ page }, testInfo) => {
   await mockAppApi(page);
   await page.goto('/');
@@ -430,7 +702,7 @@ test('captures core user and admin screens', async ({ page }, testInfo) => {
   await expect(page.getByRole('status').filter({ hasText: 'PIN changed' })).toBeVisible();
   await screenshot(page, testInfo.project.name, '05-account-pin');
 
-  await page.getByRole('button', { name: 'Admin' }).click();
+  await page.getByRole('button', { name: 'Admin', exact: true }).click();
   await page.getByLabel('Local admin passphrase').fill('demo-admin-passphrase');
   await page.getByRole('button', { name: 'Unlock' }).click();
   await expect(page.getByRole('heading', { name: /Quality controls/ })).toBeVisible();
@@ -856,11 +1128,21 @@ test('captures operator console', async ({ page }, testInfo) => {
   );
 
   await page.goto('/?operator=1');
-  await page.getByLabel('Central operator passphrase').fill('demo-operator-passphrase');
-  await page.getByRole('button', { name: 'Unlock operator console' }).click();
+  const operatorPassphrase = page.getByLabel('Central operator passphrase');
+  await operatorPassphrase.focus();
+  await page.keyboard.type('demo-operator-passphrase');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Unlock operator console' })).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'System Administration', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Quality controls/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Approval queue' })).toBeVisible();
   await expect(page.getByText('Demo Request Command')).toBeVisible();
+  await expectNoAccessibilityViolations(page, testInfo);
+  if (testInfo.project.name === 'desktop') {
+    await page.setViewportSize({ width: 320, height: 900 });
+    await expectNoHorizontalWorkflowLoss(page);
+    await page.setViewportSize({ width: 1280, height: 900 });
+  }
   await screenshot(page, testInfo.project.name, '07-operator-console');
 });

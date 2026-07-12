@@ -82,6 +82,7 @@ input,
 select,
 textarea {
   width: 100%;
+  min-width: 0;
   min-height: 46px;
   padding: 10px 12px;
   border: 1px solid var(--line);
@@ -586,7 +587,7 @@ small,
 
 .filters {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 14px;
 }
@@ -922,7 +923,7 @@ small,
   padding: 4px 8px;
   border-radius: 999px;
   background: #e8ebef;
-  color: var(--muted);
+  color: #46525f;
   font-size: 0.75rem;
   font-weight: 800;
   white-space: nowrap;
@@ -1470,7 +1471,7 @@ small,
   }
 
   .filters {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .filter-search {
