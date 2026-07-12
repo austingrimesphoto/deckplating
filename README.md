@@ -54,6 +54,7 @@ Workspace approval is manual. There is no open signup. Setup codes are issued on
 ## Documentation
 
 - [Large-workspace reads and operational query limits](docs/LARGE_WORKSPACE_READS.md)
+- [Transactional administrator workflows](docs/TRANSACTIONAL_ADMIN_WORKFLOWS.md)
 
 - [docs/SAFE_USE.md](docs/SAFE_USE.md)
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md)

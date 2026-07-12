@@ -434,27 +434,10 @@ async function ensureScopedIds(table: string, ids: string[], organizationId: str
   if ((data ?? []).length !== ids.length) throw new RequestValidationError(404, message);
 }
 
-async function validateLocationReferences(values: Record<string, unknown>, organizationId: string | null) {
-  if (values.area_id == null || values.area_id === '') return;
-  const [areaId] = uniqueUuidValues([values.area_id]);
-  await ensureScopedIds('areas', [areaId], organizationId, 'Area not found.');
-}
-
 async function validateUnitReferences(values: Record<string, unknown>, organizationId: string | null) {
   if (values.location_id == null || values.location_id === '') return;
   const [locationId] = uniqueUuidValues([values.location_id]);
   await ensureScopedIds('locations', [locationId], organizationId, 'Location not found.');
-}
-
-async function validateUnitAssignment(unitIds: unknown[], organizationId: string | null) {
-  const ids = uniqueUuidValues(unitIds);
-  await ensureScopedIds('units', ids, organizationId, 'One or more units were not found.');
-  return ids;
-}
-
-async function validateTeamMemberReferences(ids: unknown[], organizationId: string | null) {
-  const teamMemberIds = uniqueUuidValues(ids);
-  await ensureScopedIds('team_members', teamMemberIds, organizationId, 'Team member not found.');
 }
 
 const organizationAdminHash = (organizationId: string, passphrase: string) =>
@@ -2128,7 +2111,6 @@ async function route(event: HandlerEvent) {
       throw new Error('Workspace rejection transaction returned an incomplete result.');
     }
     const updatedRequest = rejection.workspace_request as unknown as WorkspaceRequestRow;
-    await tryRecordOperatorAudit(null, 'workspace_request_rejected', { workspaceRequestId: requestId });
     const requestorNotificationStatus = await notifyRequestorOfRejection(updatedRequest);
     await supabase
       .from('workspace_requests')
@@ -2377,16 +2359,12 @@ async function route(event: HandlerEvent) {
   if (method === 'POST' && operatorCodeRevokeMatch) {
     const setupCodeId = operatorCodeRevokeMatch[1];
     if (!isUuid(setupCodeId)) return json(400, { error: 'Setup code ID must be a UUID.' });
-    const { data, error } = await supabase
-      .from('organization_setup_codes')
-      .update({ active: false })
-      .eq('id', setupCodeId)
-      .is('used_at', null)
-      .select('id, organization_id, label, purpose, active, expires_at, used_at, used_by_label, created_at')
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return json(404, { error: 'Unused setup code not found.' });
-    await tryRecordOperatorAudit(data.organization_id, 'setup_code_revoked', { setupCodeId: data.id });
+    const { data, error } = await supabase.rpc('revoke_setup_code_with_audit', { p_setup_code_id: setupCodeId });
+    if (error) {
+      if (error.message?.includes('operator_setup_code_not_found')) return json(404, { error: 'Unused setup code not found.' });
+      if (isMissingRelationError(error)) return json(503, { error: 'Setup code revocation transaction is not configured yet.' });
+      throw error;
+    }
     return json(200, { setupCode: data });
   }
 
@@ -2396,17 +2374,15 @@ async function route(event: HandlerEvent) {
     if (!isUuid(organizationId)) return json(400, { error: 'Organization ID must be a UUID.' });
     const body = readBody<{ active?: boolean }>(event);
     if (typeof body.active !== 'boolean') return json(400, { error: 'active must be true or false.' });
-    const { data, error } = await supabase
-      .from('organizations')
-      .update({ active: body.active })
-      .eq('id', organizationId)
-      .select('id, slug, name, active, created_at, updated_at')
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return json(404, { error: 'Organization not found.' });
-    await tryRecordOperatorAudit(organizationId, body.active ? 'workspace_reactivated' : 'workspace_suspended', {
-      slug: data.slug,
+    const { data, error } = await supabase.rpc('set_organization_status_with_audit', {
+      p_organization_id: organizationId,
+      p_active: body.active,
     });
+    if (error) {
+      if (error.message?.includes('operator_organization_not_found')) return json(404, { error: 'Organization not found.' });
+      if (isMissingRelationError(error)) return json(503, { error: 'Workspace status transaction is not configured yet.' });
+      throw error;
+    }
     return json(200, { organization: data });
   }
 
@@ -2426,17 +2402,16 @@ async function route(event: HandlerEvent) {
       .maybeSingle();
     if (organizationError) throw organizationError;
     if (!organization) return json(404, { error: 'Organization not found.' });
-    const { error } = await supabase.from('organization_admin_credentials').upsert(
-      {
-        organization_id: organizationId,
-        passphrase_hash: await createCredentialHash(organizationAdminCredentialContext(organizationId), body.passphrase),
-        active: true,
-      },
-      { onConflict: 'organization_id' },
-    );
-    if (error) throw error;
-    await tryRecordOperatorAudit(organizationId, 'local_admin_recovery_passphrase_set', { slug: organization.slug });
-    return json(200, { organization });
+    const { data, error } = await supabase.rpc('recover_organization_admin_with_audit', {
+      p_organization_id: organizationId,
+      p_passphrase_hash: await createCredentialHash(organizationAdminCredentialContext(organizationId), body.passphrase),
+    });
+    if (error) {
+      if (error.message?.includes('operator_organization_not_found')) return json(404, { error: 'Organization not found.' });
+      if (isMissingRelationError(error)) return json(503, { error: 'Administrator recovery transaction is not configured yet.' });
+      throw error;
+    }
+    return json(200, { organization: data });
   }
 
   const operatorDeleteOrganizationMatch = path.match(/^\/operator\/organizations\/([^/]+)\/delete$/);
@@ -2465,7 +2440,6 @@ async function route(event: HandlerEvent) {
       throw deleteError;
     }
     if (deleted !== true) return json(404, { error: 'Organization not found.' });
-    await tryRecordOperatorAudit(null, 'workspace_deleted', { organizationId, slug: organization.slug });
     return json(200, { deletedOrganization: organization });
   }
 
@@ -3625,25 +3599,11 @@ async function route(event: HandlerEvent) {
     ) {
       return json(400, { error: 'At least one editable check-in field is required.' });
     }
-    try {
-      await validateTeamMemberReferences([body.adminTeamMemberId, body.team_member_id].filter(Boolean), organizationId);
-    } catch (error) {
-      if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
-      throw error;
-    }
-
-    const existingQuery = supabase
-      .from('checkins')
-      .select('id, unit_id, voided_at, batch_id')
-      .eq('id', adminCheckinMatch[1]);
-    const { data: existing, error: existingError } = await scoped(existingQuery, organizationId).single();
-    if (existingError || !existing) return json(404, { error: 'Check-in not found.' });
-
-    const update: Record<string, unknown> = { updated_by_team_member_id: body.adminTeamMemberId };
     const indicatorFieldsProvided =
       Object.prototype.hasOwnProperty.call(body, 'confidentialCareProvided') ||
       Object.prototype.hasOwnProperty.call(body, 'referralProvided');
-    let indicatorUpdate: Record<string, unknown> | null = null;
+    let confidentialCareProvided: IndicatorValue = null;
+    let referralProvided: IndicatorValue = null;
     if (indicatorFieldsProvided) {
       if (!ministryIndicatorsEnabled) {
         return json(400, { error: 'Visit flags are not enabled for this demonstration instance.' });
@@ -3654,77 +3614,52 @@ async function route(event: HandlerEvent) {
       ) {
         return json(400, { error: 'Both visit flag fields are required when editing visit flags.' });
       }
-      if (!existing.batch_id) {
-        return json(400, { error: 'This check-in does not have an editable visit batch.' });
-      }
-      let confidentialCareProvided: IndicatorValue;
-      let referralProvided: IndicatorValue;
       try {
         confidentialCareProvided = normalizeIndicator(body.confidentialCareProvided);
         referralProvided = normalizeIndicator(body.referralProvided);
       } catch (error) {
         return json(400, { error: errorMessage(error) });
       }
-      indicatorUpdate = {
-        confidential_care_provided: confidentialCareProvided,
-        referral_provided: referralProvided,
-        outcomes_recorded_at: confidentialCareProvided || referralProvided ? new Date().toISOString() : null,
-        updated_by_team_member_id: body.adminTeamMemberId,
-      };
-    }
-
-    if (body.unit_id && body.unit_id !== existing.unit_id) {
-      const unitQuery = supabase
-        .from('units')
-        .select('id, location_id')
-        .eq('id', body.unit_id);
-      const { data: unit, error: unitError } = await scoped(unitQuery, organizationId).single();
-      if (unitError || !unit) return json(404, { error: 'Replacement unit not found.' });
-      update.unit_id = body.unit_id;
-      update.location_id = unit.location_id;
-      update.geofence_verified = false;
-      update.score_awarded = 0;
-    }
-
-    if (body.checked_in_at) {
-      update.checked_in_at = body.checked_in_at;
-      update.score_awarded = 0;
-    }
-    if (body.team_member_id) {
-      update.team_member_id = body.team_member_id;
-      update.score_awarded = 0;
     }
 
     if (body.voided === true) {
       if (!body.void_reason || !fixedVoidReasons.has(body.void_reason)) {
         return json(400, { error: 'A fixed void_reason is required.' });
       }
-      update.voided_at = existing.voided_at ?? new Date().toISOString();
-      update.voided_by_team_member_id = body.adminTeamMemberId;
-      update.void_reason = body.void_reason;
-      update.score_awarded = 0;
-    } else if (body.voided === false) {
-      update.voided_at = null;
-      update.voided_by_team_member_id = null;
-      update.void_reason = null;
     }
 
-    const checkinUpdateQuery = supabase
-      .from('checkins')
-      .update(update)
-      .eq('id', adminCheckinMatch[1]);
-    const { data, error } = await scoped(checkinUpdateQuery, organizationId).select('id').maybeSingle();
-    if (error) throw error;
-    if (!data) return json(404, { error: 'Check-in not found.' });
-    if (indicatorUpdate) {
-      const batchUpdate = supabase
-        .from('checkin_batches')
-        .update(indicatorUpdate)
-        .eq('id', existing.batch_id);
-      const { error: batchUpdateError } = await scoped(batchUpdate, organizationId);
-      if (batchUpdateError) throw batchUpdateError;
+    const changedAt = new Date().toISOString();
+    const { data, error } = await supabase.rpc('admin_correct_checkin', {
+      p_organization_id: organizationId,
+      p_checkin_id: adminCheckinMatch[1],
+      p_admin_team_member_id: body.adminTeamMemberId,
+      p_has_unit: hasOwn(body as Record<string, unknown>, 'unit_id'),
+      p_unit_id: body.unit_id ?? null,
+      p_has_checked_in_at: hasOwn(body as Record<string, unknown>, 'checked_in_at'),
+      p_checked_in_at: body.checked_in_at ?? null,
+      p_has_team_member: hasOwn(body as Record<string, unknown>, 'team_member_id'),
+      p_team_member_id: body.team_member_id ?? null,
+      p_has_voided: hasOwn(body as Record<string, unknown>, 'voided'),
+      p_voided: body.voided ?? false,
+      p_void_reason: body.void_reason ?? null,
+      p_has_indicators: indicatorFieldsProvided,
+      p_confidential_care_provided: confidentialCareProvided,
+      p_referral_provided: referralProvided,
+      p_changed_at: changedAt,
+    });
+    if (error) {
+      if (error.message?.includes('admin_checkin_not_found')) return json(404, { error: 'Check-in not found.' });
+      if (error.message?.includes('admin_actor_not_found')) return json(404, { error: 'Administrator team member not found.' });
+      if (error.message?.includes('admin_replacement_member_not_found')) return json(404, { error: 'Replacement team member not found.' });
+      if (error.message?.includes('admin_replacement_unit_not_found')) return json(404, { error: 'Replacement unit not found.' });
+      if (error.message?.includes('admin_checkin_batch_missing')) return json(400, { error: 'This check-in does not have an editable visit batch.' });
+      if (error.message?.includes('admin_checkin_batch_not_found')) return json(409, { error: 'The visit batch changed or no longer exists.' });
+      if (error.message?.includes('admin_void_reason_invalid')) return json(400, { error: 'A fixed void_reason is required.' });
+      if (error.code === '23505') return json(409, { error: 'That unit is already present in this visit batch.' });
+      if (isMissingRelationError(error)) return json(503, { error: 'Check-in correction transaction is not configured yet.' });
+      throw error;
     }
-    return json(200, { checkin: data, coverage: await getCoverage(organizationId) });
+    return json(200, { checkin: data?.checkin ?? data, coverage: await getCoverage(organizationId) });
   }
 
   if (method === 'POST' && path === '/admin/locations') {
@@ -3733,25 +3668,42 @@ async function route(event: HandlerEvent) {
     const unitIds = body.unitIds ?? [];
     if (!Array.isArray(unitIds)) return json(400, { error: 'unitIds must be an array.' });
     const locationValues = normalizeLocationMutation(body, true);
-    let assignedUnitIds: string[] = [];
+    let assignedUnitIds: string[];
     try {
-      await validateLocationReferences(locationValues, organizationId);
       await validateLocationCoordinates(locationValues, organizationId, true);
-      if (unitIds.length) assignedUnitIds = await validateUnitAssignment(unitIds, organizationId);
+      assignedUnitIds = uniqueUuidValues(unitIds);
     } catch (error) {
       if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
       throw error;
     }
-    const { data, error } = await supabase
-      .from('locations')
-      .insert(withOrganization(locationValues, organizationId))
-      .select('*')
-      .single();
-    if (error) throw error;
-    if (assignedUnitIds.length) {
-      const update = supabase.from('units').update({ location_id: data.id }).in('id', assignedUnitIds);
-      const { error: assignmentError } = await scoped(update, organizationId);
-      if (assignmentError) throw assignmentError;
+    const { data, error } = await supabase.rpc('admin_mutate_location', {
+      p_organization_id: organizationId,
+      p_create: true,
+      p_location_id: null,
+      p_has_name: true,
+      p_name: locationValues.name,
+      p_has_area: true,
+      p_area_id: locationValues.area_id,
+      p_has_latitude: true,
+      p_latitude: locationValues.latitude,
+      p_has_longitude: true,
+      p_longitude: locationValues.longitude,
+      p_has_radius: true,
+      p_radius_meters: locationValues.radius_meters,
+      p_has_active: hasOwn(locationValues, 'active'),
+      p_active: locationValues.active ?? true,
+      p_has_unit_ids: true,
+      p_unit_ids: assignedUnitIds,
+    });
+    if (error) {
+      if (error.message?.includes('admin_location_area_not_found')) return json(404, { error: 'Area not found.' });
+      if (error.message?.includes('admin_location_unit_not_found')) return json(404, { error: 'One or more units were not found.' });
+      if (error.message?.includes('admin_location_unit_ids_duplicate')) return json(400, { error: 'unitIds must not contain duplicates.' });
+      if (error.message?.includes('admin_location_required_fields_missing')) return json(400, { error: 'Required location fields are missing.' });
+      if (error.message?.includes('admin_location_unit_assignment_failed')) return json(409, { error: 'Unit assignment changed concurrently.' });
+      if (error.code === '23505') return json(409, { error: 'A location with those unique fields already exists.' });
+      if (isMissingRelationError(error)) return json(503, { error: 'Location mutation transaction is not configured yet.' });
+      throw error;
     }
     return json(200, { location: data });
   }
@@ -3780,21 +3732,40 @@ async function route(event: HandlerEvent) {
         if (!existing) return json(404, { error: 'Location not found.' });
         existingLocationForValidation = existing;
       }
-      await validateLocationReferences(locationValues, organizationId);
       await validateLocationCoordinates(locationValues, organizationId, false, existingLocationForValidation);
-      if (Array.isArray(unitIds)) assignedUnitIds = await validateUnitAssignment(unitIds, organizationId);
+      if (Array.isArray(unitIds)) assignedUnitIds = uniqueUuidValues(unitIds);
     } catch (error) {
       if (error instanceof RequestValidationError) return json(error.statusCode, { error: error.message });
       throw error;
     }
-    const locationUpdate = supabase.from('locations').update(locationValues).eq('id', locationMatch[1]);
-    const { data, error } = await scoped(locationUpdate, organizationId).select('*').maybeSingle();
-    if (error) throw error;
-    if (!data) return json(404, { error: 'Location not found.' });
-    if (assignedUnitIds?.length) {
-      const unitUpdate = supabase.from('units').update({ location_id: data.id }).in('id', assignedUnitIds);
-      const { error: assignmentError } = await scoped(unitUpdate, organizationId);
-      if (assignmentError) throw assignmentError;
+    const { data, error } = await supabase.rpc('admin_mutate_location', {
+      p_organization_id: organizationId,
+      p_create: false,
+      p_location_id: locationMatch[1],
+      p_has_name: hasOwn(locationValues, 'name'),
+      p_name: locationValues.name ?? null,
+      p_has_area: hasOwn(locationValues, 'area_id'),
+      p_area_id: locationValues.area_id ?? null,
+      p_has_latitude: hasOwn(locationValues, 'latitude'),
+      p_latitude: locationValues.latitude ?? null,
+      p_has_longitude: hasOwn(locationValues, 'longitude'),
+      p_longitude: locationValues.longitude ?? null,
+      p_has_radius: hasOwn(locationValues, 'radius_meters'),
+      p_radius_meters: locationValues.radius_meters ?? null,
+      p_has_active: hasOwn(locationValues, 'active'),
+      p_active: locationValues.active ?? false,
+      p_has_unit_ids: assignedUnitIds !== undefined,
+      p_unit_ids: assignedUnitIds ?? [],
+    });
+    if (error) {
+      if (error.message?.includes('admin_location_not_found')) return json(404, { error: 'Location not found.' });
+      if (error.message?.includes('admin_location_area_not_found')) return json(404, { error: 'Area not found.' });
+      if (error.message?.includes('admin_location_unit_not_found')) return json(404, { error: 'One or more units were not found.' });
+      if (error.message?.includes('admin_location_unit_ids_duplicate')) return json(400, { error: 'unitIds must not contain duplicates.' });
+      if (error.message?.includes('admin_location_unit_assignment_failed')) return json(409, { error: 'Unit assignment changed concurrently.' });
+      if (error.code === '23505') return json(409, { error: 'A location with those unique fields already exists.' });
+      if (isMissingRelationError(error)) return json(503, { error: 'Location mutation transaction is not configured yet.' });
+      throw error;
     }
     return json(200, { location: data });
   }
@@ -3853,42 +3824,22 @@ async function route(event: HandlerEvent) {
     const organizationId = adminContext!.organizationId;
     if (!isUuid(memberMatch[1])) return json(400, { error: 'Team member ID must be a UUID.' });
     const values = normalizeTeamMemberMutation(readBody<Record<string, unknown>>(event), false);
-    const requestedActive = typeof values.active === 'boolean' ? values.active : undefined;
-    const profileValues = { ...values };
-    delete profileValues.active;
-    if (Object.keys(profileValues).length) {
-      const memberUpdate = supabase.from('team_members').update(profileValues).eq('id', memberMatch[1]);
-      const { data, error } = await scoped(memberUpdate, organizationId).select('id').maybeSingle();
-      if (error) throw error;
-      if (!data) return json(404, { error: 'Team member not found.' });
+    const { data, error } = await supabase.rpc('admin_update_team_member', {
+      p_organization_id: organizationId,
+      p_team_member_id: memberMatch[1],
+      p_has_name: hasOwn(values, 'name'),
+      p_name: values.name ?? null,
+      p_has_role: hasOwn(values, 'role'),
+      p_role: values.role ?? null,
+      p_has_active: hasOwn(values, 'active'),
+      p_active: values.active ?? false,
+    });
+    if (error) {
+      if (error.message?.includes('admin_team_member_not_found')) return json(404, { error: 'Team member not found.' });
+      if (isMissingRelationError(error)) return json(503, { error: 'Team member update transaction is not configured yet.' });
+      throw error;
     }
-    if (requestedActive !== undefined && organizationId) {
-      const { data: statusChanged, error: statusError } = await supabase.rpc('set_team_member_active', {
-        p_organization_id: organizationId,
-        p_team_member_id: memberMatch[1],
-        p_active: requestedActive,
-      });
-      if (statusError) {
-        if (isMissingRelationError(statusError)) {
-          return json(503, { error: 'Team member status transaction is not configured yet.' });
-        }
-        throw statusError;
-      }
-      if (statusChanged !== true) return json(404, { error: 'Team member not found.' });
-    } else if (requestedActive !== undefined) {
-      const memberUpdate = supabase.from('team_members').update({ active: requestedActive }).eq('id', memberMatch[1]);
-      const deviceUpdate = supabase.from('devices').update({ active: false }).eq('team_member_id', memberMatch[1]);
-      const [{ error: memberError }, { error: deviceError }] = await Promise.all([
-        scoped(memberUpdate, organizationId),
-        scoped(deviceUpdate, organizationId),
-      ]);
-      if (memberError || deviceError) throw memberError ?? deviceError;
-    }
-    const memberQuery = supabase.from('team_members').select('id, name, role, active').eq('id', memberMatch[1]);
-    const { data: member, error: memberError } = await scoped(memberQuery, organizationId).maybeSingle();
-    if (memberError) throw memberError;
-    if (!member) return json(404, { error: 'Team member not found.' });
-    return json(200, { teamMember: member });
+    return json(200, { teamMember: data });
   }
 
   const memberResetPinMatch = path.match(/^\/admin\/team-members\/([^/]+)\/reset-pin$/);

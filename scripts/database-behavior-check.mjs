@@ -7,7 +7,7 @@ const { Client } = pg;
 
 class CheckFailure extends Error {}
 
-const expectedMigrationVersions = Array.from({ length: 13 }, (_, index) => String(index + 1).padStart(3, '0'));
+const expectedMigrationVersions = Array.from({ length: 14 }, (_, index) => String(index + 1).padStart(3, '0'));
 const expectedCompositeConstraints = [
   'devices_team_member_id_fkey',
   'locations_area_id_fkey',
@@ -266,7 +266,7 @@ async function verifyMigrations(client) {
   expectCondition(
     actual.length === expectedMigrationVersions.length &&
       actual.every((version, index) => version === expectedMigrationVersions[index]),
-    'empty database did not apply migrations 001 through 012 in order',
+    'empty database did not apply migrations 001 through 014 in order',
   );
 }
 
@@ -712,6 +712,258 @@ async function verifyPostgrestRelationshipsAndRls() {
   }
 }
 
+async function verifyTransactionalAdminWorkflows(client) {
+  const batchId = crypto.randomUUID();
+  const checkinId = crypto.randomUUID();
+  const conflictingCheckinId = crypto.randomUUID();
+  await client.query(
+    `insert into public.checkin_batches
+       (id, organization_id, client_batch_id, request_fingerprint, location_id, team_member_id, device_id, occurred_at)
+     values ($1, $2, $3, $4, $5, $6, $7, '2026-07-01T12:00:00Z')`,
+    [batchId, fixture.organizationA, crypto.randomUUID(), randomSecret(), fixture.locationA, fixture.memberA, fixture.deviceA],
+  );
+  await client.query(
+    `insert into public.checkins
+       (id, organization_id, batch_id, unit_id, location_id, team_member_id, device_id, checked_in_at, score_awarded)
+     values
+       ($1, $3, $4, $5, $6, $7, $8, '2026-07-01T12:00:00Z', 2),
+       ($2, $3, $4, $9, $6, $7, $8, '2026-07-01T12:01:00Z', 1)`,
+    [
+      checkinId,
+      conflictingCheckinId,
+      fixture.organizationA,
+      batchId,
+      fixture.unitA,
+      fixture.locationA,
+      fixture.memberA,
+      fixture.deviceA,
+      fixture.retryUnit,
+    ],
+  );
+
+  const correctionSql = `select public.admin_correct_checkin(
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+  ) as result`;
+  const correctionArgs = ({
+    unitId = null,
+    checkedInAt = null,
+    memberId = null,
+    voided = null,
+    voidReason = null,
+    indicators = null,
+    changedAt = '2026-07-02T00:00:00Z',
+  } = {}) => [
+    fixture.organizationA,
+    checkinId,
+    fixture.memberA,
+    unitId !== null,
+    unitId,
+    checkedInAt !== null,
+    checkedInAt,
+    memberId !== null,
+    memberId,
+    voided !== null,
+    voided ?? false,
+    voidReason,
+    indicators !== null,
+    indicators?.confidential ?? null,
+    indicators?.referral ?? null,
+    changedAt,
+  ];
+
+  await expectSqlState('check-in/batch correction rollback', '23505', () =>
+    client.query(correctionSql, correctionArgs({
+      unitId: fixture.retryUnit,
+      indicators: { confidential: true, referral: null },
+    })),
+  );
+  const rolledBackCorrection = await client.query(
+    `select checkin.unit_id, batch.confidential_care_provided, batch.referral_provided
+     from public.checkins checkin
+     join public.checkin_batches batch on batch.id = checkin.batch_id
+     where checkin.id = $1`,
+    [checkinId],
+  );
+  expectCondition(
+    rolledBackCorrection.rows[0].unit_id === fixture.unitA &&
+      rolledBackCorrection.rows[0].confidential_care_provided === null &&
+      rolledBackCorrection.rows[0].referral_provided === null,
+    'failed check-in correction left a partial check-in or batch update',
+  );
+
+  await expectSqlState('cross-tenant correction reference', 'P0002', () =>
+    client.query(correctionSql, correctionArgs({ unitId: fixture.unitB })),
+  );
+  const retryArgs = correctionArgs({
+    checkedInAt: '2026-07-03T12:00:00Z',
+    indicators: { confidential: true, referral: null },
+    changedAt: '2026-07-03T12:05:00Z',
+  });
+  await client.query(correctionSql, retryArgs);
+  await client.query(correctionSql, retryArgs);
+  const retriedCorrection = await client.query(
+    `select checkin.checked_in_at, checkin.score_awarded,
+            batch.confidential_care_provided, batch.referral_provided
+     from public.checkins checkin
+     join public.checkin_batches batch on batch.id = checkin.batch_id
+     where checkin.id = $1`,
+    [checkinId],
+  );
+  expectCondition(
+    retriedCorrection.rows[0].checked_in_at.toISOString() === '2026-07-03T12:00:00.000Z' &&
+      retriedCorrection.rows[0].score_awarded === 0 &&
+      retriedCorrection.rows[0].confidential_care_provided === true &&
+      retriedCorrection.rows[0].referral_provided === null,
+    'retried check-in correction was not idempotent',
+  );
+
+  const concurrentSql = `
+    with delay as materialized (select pg_sleep(0.25))
+    select correction.result
+    from delay
+    cross join lateral (${correctionSql}) correction`;
+  const concurrentA = correctionArgs({
+    checkedInAt: '2026-07-04T10:00:00Z',
+    indicators: { confidential: true, referral: null },
+    changedAt: '2026-07-04T10:05:00Z',
+  });
+  const concurrentB = correctionArgs({
+    checkedInAt: '2026-07-04T11:00:00Z',
+    indicators: { confidential: null, referral: true },
+    changedAt: '2026-07-04T11:05:00Z',
+  });
+  const concurrentResults = await runOverlapping('admin-checkin-correction', [
+    (queryClient) => queryClient.query(concurrentSql, concurrentA),
+    (queryClient) => queryClient.query(concurrentSql, concurrentB),
+  ]);
+  expectCondition(concurrentResults.every((result) => result.status === 'fulfilled'), 'concurrent check-in corrections failed');
+  const concurrentState = await client.query(
+    `select checkin.checked_in_at, batch.confidential_care_provided, batch.referral_provided
+     from public.checkins checkin
+     join public.checkin_batches batch on batch.id = checkin.batch_id
+     where checkin.id = $1`,
+    [checkinId],
+  );
+  const state = concurrentState.rows[0];
+  const isA = state.checked_in_at.toISOString() === '2026-07-04T10:00:00.000Z' &&
+    state.confidential_care_provided === true && state.referral_provided === null;
+  const isB = state.checked_in_at.toISOString() === '2026-07-04T11:00:00.000Z' &&
+    state.confidential_care_provided === null && state.referral_provided === true;
+  expectCondition(isA || isB, 'concurrent correction left mismatched check-in and batch state');
+
+  await client.query(
+    `create function public.ci_reject_unit_assignment() returns trigger
+     language plpgsql set search_path = '' as $$
+     begin raise exception 'ci_unit_assignment_failure' using errcode = 'P0001'; end $$;
+     create trigger ci_reject_unit_assignment
+       before update of location_id on public.units
+       for each row when (old.id = '${fixture.retryUnit}'::uuid)
+       execute function public.ci_reject_unit_assignment()`,
+  );
+  try {
+    await expectSqlState('location/unit assignment rollback', 'P0001', () =>
+      client.query(
+        `select public.admin_mutate_location(
+          $1, true, null, true, 'CI Rollback Location', true, $2,
+          true, 24.59, true, -81.80, true, 120, true, true, true, array[$3]::uuid[]
+        )`,
+        [fixture.organizationA, fixture.areaA, fixture.retryUnit],
+      ),
+    );
+  } finally {
+    await client.query('drop trigger if exists ci_reject_unit_assignment on public.units; drop function if exists public.ci_reject_unit_assignment()');
+  }
+  const rolledBackLocation = await client.query(
+    `select count(*)::integer as count from public.locations
+     where organization_id = $1 and name = 'CI Rollback Location'`,
+    [fixture.organizationA],
+  );
+  expectCondition(rolledBackLocation.rows[0].count === 0, 'failed unit assignment left its location inserted');
+
+  await expectSqlState('cross-tenant location unit reference', 'P0002', () =>
+    client.query(
+      `select public.admin_mutate_location(
+        $1, true, null, true, 'CI Cross Tenant Location', true, $2,
+        true, 24.59, true, -81.80, true, 120, true, true, true, array[$3]::uuid[]
+      )`,
+      [fixture.organizationA, fixture.areaA, fixture.unitB],
+    ),
+  );
+
+  await client.query(
+    `create function public.ci_reject_device_revocation() returns trigger
+     language plpgsql set search_path = '' as $$
+     begin raise exception 'ci_device_revocation_failure' using errcode = 'P0001'; end $$;
+     create trigger ci_reject_device_revocation
+       before update of active on public.devices
+       for each row when (old.id = '${fixture.deviceA}'::uuid)
+       execute function public.ci_reject_device_revocation()`,
+  );
+  try {
+    await expectSqlState('team profile/status rollback', 'P0001', () =>
+      client.query(
+        `select public.admin_update_team_member($1, $2, true, 'Partial Name', false, null, true, false)`,
+        [fixture.organizationA, fixture.memberA],
+      ),
+    );
+  } finally {
+    await client.query('drop trigger if exists ci_reject_device_revocation on public.devices; drop function if exists public.ci_reject_device_revocation()');
+  }
+  const memberRollback = await client.query(
+    `select name, active from public.team_members where id = $1`,
+    [fixture.memberA],
+  );
+  expectCondition(
+    memberRollback.rows[0].name === 'CI Member A' && memberRollback.rows[0].active === true,
+    'failed device revocation left a partial team member update',
+  );
+
+  await client.query(
+    `create function public.ci_reject_operator_audit() returns trigger
+     language plpgsql set search_path = '' as $$
+     begin raise exception 'ci_audit_failure' using errcode = 'P0001'; end $$;
+     create trigger ci_reject_operator_audit
+       before insert on public.operator_audit_events
+       for each row when (new.action = 'workspace_suspended')
+       execute function public.ci_reject_operator_audit()`,
+  );
+  try {
+    await expectSqlState('managed destructive audit rollback', 'P0001', () =>
+      client.query('select public.set_organization_status_with_audit($1, false)', [fixture.organizationA]),
+    );
+  } finally {
+    await client.query('drop trigger if exists ci_reject_operator_audit on public.operator_audit_events; drop function if exists public.ci_reject_operator_audit()');
+  }
+  const organizationRollback = await client.query('select active from public.organizations where id = $1', [fixture.organizationA]);
+  expectCondition(organizationRollback.rows[0].active === true, 'failed audit insert left workspace suspended');
+
+  await client.query('select public.set_organization_status_with_audit($1, false)', [fixture.organizationA]);
+  await client.query('select public.set_organization_status_with_audit($1, true)', [fixture.organizationA]);
+  const statusAudits = await client.query(
+    `select action from public.operator_audit_events
+     where organization_id = $1 and action in ('workspace_suspended', 'workspace_reactivated')`,
+    [fixture.organizationA],
+  );
+  expectCondition(statusAudits.rowCount === 2, 'successful managed status mutations did not write matching audits');
+
+  const deletedOrganizationId = crypto.randomUUID();
+  await client.query(
+    `insert into public.organizations (id, name, slug, active) values ($1, 'CI Audited Delete', $2, true)`,
+    [deletedOrganizationId, `ci-delete-${deletedOrganizationId.slice(0, 8)}`],
+  );
+  const deleted = await client.query('select public.delete_deckplating_organization($1) as deleted', [deletedOrganizationId]);
+  expectCondition(deleted.rows[0].deleted === true, 'audited workspace deletion failed');
+  const deleteAudit = await client.query(
+    `select organization_id, detail from public.operator_audit_events
+     where action = 'workspace_deleted' and detail->>'organizationId' = $1`,
+    [deletedOrganizationId],
+  );
+  expectCondition(
+    deleteAudit.rowCount === 1 && deleteAudit.rows[0].organization_id === null,
+    'workspace deletion did not retain its transactionally written audit event',
+  );
+}
+
 async function verifyLargeWorkspaceReads(client) {
   const organizationId = crypto.randomUUID();
   const areaId = crypto.randomUUID();
@@ -823,7 +1075,7 @@ async function cleanup(client) {
 async function main() {
   await withClient('orchestrator', async (client) => {
     try {
-      await runCheck('empty migration chain applies 001-013 in order', () => verifyMigrations(client));
+      await runCheck('empty migration chain applies 001-014 in order', () => verifyMigrations(client));
       await seedFixture(client);
       await runCheck('tenant composite foreign keys reject cross-workspace records', () =>
         verifyCompositeTenantConstraints(client),
@@ -841,6 +1093,9 @@ async function main() {
       await client.query("notify pgrst, 'reload schema'");
       await runCheck('PostgREST embeds resolve composite relationships and RLS blocks anon',
         verifyPostgrestRelationshipsAndRls,
+      );
+      await runCheck('admin dependent mutations roll back, retry, serialize, and audit atomically', () =>
+        verifyTransactionalAdminWorkflows(client),
       );
       await runCheck('large workspace cursors and aggregates preserve more than 1,000 rows', () =>
         verifyLargeWorkspaceReads(client),

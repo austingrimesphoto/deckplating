@@ -11,6 +11,7 @@ const files = {
   migration010: fs.readFileSync(new URL('../supabase/migrations/010_workspace_request_queue.sql', import.meta.url), 'utf8'),
   migration011: fs.readFileSync(new URL('../supabase/migrations/011_security_reliability_hardening.sql', import.meta.url), 'utf8'),
   migration013: fs.readFileSync(new URL('../supabase/migrations/013_large_workspace_reads.sql', import.meta.url), 'utf8'),
+  migration014: fs.readFileSync(new URL('../supabase/migrations/014_transactional_admin_workflows.sql', import.meta.url), 'utf8'),
   notifications: fs.readFileSync(new URL('../src/lib/notifications.ts', import.meta.url), 'utf8'),
 };
 
@@ -58,6 +59,7 @@ const adminRoutes = section(api, "const adminContext = path.startsWith('/admin/'
 const adminCorrection = section(api, 'const adminCheckinMatch', "if (method === 'POST' && path === '/admin/locations')");
 const adminLocations = section(api, "if (method === 'POST' && path === '/admin/locations')", "if (method === 'POST' && path === '/admin/units')");
 const adminUnits = section(api, "if (method === 'POST' && path === '/admin/units')", "if (method === 'POST' && path === '/admin/team-members')");
+const adminMembers = section(api, "if (method === 'POST' && path === '/admin/team-members')", 'const memberResetPinMatch');
 const adminMemberReset = section(api, 'const memberResetPinMatch', 'return json(404');
 const registerDevice = section(api, 'async function registerDevice', 'async function route');
 const changePin = section(api, "if (method === 'POST' && path === '/device/change-pin')", "if (method === 'POST' && path === '/device/change-identity')");
@@ -181,9 +183,10 @@ check(
 check('Admin routes require signed admin context and use its organization scope', has(adminRoutes, 'await requireAdmin(event)') && has(adminRoutes, 'adminContext!.organizationId'));
 check('Managed hosts fail closed when organization schema checks error', has(api, 'managedHostEnabled') && has(api, 'if (managedHostEnabled || !isMissingRelationError(error)) throw error'));
 check('Managed host disables environment admin fallback for workspace admin login', has(api, 'if (managedHostEnabled && organizationId) return null'));
-check('Admin correction validates all referenced member/unit IDs inside organization', has(adminCorrection, 'validateTeamMemberReferences') && has(adminCorrection, 'scoped(unitQuery, organizationId)') && has(adminCorrection, 'scoped(checkinUpdateQuery, organizationId)'));
-check('Admin correction gates visit flags and updates only through the scoped check-in batch', has(api, 'const ministryIndicatorsEnabled') && has(adminCorrection, 'if (!ministryIndicatorsEnabled)') && has(adminCorrection, "from('checkin_batches')") && has(adminCorrection, 'scoped(batchUpdate, organizationId)'));
-check('Admin location mutations validate area and assigned units inside organization', has(adminLocations, 'validateLocationReferences') && has(adminLocations, 'validateUnitAssignment') && has(adminLocations, 'scoped(locationUpdate, organizationId)') && has(adminLocations, 'scoped(unitUpdate, organizationId)'));
+check('Admin check-in plus batch correction is one tenant-scoped locked transaction', has(adminCorrection, "supabase.rpc('admin_correct_checkin'") && has(files.migration014, 'create or replace function admin_correct_checkin') && has(files.migration014, 'and organization_id = p_organization_id') && has(section(files.migration014, 'create or replace function admin_correct_checkin', 'create or replace function admin_mutate_location'), 'for update'));
+check('Admin correction gates visit flags and validates every referenced record in the transaction', has(api, 'const ministryIndicatorsEnabled') && has(adminCorrection, 'if (!ministryIndicatorsEnabled)') && has(files.migration014, 'admin_replacement_member_not_found') && has(files.migration014, 'admin_replacement_unit_not_found') && has(files.migration014, 'admin_checkin_batch_not_found'));
+check('Admin location plus unit assignment is one tenant-scoped locked transaction', has(adminLocations, "supabase.rpc('admin_mutate_location'") && has(files.migration014, 'create or replace function admin_mutate_location') && has(files.migration014, 'admin_location_area_not_found') && has(files.migration014, 'admin_location_unit_not_found') && has(section(files.migration014, 'create or replace function admin_mutate_location', 'create or replace function admin_update_team_member'), 'for update'));
+check('Admin roster profile/status changes and device revocation are one transaction', has(adminMembers, "supabase.rpc('admin_update_team_member'") && has(files.migration014, 'create or replace function admin_update_team_member') && has(files.migration014, 'update public.devices'));
 check('Admin unit mutations validate referenced locations inside organization', has(adminUnits, 'validateUnitReferences') && has(adminUnits, 'scoped(unitUpdate, organizationId)'));
 check(
   'Operator routes require central operator token and omit stored hashes',
@@ -214,12 +217,13 @@ check(
     !has(operatorWorkspaceRequests, 'passphrase_hash')
 );
 check(
-  'Workspace request rejection serializes against approval and transitions only pending requests',
+  'Workspace request rejection serializes against approval and writes its audit atomically',
   has(operatorWorkspaceRejection, "supabase.rpc('reject_workspace_request'") &&
     has(operatorWorkspaceRejection, 'workspace_request_not_pending') &&
-    has(files.migration011, 'create or replace function reject_workspace_request') &&
-    has(files.migration011, "if v_request.status <> 'pending'") &&
-    has(section(files.migration011, 'create or replace function reject_workspace_request', 'create or replace function activate_deckplating_workspace'), 'for update'),
+    has(files.migration014, 'create or replace function reject_workspace_request') &&
+    has(files.migration014, "if v_request.status <> 'pending'") &&
+    has(files.migration014, "'workspace_request_rejected'") &&
+    has(section(files.migration014, 'create or replace function reject_workspace_request', 'create or replace function set_organization_status_with_audit'), 'for update'),
 );
 check('Workspace approval notifications default to disabled and return copyable text', has(files.notifications, "mode === 'disabled'") && has(files.notifications, "status: 'skipped: notifications disabled'") && has(files.notifications, 'text: message.text'));
 check('Workspace approval mailto mode generates a prefilled message without sending', has(files.notifications, "mode === 'mailto'") && has(files.notifications, 'mailtoUrl') && has(files.notifications, 'URLSearchParams'));
@@ -255,26 +259,29 @@ check(
     !has(operatorExport, 'device_id')
 );
 check(
-  'Operator workspace lifecycle controls update only intended workspace state',
+  'Operator workspace lifecycle controls and audit write atomically',
   has(operatorStatusRoute, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/status$/)") &&
-    has(operatorStatusRoute, ".update({ active: body.active })") &&
-    has(operatorStatusRoute, ".eq('id', organizationId)")
+    has(operatorStatusRoute, "supabase.rpc('set_organization_status_with_audit'") &&
+    has(files.migration014, 'create or replace function set_organization_status_with_audit') &&
+    has(files.migration014, "'workspace_suspended'")
 );
 check(
-  'Operator admin recovery rotates only the selected workspace admin hash',
+  'Operator admin recovery and audit write atomically for one workspace',
   has(operatorAdminRecovery, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/admin-passphrase$/)") &&
     has(operatorAdminRecovery, 'createCredentialHash(organizationAdminCredentialContext(organizationId), body.passphrase)') &&
-    has(operatorAdminRecovery, "onConflict: 'organization_id'")
+    has(operatorAdminRecovery, "supabase.rpc('recover_organization_admin_with_audit'") &&
+    has(files.migration014, 'create or replace function recover_organization_admin_with_audit')
 );
 check(
   'Operator delete uses one transaction for the selected workspace and its owned data',
   has(operatorDeleteRoute, "path.match(/^\\/operator\\/organizations\\/([^/]+)\\/delete$/)") &&
     has(operatorDeleteRoute, "confirmSlug must match the workspace slug") &&
     has(operatorDeleteRoute, "supabase.rpc('delete_deckplating_organization'") &&
-    has(files.migration011, 'create or replace function delete_deckplating_organization') &&
-    has(files.migration011, 'delete from public.workspace_requests') &&
-    has(files.migration011, 'delete from public.organization_setup_codes') &&
-    has(files.migration011, 'delete from public.organization_admin_credentials')
+    has(files.migration014, 'create or replace function delete_deckplating_organization') &&
+    has(files.migration014, "'workspace_deleted'") &&
+    has(files.migration014, 'delete from public.workspace_requests') &&
+    has(files.migration014, 'delete from public.organization_setup_codes') &&
+    has(files.migration014, 'delete from public.organization_admin_credentials')
 );
 check(
   'Setup-code activation rejects invalid codes and commits setup state in one transaction',
@@ -310,7 +317,7 @@ check(
     has(files.migration011, 'where organization_id = p_organization_id') &&
     has(files.migration011, 'and team_member_id = p_team_member_id')
 );
-check('Team member deactivation and reactivation both revoke prior workspace devices transactionally', has(api, "supabase.rpc('set_team_member_active'") && has(files.migration011, 'create or replace function set_team_member_active') && has(files.migration011, 'set active = false') && has(files.migration011, 'team_member_id = p_team_member_id'));
+check('Team member deactivation and reactivation both revoke prior workspace devices transactionally', has(api, "supabase.rpc('admin_update_team_member'") && has(files.migration014, 'create or replace function admin_update_team_member') && has(files.migration014, 'set active = false') && has(files.migration014, 'team_member_id = p_team_member_id'));
 check(
   'Self-service PIN changes verify the active device and update only the signed-in workspace member',
   has(changePin, 'await requireUser(event)') &&
