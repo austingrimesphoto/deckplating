@@ -742,6 +742,8 @@ function IdentitySetup({
               type="password"
               autoComplete="current-password"
               value={pin}
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? 'identity-pin-error' : undefined}
               inputMode="numeric"
               pattern="\d{4}"
               maxLength={4}
@@ -749,7 +751,7 @@ function IdentitySetup({
               required
             />
           </label>
-          {error && <p className="error">{error}</p>}
+          {error && <p id="identity-pin-error" className="error" role="alert">{error}</p>}
           <button className="primary" type="submit">
             Continue
           </button>
@@ -1004,8 +1006,8 @@ function WorkspaceEntry({
             <button className="primary">Activate workspace</button>
           </form>
         )}
-        {message && <p className="notice">{message}</p>}
-        {error && <p className="error">{error}</p>}
+        {message && <p className="notice" role="status">{message}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
       </section>
     </main>
   );
@@ -1571,7 +1573,7 @@ function OperatorConsole({
               Back and lock
             </button>
           </form>
-          {error && <p className="error">{error}</p>}
+          {error && <p className="error" role="alert">{error}</p>}
         </section>
       </main>
     );
@@ -1593,8 +1595,8 @@ function OperatorConsole({
           Back and lock
         </button>
       </div>
-      {message && <p className="notice">{message}</p>}
-      {error && <p className="error">{error}</p>}
+      {message && <p className="notice" role="status">{message}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       <WhatChangedPanel audience="operator" />
       <section className="panel">
         <div className="screen-title inline-title">
@@ -2046,8 +2048,8 @@ function OperatorConsole({
         })}
         {organizations.length > 0 && !filteredOrganizations.length && <p className="notice">No workspaces match that search.</p>}
       </section>
-      <nav className="bottom-nav">
-        <button className="active">Operator</button>
+      <nav className="bottom-nav" aria-label="Operator navigation">
+        <button className="active" aria-current="page">Operator</button>
         <button onClick={onClose}>Back and lock</button>
       </nav>
     </main>
@@ -3366,6 +3368,8 @@ function MapScreen({
           .setLngLat([location.longitude, location.latitude])
           .setPopup(new maplibregl.Popup().setDOMContent(mapPopupContent(location)))
           .addTo(map.current!);
+        marker.getElement().setAttribute('role', 'img');
+        marker.getElement().setAttribute('aria-label', `${location.name}: ${statusText[location.status]}`);
         markers.push(marker);
       });
     });
@@ -3390,7 +3394,7 @@ function MapScreen({
         </section>
       ) : (
         <>
-          <div ref={container} className="map-canvas" aria-label="Map of saved workspace locations" />
+          <div ref={container} className="map-canvas" role="region" aria-label="Map of saved workspace locations" />
           {!mapReady && !mapError && <p className="notice" role="status">Loading map...</p>}
           {mapError && <p className="warning-notice" role="alert">{mapError}</p>}
         </>
@@ -3686,6 +3690,7 @@ function KioskMap({
     <div
       ref={container}
       className="kiosk-map-stage"
+      role="region"
       aria-label="Color-coded map with workspace pins"
       data-marker-count={displayLocations.length}
     >
@@ -4200,6 +4205,8 @@ function AdminMapPicker({
       const nextMarker = new maplibregl.Marker({ draggable: true, color: statusColor.red })
         .setLngLat([longitude, latitude])
         .addTo(nextMap);
+      nextMarker.getElement().setAttribute('role', 'img');
+      nextMarker.getElement().setAttribute('aria-label', 'Selected location marker');
       marker.current = nextMarker;
       nextMarker.on('dragend', () => {
         const point = nextMarker.getLngLat();
@@ -4224,7 +4231,7 @@ function AdminMapPicker({
     map.current?.setCenter([longitude, latitude]);
   }, [latitude, longitude]);
 
-  return <div ref={container} className="admin-map" aria-label="Map picker for the new location" />;
+  return <div ref={container} className="admin-map" role="group" aria-label="Map picker for the new location" />;
 }
 
 function AdminCheckinRow({
@@ -4816,7 +4823,7 @@ function AdminScreen({
             </label>
             <button className="primary">Unlock</button>
           </form>
-          {message && <p className="notice">{message}</p>}
+          {message && <p className="notice" role="status">{message}</p>}
         </section>
       </main>
     );
@@ -4833,7 +4840,7 @@ function AdminScreen({
           Lock Admin
         </button>
       </div>
-      {message && <p className="notice">{message}</p>}
+      {message && <p className="notice" role="status">{message}</p>}
       {adminAuthMethod === 'superuser' && (
         <p className="warning-notice">
           System administrator mode is active for {workspace?.name ?? 'this workspace'}. Changes are scoped to this workspace.
@@ -5529,6 +5536,8 @@ export default function App() {
   const syncInFlight = useRef<{ key: string; promise: Promise<void> } | null>(null);
   const syncStateRef = useRef(syncState);
   const contextEpoch = useRef(0);
+  const kioskAuthDialog = useRef<HTMLDivElement | null>(null);
+  const kioskAuthPreviousFocus = useRef<HTMLElement | null>(null);
   syncStateRef.current = syncState;
 
   async function setActiveWorkspace(nextWorkspace: WorkspaceContext | null) {
@@ -6130,6 +6139,39 @@ export default function App() {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [screen]);
 
+  useEffect(() => {
+    if (syncState !== 'auth' || !kioskParamEnabled()) return;
+    const dialog = kioskAuthDialog.current;
+    if (!dialog) return;
+    const dashboard = document.querySelector<HTMLElement>('.kiosk-dashboard');
+    kioskAuthPreviousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dashboard?.setAttribute('inert', '');
+    const focusableSelector = 'input:not([disabled]), button:not([disabled]), a[href], select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
+    focusable()[0]?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const elements = focusable();
+      if (!elements.length) return;
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    dialog.addEventListener('keydown', trapFocus);
+    return () => {
+      dialog.removeEventListener('keydown', trapFocus);
+      dashboard?.removeAttribute('inert');
+      kioskAuthPreviousFocus.current?.focus();
+      kioskAuthPreviousFocus.current = null;
+    };
+  }, [syncState]);
+
   if (showOperatorConsole) {
     return <OperatorConsole onClose={closeOperatorConsole} onSuperuserAdmin={openWorkspaceAdminFromOperator} />;
   }
@@ -6232,7 +6274,7 @@ export default function App() {
           onRefresh={() => void load(identity)}
         />
         {syncState === 'auth' && (
-          <div className="kiosk-auth-overlay" role="dialog" aria-modal="true" aria-labelledby="kiosk-auth-title">
+          <div ref={kioskAuthDialog} className="kiosk-auth-overlay" role="dialog" aria-modal="true" aria-labelledby="kiosk-auth-title">
             <section className="panel stack">
               <h2 id="kiosk-auth-title">Dashboard session needs PIN refresh</h2>
               <p className="muted">Enter the current PIN for {identity.teamMemberName}, or exit the dashboard to choose another identity.</p>
