@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
@@ -449,6 +449,159 @@ const matchesSearch = (query: string, values: unknown[]) => {
   if (!needle) return true;
   return values.some((value) => String(value ?? '').toLowerCase().includes(needle));
 };
+
+type SearchAutocompleteProps = {
+  label: string;
+  placeholder: string;
+  value: string;
+  suggestions: Array<string | null | undefined>;
+  onChange: (value: string) => void;
+  onSelect?: (value: string) => void;
+  className?: string;
+};
+
+function SearchAutocomplete({
+  label,
+  placeholder,
+  value,
+  suggestions,
+  onChange,
+  onSelect,
+  className = '',
+}: SearchAutocompleteProps) {
+  const listboxId = useId();
+  const input = useRef<HTMLInputElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const choices = useMemo(() => {
+    const unique = new Map<string, string>();
+    suggestions.forEach((suggestion) => {
+      const text = suggestion?.trim();
+      if (text && !unique.has(text.toLocaleLowerCase())) unique.set(text.toLocaleLowerCase(), text);
+    });
+    return [...unique.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [suggestions]);
+  const visibleChoices = useMemo(() => {
+    const query = value.trim().toLocaleLowerCase();
+    return showAll || !query ? choices : choices.filter((choice) => choice.toLocaleLowerCase().includes(query));
+  }, [choices, showAll, value]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [value, showAll, choices.length]);
+
+  function selectChoice(choice: string) {
+    onChange(choice);
+    onSelect?.(choice);
+    setOpen(false);
+    setShowAll(false);
+    input.current?.focus();
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setOpen(true);
+      if (!visibleChoices.length) return;
+      setActiveIndex((current) => {
+        if (event.key === 'ArrowDown') return Math.min(current + (open ? 1 : 0), visibleChoices.length - 1);
+        return open ? Math.max(current - 1, 0) : visibleChoices.length - 1;
+      });
+      return;
+    }
+    if (event.key === 'Enter' && open && visibleChoices[activeIndex]) {
+      event.preventDefault();
+      selectChoice(visibleChoices[activeIndex]);
+      return;
+    }
+    if (event.key === 'Escape' && open) {
+      event.preventDefault();
+      setOpen(false);
+      setShowAll(false);
+    }
+  }
+
+  return (
+    <div
+      className={`search-autocomplete ${className}`.trim()}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setOpen(false);
+          setShowAll(false);
+        }
+      }}
+    >
+      <div className="search-autocomplete-control">
+        <input
+          ref={input}
+          role="combobox"
+          aria-label={label}
+          aria-autocomplete="list"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-activedescendant={open && visibleChoices[activeIndex] ? `${listboxId}-option-${activeIndex}` : undefined}
+          autoComplete="off"
+          placeholder={placeholder}
+          value={value}
+          onChange={(event) => {
+            onChange(event.target.value);
+            setOpen(true);
+            setShowAll(false);
+          }}
+          onFocus={() => {
+            setOpen(true);
+            if (!value.trim()) setShowAll(true);
+          }}
+          onClick={() => {
+            setOpen(true);
+            if (!value.trim()) setShowAll(true);
+          }}
+          onKeyDown={handleKeyDown}
+        />
+        <button
+          type="button"
+          className="search-autocomplete-toggle"
+          aria-label={`Show all ${label.toLocaleLowerCase()} options`}
+          aria-expanded={open}
+          aria-controls={listboxId}
+          onClick={() => {
+            setShowAll(true);
+            setOpen(true);
+            input.current?.focus();
+          }}
+        >
+          <span aria-hidden="true">⌄</span>
+        </button>
+      </div>
+      {open && (
+        <div id={listboxId} className="search-autocomplete-menu" role="listbox" aria-label={`${label} suggestions`}>
+          {visibleChoices.map((choice, index) => (
+            <button
+              key={choice.toLocaleLowerCase()}
+              id={`${listboxId}-option-${index}`}
+              type="button"
+              role="option"
+              aria-selected={index === activeIndex}
+              tabIndex={-1}
+              className="search-autocomplete-option"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => selectChoice(choice)}
+              onMouseEnter={() => setActiveIndex(index)}
+            >
+              {choice}
+            </button>
+          ))}
+          {!visibleChoices.length && (
+            <div className="search-autocomplete-empty" role="option" aria-disabled="true">
+              No suggestions match.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const datetimeLocalValue = (date: string) => {
   const parsed = new Date(date);
@@ -973,19 +1126,24 @@ function WorkspaceEntry({
               Workspace display name
               <input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} placeholder="Example RMT" />
             </label>
-            <label>
-              Installation name
+            <div className="form-field">
+              <span>Installation name</span>
               <span className="admin-hint">Search for the public installation or command area that should center the map.</span>
-              <input
+              <SearchAutocomplete
+                label="Search installation name"
                 value={installationQuery}
-                onChange={(event) => {
-                  setInstallationQuery(event.target.value);
+                onChange={(value) => {
+                  setInstallationQuery(value);
                   setSelectedInstallation(null);
-                  setInstallationResults([]);
                 }}
                 placeholder="NAS Pensacola, Naval Air Station Pensacola, or a typo close to it"
+                suggestions={installationResults.map((result) => result.display_name)}
+                onSelect={(value) => {
+                  const result = installationResults.find((candidate) => candidate.display_name === value);
+                  if (result) setSelectedInstallation(result);
+                }}
               />
-            </label>
+            </div>
             <button className="secondary" type="button" onClick={searchInstallation} disabled={searchingInstallation}>
               {searchingInstallation ? 'Searching...' : 'Find installation'}
             </button>
@@ -1684,11 +1842,20 @@ function OperatorConsole({
           </button>
         </div>
         <div className="filters">
-          <input
-            aria-label="Search workspace requests"
+          <SearchAutocomplete
+            label="Search workspace requests"
             placeholder="Search requests by command, lead, email, status, or request ID"
             value={workspaceRequestSearch}
-            onChange={(event) => setWorkspaceRequestSearch(event.target.value)}
+            onChange={setWorkspaceRequestSearch}
+            suggestions={workspaceRequests.flatMap((request) => [
+              request.installation_or_command,
+              request.lead_name,
+              request.official_contact_email,
+              request.preferred_workspace_slug,
+              request.organizations?.name,
+              request.organizations?.slug,
+              request.status,
+            ])}
           />
           <select aria-label="Workspace request status" value={workspaceRequestStatus} onChange={(event) => setWorkspaceRequestStatus(event.target.value as typeof workspaceRequestStatus)}>
             <option value="pending">Pending</option>
@@ -1839,11 +2006,18 @@ function OperatorConsole({
         </form>
       </section>
       <section className="filters">
-        <input
-          aria-label="Search workspaces"
+        <SearchAutocomplete
+          label="Search workspaces"
           placeholder="Search workspaces by name, slug, status, or latest activity"
           value={workspaceSearch}
-          onChange={(event) => setWorkspaceSearch(event.target.value)}
+          onChange={setWorkspaceSearch}
+          suggestions={organizations.flatMap((organization) => [
+            organization.name,
+            organization.slug,
+            organization.active ? 'active' : 'suspended',
+            organization.onboarding?.lastCheckinTeamMemberName,
+            organization.onboarding?.lastCheckinUnitName,
+          ])}
         />
         <button className="secondary" onClick={() => void loadOrganizations()}>
           Refresh workspaces
@@ -1860,11 +2034,17 @@ function OperatorConsole({
           </button>
         </div>
         <div className="filters">
-          <input
-            aria-label="Search operator audit"
+          <SearchAutocomplete
+            label="Search operator audit"
             placeholder="Search audit by action, workspace, or detail"
             value={auditSearch}
-            onChange={(event) => setAuditSearch(event.target.value)}
+            onChange={setAuditSearch}
+            suggestions={auditEvents.flatMap((event) => [
+              event.action,
+              event.actor,
+              event.organization?.name,
+              event.organization?.slug,
+            ])}
           />
           <button className="secondary" onClick={() => void loadAuditEvents(token)}>
             Search audit
@@ -2563,11 +2743,32 @@ function CheckInScreen({
           </button>}
           {manualMode && (
             <div className="unit-picker">
-              <input
-                aria-label="Search locations and units"
+              <SearchAutocomplete
+                label="Search locations and units"
                 placeholder="Search units"
                 value={manualQuery}
-                onChange={(event) => setManualQuery(event.target.value)}
+                onChange={setManualQuery}
+                suggestions={[
+                  ...locationSummaries.flatMap((location) => [
+                    location.name,
+                    location.area_name,
+                    ...location.units.map((unit) => unit.name),
+                  ]),
+                  ...unmappedUnits.map((unit) => unit.name),
+                ]}
+                onSelect={(value) => {
+                  const unit = bootstrap.units.find((candidate) => candidate.name === value);
+                  if (unit) {
+                    setManualLocationId(unit.location_id ?? 'unmapped');
+                    setSelected([unit.id]);
+                    return;
+                  }
+                  const location = locationSummaries.find((candidate) => candidate.name === value);
+                  if (location) {
+                    setManualLocationId(location.id);
+                    setSelected([]);
+                  }
+                }}
               />
               <select aria-label="Manual check-in location" value={manualLocationId} onChange={(event) => {
                 setManualLocationId(event.target.value);
@@ -3047,12 +3248,13 @@ function CoverageBoard({
         </div>
       </div>
       <section className="filters">
-        <input
-          aria-label="Search coverage"
+        <SearchAutocomplete
+          label="Search coverage"
           className="filter-search"
           placeholder="Search units, locations, or visitors"
           value={unitSearch}
-          onChange={(event) => setUnitSearch(event.target.value)}
+          onChange={setUnitSearch}
+          suggestions={units.flatMap((unit) => [unit.name, unit.location_name, unit.area_name, unit.last_visitor])}
         />
         <select aria-label="Filter coverage by area" value={area} onChange={(event) => setArea(event.target.value)}>
           <option value="">All areas</option>
@@ -3153,11 +3355,12 @@ function CoverageBoard({
             <h2>Visit flags</h2>
             <p className="muted">Generic location-level yes/no counts only. Multi-unit visits are not attributed to each selected command.</p>
             <div className="filters">
-              <input
-                aria-label="Search visit flag report"
+              <SearchAutocomplete
+                label="Search visit flag report"
                 placeholder="Search report rows"
                 value={reportSearch}
-                onChange={(event) => setReportSearch(event.target.value)}
+                onChange={setReportSearch}
+                suggestions={reportRows.flatMap((row) => [row.location_name, row.area_name])}
               />
               <input aria-label="Visit flag report from date" type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
               <input aria-label="Visit flag report through date" type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
@@ -3446,11 +3649,16 @@ function MapScreen({
         </>
       )}
       <section className="filters">
-        <input
-          aria-label="Search mapped locations"
+        <SearchAutocomplete
+          label="Search mapped locations"
           placeholder="Search mapped locations, areas, or commands"
           value={mapSearch}
-          onChange={(event) => setMapSearch(event.target.value)}
+          onChange={setMapSearch}
+          suggestions={locations.flatMap((location) => [
+            location.name,
+            location.area_name,
+            ...location.units.map((unit) => unit.name),
+          ])}
         />
       </section>
       <div className="map-list">
@@ -4904,6 +5112,37 @@ function AdminScreen({
       ) ?? [],
     [data?.units, setupSearch],
   );
+  const activitySearchSuggestions = useMemo(
+    () => [
+      ...activity.flatMap((checkin) => [checkin.unit_name, checkin.location_name, checkin.area_name, checkin.team_member_name]),
+      ...(data?.units.map((unit) => unit.name) ?? []),
+      ...(data?.locations.map((location) => location.name) ?? []),
+      ...(data?.areas.map((area) => area.name) ?? []),
+      ...(data?.teamMembers.map((member) => member.name) ?? []),
+    ],
+    [activity, data],
+  );
+  const setupSearchSuggestions = useMemo(() => {
+    if (!data) return [];
+    if (adminSetupView === 'areas') return data.areas.map((area) => area.name);
+    if (adminSetupView === 'team') return data.teamMembers.flatMap((member) => [member.name, member.role]);
+    if (adminSetupView === 'locations') {
+      return data.locations.flatMap((location) => [
+        location.name,
+        data.areas.find((area) => area.id === location.area_id)?.name,
+      ]);
+    }
+    const unitsForView = adminSetupView === 'queue' ? data.units.filter((unit) => !unit.location_id) : data.units;
+    return unitsForView.flatMap((unit) => {
+      const location = data.locations.find((candidate) => candidate.id === unit.location_id);
+      return [
+        unit.name,
+        unitTypeLabel[unit.unit_type],
+        location?.name,
+        data.areas.find((area) => area.id === location?.area_id)?.name,
+      ];
+    });
+  }, [adminSetupView, data]);
   const currentSetupRecordCount =
     adminSetupView === 'locations'
       ? filteredAdminLocations.length
@@ -5036,11 +5275,12 @@ function AdminScreen({
           <section className="panel">
             <h2>Filter activity</h2>
             <div className="filters">
-              <input
-                aria-label="Search activity log"
+              <SearchAutocomplete
+                label="Search activity log"
                 placeholder="Search unit, location, area, or team member"
                 value={activityFilters.search}
-                onChange={(event) => setActivityFilters({ ...activityFilters, search: event.target.value })}
+                onChange={(value) => setActivityFilters({ ...activityFilters, search: value })}
+                suggestions={activitySearchSuggestions}
               />
               <input aria-label="Activity from date" type="date" value={activityFilters.from} onChange={(event) => setActivityFilters({ ...activityFilters, from: event.target.value })} />
               <input aria-label="Activity through date" type="date" value={activityFilters.to} onChange={(event) => setActivityFilters({ ...activityFilters, to: event.target.value })} />
@@ -5146,14 +5386,15 @@ function AdminScreen({
             ))}
           </nav>
           <section className="filters">
-            <input
-              aria-label="Search admin setup records"
+            <SearchAutocomplete
+              label="Search admin setup records"
               placeholder={`Search ${adminSetupView === 'queue' ? 'unmapped commands' : adminSetupView}`}
               value={setupSearch}
-              onChange={(event) => {
-                setSetupSearch(event.target.value);
+              onChange={(value) => {
+                setSetupSearch(value);
                 setSetupVisibleCount(20);
               }}
+              suggestions={setupSearchSuggestions}
             />
             {(['locations', 'commands', 'team'] as AdminSetupView[]).includes(adminSetupView) && (
               <select
