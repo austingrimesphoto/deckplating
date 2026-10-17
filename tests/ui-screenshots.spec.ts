@@ -802,8 +802,14 @@ test('submits a manual check-in with the selected workspace data', async ({ page
   await expect(manualLocation.or(openManualLookup)).toBeVisible();
   if (!(await manualLocation.isVisible())) await openManualLookup.click();
 
-  await manualLocation.selectOption(locations[0].id);
-  await page.getByRole('checkbox', { name: /Engineering Department/ }).check();
+  const unitSearch = page.getByRole('combobox', { name: 'Search locations and units' });
+  await unitSearch.focus();
+  const suggestions = page.getByRole('listbox', { name: 'Search locations and units suggestions' });
+  await expect(suggestions).toBeVisible();
+  await expect(suggestions.getByRole('option', { name: 'Engineering Department' })).toBeVisible();
+  await suggestions.getByRole('option', { name: 'Engineering Department' }).click();
+  await expect(manualLocation).toHaveValue(locations[0].id);
+  await expect(page.getByRole('checkbox', { name: /Engineering Department/ })).toBeChecked();
   await page.getByRole('button', { name: 'Submit Manual Check-In' }).click();
 
   const confirmationDialog = page.getByRole('dialog', { name: '1 unit checked in' });
@@ -818,6 +824,30 @@ test('submits a manual check-in with the selected workspace data', async ({ page
   });
   await confirmationDialog.getByRole('button', { name: 'Done' }).click();
   await expect(confirmationDialog).toHaveCount(0);
+});
+
+test('surfaces complete search suggestions without requiring typed input', async ({ page }, testInfo) => {
+  await mockAppApi(page);
+  await page.goto('/');
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  await page.getByRole('button', { name: 'Coverage', exact: true }).click();
+  const coverageSearch = page.getByRole('combobox', { name: 'Search coverage' });
+  await coverageSearch.focus();
+  const coverageSuggestions = page.getByRole('listbox', { name: 'Search coverage suggestions' });
+  await expect(coverageSuggestions.getByRole('option', { name: 'Engineering Department' })).toBeVisible();
+  await expectNoAccessibilityViolations(page, testInfo);
+  await coverageSearch.fill('Operations Division');
+  await page.keyboard.press('Enter');
+  await expect(coverageSearch).toHaveValue('Operations Division');
+
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
+  const mapSearch = page.getByRole('combobox', { name: 'Search mapped locations' });
+  await mapSearch.focus();
+  const mapSuggestions = page.getByRole('listbox', { name: 'Search mapped locations suggestions' });
+  await expect(mapSuggestions.getByRole('option', { name: 'Pier Admin' })).toBeVisible();
+  await expect(mapSuggestions.getByRole('option', { name: 'Engineering Department' })).toBeVisible();
 });
 
 test('warns instead of confirming a same-day duplicate check-in', async ({ page }) => {

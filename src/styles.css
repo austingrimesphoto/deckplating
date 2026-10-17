@@ -96,7 +96,8 @@ textarea {
   line-height: 1.45;
 }
 
-label {
+label,
+.form-field {
   display: grid;
   gap: 6px;
   color: var(--muted);
@@ -619,6 +620,73 @@ small,
 
 .filter-search {
   grid-column: 1 / -1;
+}
+
+.search-autocomplete {
+  position: relative;
+  min-width: 0;
+}
+
+.search-autocomplete-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+}
+
+.search-autocomplete-control input {
+  border-radius: 8px 0 0 8px;
+}
+
+.search-autocomplete-toggle {
+  min-width: 48px;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: #fff;
+  color: var(--brand);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.search-autocomplete-menu {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  display: grid;
+  max-height: min(320px, 50vh);
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgba(20, 30, 40, 0.2);
+}
+
+.search-autocomplete-option {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.search-autocomplete-option:hover,
+.search-autocomplete-option[aria-selected='true'] {
+  background: rgba(37, 90, 130, 0.12);
+  color: var(--brand);
+}
+
+.search-autocomplete-empty {
+  margin: 0;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 .toggle {
