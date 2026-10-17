@@ -167,26 +167,30 @@ begin
     raise exception 'idempotent check-in retry inserted duplicate rows';
   end if;
 
-  select batch, checkin_rows
-  into v_batch, v_checkins
-  from public.create_checkin_batch(
-    v_organization_id,
-    v_member_id,
-    v_device_id,
-    v_second_batch_id,
-    v_second_fingerprint,
-    v_occurred_at + interval '1 minute',
-    v_location_id,
-    array[v_unit_id],
-    array[true],
-    array[10],
-    null,
-    null
-  );
-  if (v_checkins->0->>'score_awarded')::integer <> 0 then
-    raise exception 'cooldown serialization awarded duplicate points';
+  begin
+    perform *
+    from public.create_checkin_batch(
+      v_organization_id,
+      v_member_id,
+      v_device_id,
+      v_second_batch_id,
+      v_second_fingerprint,
+      v_occurred_at + interval '1 minute',
+      v_location_id,
+      array[v_unit_id],
+      array[true],
+      array[10],
+      null,
+      null
+    );
+  exception when sqlstate 'P0001' then
+    if sqlerrm = 'checkin_duplicate_daily' then v_conflict_seen := true; end if;
+  end;
+  if not v_conflict_seen then
+    raise exception 'same-day duplicate check-in was not rejected';
   end if;
 
+  v_conflict_seen := false;
   begin
     perform *
     from public.create_checkin_batch(

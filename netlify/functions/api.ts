@@ -2962,6 +2962,9 @@ async function route(event: HandlerEvent) {
       if (transactionError.message?.includes('checkin_batch_conflict')) {
         return json(409, { error: 'clientBatchId was already used for a different visit.' });
       }
+      if (transactionError.message?.includes('checkin_duplicate_daily')) {
+        return json(409, { error: "You've already checked in here today. You don't need to check in again." });
+      }
       if (transactionError.message?.includes('checkin_request_invalid')) {
         return json(400, { error: 'The visit batch is invalid.' });
       }
