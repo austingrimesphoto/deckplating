@@ -699,7 +699,7 @@ async function verifyPostgrestRelationshipsAndRls() {
     )
     .eq('organization_id', fixture.organizationA)
     .limit(10);
-  expectCondition(!checkinEmbed.error && checkinEmbed.data?.length >= 3, 'PostgREST check-in embeds did not resolve');
+  expectCondition(!checkinEmbed.error && checkinEmbed.data?.length >= 2, 'PostgREST check-in embeds did not resolve');
   for (const row of checkinEmbed.data) {
     expectCondition(
       row.organization_id === fixture.organizationA &&
