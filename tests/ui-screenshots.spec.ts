@@ -806,13 +806,51 @@ test('submits a manual check-in with the selected workspace data', async ({ page
   await page.getByRole('checkbox', { name: /Engineering Department/ }).check();
   await page.getByRole('button', { name: 'Submit Manual Check-In' }).click();
 
-  await expect(page.getByRole('heading', { name: '1 unit checked in' })).toBeVisible();
+  const confirmationDialog = page.getByRole('dialog', { name: '1 unit checked in' });
+  await expect(confirmationDialog).toBeVisible();
+  await expect(confirmationDialog).toHaveClass(/location-confirmation-overlay/);
+  await expect(confirmationDialog.getByRole('button', { name: 'Done' })).toBeFocused();
   expect(submittedBody).toMatchObject({
     teamMemberId: teamMembers[0].id,
     locationId: locations[0].id,
     unitIds: [units[0].id],
     manual: true,
   });
+  await confirmationDialog.getByRole('button', { name: 'Done' }).click();
+  await expect(confirmationDialog).toHaveCount(0);
+});
+
+test('warns instead of confirming a same-day duplicate check-in', async ({ page }) => {
+  await mockAppApi(page);
+  await page.route('**/api/checkins', (route) =>
+    route.fulfill({
+      status: 409,
+      json: { error: "You've already checked in here today. You don't need to check in again." },
+    }),
+  );
+
+  await page.goto('/');
+  await page.getByLabel('4-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  const manualLocation = page.getByLabel('Manual check-in location');
+  const openManualLookup = page.getByRole('button', { name: /Manual unit lookup|Choose another location or unit/ });
+  await expect(manualLocation.or(openManualLookup)).toBeVisible();
+  if (!(await manualLocation.isVisible())) await openManualLookup.click();
+  await manualLocation.selectOption(locations[0].id);
+  await page.getByRole('checkbox', { name: /Engineering Department/ }).check();
+  await page.getByRole('button', { name: 'Submit Manual Check-In' }).click();
+
+  await expect(page.getByRole('status').filter({ hasText: "You've already checked in here today" })).toHaveText(
+    "You've already checked in here today. You don't need to check in again.",
+  );
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  clearExpectedApiError(page, 'API response: POST /api/checkins returned 409');
+  browserErrors.set(
+    page,
+    (browserErrors.get(page) ?? []).filter(
+      (entry) => entry !== 'console.error: Failed to load resource: the server responded with a status of 409 (Conflict)',
+    ),
+  );
 });
 
 test('continues after a rejected offline visit and lets the user discard the failed item', async ({ page }) => {
@@ -920,7 +958,7 @@ test('promotes an offline confirmation before undoing the uploaded server visit'
   await expect(page.getByText('Saved on this device', { exact: true })).toBeVisible();
 
   failUpload = false;
-  await page.getByRole('button', { name: 'Sync Now' }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Check-in saved', { exact: true })).toBeVisible();
   await expect(page.locator('.confirmation-details dd').nth(1)).toHaveText('3');
   page.once('dialog', (dialog) => dialog.accept());

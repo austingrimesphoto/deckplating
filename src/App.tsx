@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import type {
   AdminCheckin,
   Area,
@@ -177,7 +178,10 @@ type PageMetadata = {
 let maplibrePromise: Promise<typeof import('maplibre-gl')> | null = null;
 
 const loadMapLibre = () => {
-  maplibrePromise ??= Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]).then(([maplibre]) => maplibre);
+  maplibrePromise ??= Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]).then(([maplibre]) => {
+    maplibre.setWorkerUrl(maplibreWorkerUrl);
+    return maplibre;
+  });
   return maplibrePromise;
 };
 
@@ -215,6 +219,7 @@ type BatchSyncedDetail = {
 };
 
 const batchSyncedEvent = 'deckplate:batch-synced';
+const dailyDuplicateWarning = "You've already checked in here today. You don't need to check in again.";
 
 const safeUseSummary =
   'Deckplating is an unofficial open-source prototype, not approved by DON or DoD. Use only for unclassified, non-sensitive coverage awareness unless authorized by local IT/N6.';
@@ -2098,6 +2103,8 @@ function CheckInScreen({
   const [locating, setLocating] = useState(false);
   const cancelLocationRequest = useRef<(() => void) | null>(null);
   const locationRequestId = useRef(0);
+  const confirmationDoneButton = useRef<HTMLButtonElement | null>(null);
+  const submittingCheckin = useRef(false);
   const locationSummaries = useMemo(() => getCachedLocationSummaries(bootstrap.units), [bootstrap.units]);
   const unmappedUnits = bootstrap.units.filter((unit) => !unit.location_id);
 
@@ -2202,7 +2209,8 @@ function CheckInScreen({
   }
 
   async function submit(manual = false) {
-    if (!selected.length) return;
+    if (!selected.length || submittingCheckin.current) return;
+    submittingCheckin.current = true;
     setLoading(true);
     setMessage('');
     setConfirmation(null);
@@ -2210,11 +2218,13 @@ function CheckInScreen({
     const selectedUnits = selectedUnitsForSubmit();
     const locationIds = Array.from(new Set(selectedUnits.map((unit) => unit.location_id ?? null)));
     if (locationIds.length > 1) {
+      submittingCheckin.current = false;
       setLoading(false);
       setMessage('Choose units from one location per visit.');
       return;
     }
     if (locationIds[0] === null && selectedUnits.length > 1) {
+      submittingCheckin.current = false;
       setLoading(false);
       setMessage('Unmapped units must be checked in one at a time.');
       return;
@@ -2223,6 +2233,23 @@ function CheckInScreen({
     const clientBatchId = crypto.randomUUID();
     const locationId = locationIds[0] ?? null;
     const locationName = selectedUnits[0]?.location_name ?? null;
+    let pendingVisits: PendingVisitBatch[] = [];
+    try {
+      pendingVisits = await getPendingBatches(identity.teamMemberId, identity.organizationId ?? null);
+    } catch {
+      // The server remains the source of truth for online duplicate protection.
+    }
+    const alreadyQueuedHereToday = pendingVisits.some((batch) => {
+      if (localDateKey(new Date(batch.occurredAt)) !== localDateKey(new Date(occurredAt))) return false;
+      if (locationId) return batch.locationId === locationId;
+      return batch.locationId === null && batch.unitIds.some((unitId) => selected.includes(unitId));
+    });
+    if (alreadyQueuedHereToday) {
+      submittingCheckin.current = false;
+      setLoading(false);
+      setMessage(dailyDuplicateWarning);
+      return;
+    }
     const pendingBatch: PendingVisitBatch = {
       clientBatchId,
       organizationId: identity.organizationId ?? null,
@@ -2251,6 +2278,7 @@ function CheckInScreen({
       } catch (err) {
         setMessage(err instanceof Error ? err.message : 'Unable to save this visit on the device.');
       } finally {
+        submittingCheckin.current = false;
         setLoading(false);
       }
       return;
@@ -2306,6 +2334,7 @@ function CheckInScreen({
         setMessage(err instanceof Error ? err.message : 'Check-in failed.');
       }
     } finally {
+      submittingCheckin.current = false;
       setLoading(false);
     }
   }
@@ -2454,6 +2483,16 @@ function CheckInScreen({
     return () => window.removeEventListener(batchSyncedEvent, handleBatchSynced);
   }, [identity.organizationId, identity.teamMemberId]);
 
+  useEffect(() => {
+    if (!confirmation) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    confirmationDoneButton.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [Boolean(confirmation)]);
+
   const activeLocation = manualMode ? undefined : matches[0];
   const manualLocationMatches = locationSummaries.filter((location) =>
     matchesSearch(manualQuery, [
@@ -2585,9 +2624,15 @@ function CheckInScreen({
       )}
       <CheckinMissionBrief teamMemberId={identity.teamMemberId} />
       {confirmation && (
-        <section className="panel confirmation-panel">
-          <p className="eyebrow">{confirmation.syncStatus === 'queued' ? 'Saved on this device' : 'Check-in saved'}</p>
-          <h2>{confirmation.units.length} unit{confirmation.units.length === 1 ? '' : 's'} checked in</h2>
+        <div
+          className="location-confirmation-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="checkin-confirmation-title"
+        >
+          <section className="panel confirmation-panel location-confirmation-panel">
+            <p className="eyebrow">{confirmation.syncStatus === 'queued' ? 'Saved on this device' : 'Check-in saved'}</p>
+            <h2 id="checkin-confirmation-title">{confirmation.units.length} unit{confirmation.units.length === 1 ? '' : 's'} checked in</h2>
           <ul className="plain-list">
             {confirmation.units.map((unit) => (
               <li key={unit}>{unit}</li>
@@ -2661,6 +2706,7 @@ function CheckInScreen({
               Undo this check-in
             </button>
             <button
+              ref={confirmationDoneButton}
               className="primary"
               onClick={() => {
                 setConfirmation(null);
@@ -2672,9 +2718,14 @@ function CheckInScreen({
               Done
             </button>
           </div>
-        </section>
+          </section>
+        </div>
       )}
-      {message && <p className="notice">{message}</p>}
+      {message && (
+        <p className={message === dailyDuplicateWarning ? 'warning-notice' : 'notice'} role="status" aria-live="polite">
+          {message}
+        </p>
+      )}
     </main>
   );
 }

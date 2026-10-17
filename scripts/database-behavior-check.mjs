@@ -7,7 +7,7 @@ const { Client } = pg;
 
 class CheckFailure extends Error {}
 
-const expectedMigrationVersions = Array.from({ length: 15 }, (_, index) => String(index + 1).padStart(3, '0'));
+const expectedMigrationVersions = Array.from({ length: 16 }, (_, index) => String(index + 1).padStart(3, '0'));
 const expectedCompositeConstraints = [
   'devices_team_member_id_fkey',
   'locations_area_id_fkey',
@@ -266,7 +266,7 @@ async function verifyMigrations(client) {
   expectCondition(
     actual.length === expectedMigrationVersions.length &&
       actual.every((version, index) => version === expectedMigrationVersions[index]),
-    'empty database did not apply migrations 001 through 015 in order',
+    'empty database did not apply migrations 001 through 016 in order',
   );
 }
 
@@ -438,8 +438,8 @@ function checkinParameters({ clientBatchId, fingerprint, unitId, occurredAt }) {
   ];
 }
 
-async function verifyConcurrentScoring() {
-  const occurredAt = new Date(Date.now() - 60_000).toISOString();
+async function verifyConcurrentDailyDuplicateProtection() {
+  const occurredAt = '2026-01-01T12:00:00.000Z';
   const parameters = [
     checkinParameters({
       clientBatchId: crypto.randomUUID(),
@@ -458,18 +458,19 @@ async function verifyConcurrentScoring() {
     (client) => client.query(delayedCheckinSql, parameters[0]),
     (client) => client.query(delayedCheckinSql, parameters[1]),
   ]);
-  expectCondition(results.every((result) => result.status === 'fulfilled'), 'concurrent scoring returned an error');
-  const scores = results
-    .flatMap((result) => result.value.rows[0].checkin_rows)
-    .map((row) => Number(row.score_awarded))
-    .sort((left, right) => left - right);
-  expectCondition(scores.length === 2 && scores[0] === 0 && scores[1] === 3, 'concurrent scoring awarded unstable points');
+  const fulfilled = results.filter((result) => result.status === 'fulfilled');
+  const rejected = results.filter((result) => result.status === 'rejected');
+  expectCondition(fulfilled.length === 1 && rejected.length === 1, 'concurrent duplicate visits did not select one winner');
+  expectCondition(
+    rejected[0].reason?.message?.includes('checkin_duplicate_daily'),
+    'concurrent duplicate visit did not return the daily duplicate error',
+  );
 }
 
 async function verifyConcurrentIdempotentRetry(client) {
   const clientBatchId = crypto.randomUUID();
   const fingerprint = randomSecret();
-  const occurredAt = new Date(Date.now() - 30_000).toISOString();
+  const occurredAt = '2026-01-02T12:00:00.000Z';
   const parameters = checkinParameters({ clientBatchId, fingerprint, unitId: fixture.retryUnit, occurredAt });
   const results = await runOverlapping('concurrent-idempotent-retry', [
     (queryClient) => queryClient.query(delayedCheckinSql, parameters),
@@ -698,7 +699,7 @@ async function verifyPostgrestRelationshipsAndRls() {
     )
     .eq('organization_id', fixture.organizationA)
     .limit(10);
-  expectCondition(!checkinEmbed.error && checkinEmbed.data?.length >= 3, 'PostgREST check-in embeds did not resolve');
+  expectCondition(!checkinEmbed.error && checkinEmbed.data?.length >= 2, 'PostgREST check-in embeds did not resolve');
   for (const row of checkinEmbed.data) {
     expectCondition(
       row.organization_id === fixture.organizationA &&
@@ -1115,13 +1116,13 @@ async function cleanup(client) {
 async function main() {
   await withClient('orchestrator', async (client) => {
     try {
-      await runCheck('empty migration chain applies 001-015 in order', () => verifyMigrations(client));
+      await runCheck('empty migration chain applies 001-016 in order', () => verifyMigrations(client));
       await seedFixture(client);
       await runCheck('tenant composite foreign keys reject cross-workspace records', () =>
         verifyCompositeTenantConstraints(client),
       );
       await runCheck('failed workspace approval rolls back every write', () => verifyAtomicApprovalRollback(client));
-      await runCheck('concurrent check-in scoring serializes per unit', verifyConcurrentScoring);
+      await runCheck('concurrent same-day check-ins select one winner', verifyConcurrentDailyDuplicateProtection);
       await runCheck('concurrent idempotent retries create one effect', () => verifyConcurrentIdempotentRetry(client));
       await runCheck('device registration racing PIN reset fails closed', () =>
         verifyDeviceRegistrationPinResetRace(client),

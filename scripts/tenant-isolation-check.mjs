@@ -13,6 +13,7 @@ const files = {
   migration013: fs.readFileSync(new URL('../supabase/migrations/013_large_workspace_reads.sql', import.meta.url), 'utf8'),
   migration014: fs.readFileSync(new URL('../supabase/migrations/014_transactional_admin_workflows.sql', import.meta.url), 'utf8'),
   migration015: fs.readFileSync(new URL('../supabase/migrations/015_credential_rotation_inventory.sql', import.meta.url), 'utf8'),
+  migration016: fs.readFileSync(new URL('../supabase/migrations/016_prevent_duplicate_daily_checkins.sql', import.meta.url), 'utf8'),
   notifications: fs.readFileSync(new URL('../src/lib/notifications.ts', import.meta.url), 'utf8'),
 };
 
@@ -132,6 +133,13 @@ check(
 );
 check('Mission Board totals and first visits aggregate in the database instead of loading full history', has(api, "supabase.rpc('get_leaderboard_period'") && has(files.migration013, 'create or replace function get_leaderboard_period') && has(files.migration013, 'group by checkin.unit_id'));
 check('Check-in batch idempotency is organization-unique in schema', has(files.migration005, 'drop constraint if exists checkin_batches_client_batch_id_key') && has(files.migration005, 'on checkin_batches(organization_id, client_batch_id)'));
+check(
+  'Same-day duplicate check-ins are serialized and rejected for mapped and unmapped visits',
+  has(files.migration016, 'prevent_duplicate_daily_location_checkin') &&
+    has(files.migration016, 'prevent_duplicate_daily_unmapped_checkin') &&
+    has(files.migration016, 'pg_advisory_xact_lock') &&
+    has(files.migration016, 'checkin_duplicate_daily'),
+);
 check(
   'Database foreign keys enforce tenant-consistent relationships',
   has(files.migration011, 'devices_team_member_organization_fkey') &&
