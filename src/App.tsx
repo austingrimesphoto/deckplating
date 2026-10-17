@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import type {
   AdminCheckin,
   Area,
@@ -177,7 +178,10 @@ type PageMetadata = {
 let maplibrePromise: Promise<typeof import('maplibre-gl')> | null = null;
 
 const loadMapLibre = () => {
-  maplibrePromise ??= Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]).then(([maplibre]) => maplibre);
+  maplibrePromise ??= Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]).then(([maplibre]) => {
+    maplibre.setWorkerUrl(maplibreWorkerUrl);
+    return maplibre;
+  });
   return maplibrePromise;
 };
 

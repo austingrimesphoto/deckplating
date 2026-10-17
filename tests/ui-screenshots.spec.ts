@@ -958,7 +958,7 @@ test('promotes an offline confirmation before undoing the uploaded server visit'
   await expect(page.getByText('Saved on this device', { exact: true })).toBeVisible();
 
   failUpload = false;
-  await page.getByRole('button', { name: 'Sync Now' }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Check-in saved', { exact: true })).toBeVisible();
   await expect(page.locator('.confirmation-details dd').nth(1)).toHaveText('3');
   page.once('dialog', (dialog) => dialog.accept());
